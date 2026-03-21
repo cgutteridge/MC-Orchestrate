@@ -1,0 +1,5 @@
+name: MCOrchestrate
+version: 1.0.0
+main: uk.ac.soton.ras.mcorchestrate.McOrchestratePlugin
+api-version: "1.21"
+description: In-game chat bridge for the MC Orchestrate AI builder bot.

@@ -1,0 +1,2 @@
+orchestrator:
+  url: "http://127.0.0.1:7071/requests/chat-command"
