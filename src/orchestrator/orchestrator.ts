@@ -9,6 +9,10 @@ import { resolvePlanMaterials } from "../planner/materialResolver.js";
 import { validatePlanSafety } from "../planner/safety.js";
 import { validatePlanSemantics } from "../planner/semantics.js";
 import type { Plan } from "../planner/schema.js";
+import {
+  compilePlanToDig,
+  type DesignIntentGraph,
+} from "../planner/dig.js";
 
 /**
  * Coordinates chat requests, planning, safety checks, and bridge execution.
@@ -16,6 +20,8 @@ import type { Plan } from "../planner/schema.js";
 export class Orchestrator {
   private readonly recentMessagesByPlayer = new Map<string, string[]>();
   private readonly lastBuiltStructurePlanByPlayer = new Map<string, Plan>();
+  /** DIG store — persists alongside the Plan store during the transition period. */
+  private readonly lastDigByPlayer = new Map<string, DesignIntentGraph>();
 
   constructor(
     private readonly bridge: BridgeServer,
@@ -135,6 +141,10 @@ export class Orchestrator {
       );
       if (isBuiltStructurePlan(plan)) {
         this.lastBuiltStructurePlanByPlayer.set(request.player.uuid, plan);
+        this.lastDigByPlayer.set(
+          request.player.uuid,
+          compilePlanToDig(plan, request.player.uuid),
+        );
       }
 
       return {

@@ -37,7 +37,7 @@ Research-informed execution lane based on `deep-research-report.md`.
    - Subtasks:
      - Execute `tasks/phase-1-foundations.md` in this order:
        - ~~Material Knowledge Base + palette resolver~~ (done — see notes)
-       - DIG schema/persistence + revision patching
+       - ~~DIG schema/persistence + revision patching~~ (v1 done — see notes)
        - ~~Deterministic compiler for core templates~~ (tower, cottage, bridge, barn, gazebo — all done)
        - ~~Planner contract and semantic safety checks~~ (partially done — see notes)
      - Keep deterministic outputs and bounded token behavior as hard requirements.
@@ -48,6 +48,13 @@ Research-informed execution lane based on `deep-research-report.md`.
      - Material KB progress: symbolic slots done; structural constraint pruning done
        (NON_STRUCTURAL_BLOCKS + GRAVITY_BLOCKS enforced for build primitives);
        `replace_in_region` correctly exempt (allows air/water in operational context).
+     - Task 1 (DIG): `src/planner/dig.ts` — Zod-validated schema for
+       `DesignIntentGraph`, `DigPart`, `DigMaterialSlot`, `DigPatch`. Implements
+       `compilePlanToDig`, `compileDigToPlan`, `applyDigPatch` (set_material,
+       scale_height, scale_footprint), and `computeDigDigest`. Orchestrator now
+       stores a DIG alongside the Plan for each successful build. 18 tests.
+       Remaining: route follow-up operations through DIG patches; DIG-based
+       revision replaces direct plan mutation; feature flag for rollback.
      - Nearby block context card injected into user message (top 5 structural
        blocks by count, terrain excluded). LLM now sees local material hints
        without the prompt containing a global block catalog.

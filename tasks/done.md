@@ -23,6 +23,19 @@
      - Completed: 2026-03-21
      - Evidence: `npm test`, `npm run build` — 38 → 53 tests, all green.
 
+13. Phase 1 Task 1 — Design Intent Graph v1 (2026-03-21)
+    - Subtasks:
+      - Added `src/planner/dig.ts` with Zod-validated schema for `DesignIntentGraph`, `DigPart` (stable deterministic part ids: `${passName}:${index}`), `DigMaterialSlot`, and `DigPatch` (set_material, scale_height, scale_footprint).
+      - `compilePlanToDig(plan, playerUuid)`: converts a Plan to a DIG, inferring slot ids from pass names, extracting block fields into materialSlots, starting at revision 0.
+      - `compileDigToPlan(dig)`: round-trips a DIG back to a Plan, resolving slot ids to current blocks and recomputing the bounding-box targetRegion.
+      - `applyDigPatch(dig, patch)`: applies a single patch and increments revision. `set_material` is idempotent (no change if block is already the same value). `scale_height` and `scale_footprint` adjust geometry dimensions.
+      - `computeDigDigest(dig)`: sorts parts by partId and slots by slotId before serialising, producing a stable digest for regression comparison.
+      - Orchestrator now creates and stores a DIG in `lastDigByPlayer` on each successful structure build, alongside the existing Plan store.
+      - 18 tests: schema validation, stable part ids, material slot extraction, round-trip, set_material patch + idempotence + compiled plan, scale_height, digest determinism + ordering stability.
+    - Notes:
+      - Completed: 2026-03-21
+      - Evidence: `npm test`, `npm run build` — 115 → 133 tests, all green.
+
 12. Phase 1 Task 3 — Deterministic Template Compilers: Barn + Gazebo (2026-03-21)
     - Subtasks:
       - Added `BarnParams` + `compileBarnTemplate`: hollow_cuboid walls + A-frame gabled roof. Roof pitch is computed from depth — each layer steps inward by 1 on each Z side. For depth=8: 3 roof fill_cuboid layers; ridge is always the narrowest central slice.
