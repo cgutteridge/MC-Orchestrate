@@ -226,4 +226,50 @@ describe("buildHeuristicPlan", () => {
     expect(plan?.needsMoreInfo).toBe(true);
     expect(plan?.clarification).toContain("structure context");
   });
+
+  it("expands the previous structure footprint for bigger follow-ups", () => {
+    const request = {
+      ...baseRequest,
+      message: "make it bigger by 2",
+      recentMessages: [],
+    };
+    const previousPlan: Plan = {
+      intent: "build_structure",
+      targetWorld: "world",
+      targetRegion: {
+        world: "world",
+        min: { x: -51, y: 113, z: -17 },
+        max: { x: -49, y: 117, z: -15 },
+      },
+      assumptions: [],
+      passes: [
+        {
+          name: "base",
+          goal: "Build base structure.",
+          primitives: [
+            {
+              type: "fill_cuboid",
+              from: { x: -51, y: 113, z: -17 },
+              to: { x: -49, y: 117, z: -15 },
+              block: "minecraft:white_wool",
+            },
+          ],
+        },
+      ],
+      reply: "Built.",
+      needsMoreInfo: false,
+    };
+
+    const plan = buildHeuristicPlan(request, previousPlan);
+
+    expect(plan?.intent).toBe("build_structure");
+    expect(plan?.needsMoreInfo).toBe(false);
+    expect(plan?.targetRegion).toEqual({
+      world: "world",
+      min: { x: -53, y: 113, z: -19 },
+      max: { x: -47, y: 117, z: -13 },
+    });
+    expect(plan?.passes[0]?.primitives).toHaveLength(4);
+    expect(plan?.reply).toContain("2 blocks bigger");
+  });
 });

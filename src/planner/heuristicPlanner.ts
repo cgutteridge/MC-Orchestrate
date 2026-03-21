@@ -32,6 +32,15 @@ export function buildHeuristicPlan(
     }
     return PlanSchema.parse(buildStructureFollowUpClarification(request));
   }
+
+  if (message.includes("bigger") || message.includes("larger")) {
+    if (isFootprintAdjustableStructurePlan(previousPlan)) {
+      return PlanSchema.parse(
+        buildStructureFootprintFollowUpFromPreviousPlan(request, previousPlan),
+      );
+    }
+    return PlanSchema.parse(buildStructureFollowUpClarification(request));
+  }
   return undefined;
 }
 
@@ -122,6 +131,68 @@ function buildStructureMaterialFollowUpFromPreviousPlan(
   };
 }
 
+function buildStructureFootprintFollowUpFromPreviousPlan(
+  request: ChatCommandRequest,
+  previousPlan: Plan,
+): Plan {
+  const increaseBy = parseFootprintDelta(request.message) ?? 1;
+  const previousRegion = normalizeRegion(previousPlan.targetRegion);
+  const block = extractPrimaryBuildBlock(previousPlan) ?? "minecraft:stone";
+  const minX = previousRegion.min.x - increaseBy;
+  const maxX = previousRegion.max.x + increaseBy;
+  const minZ = previousRegion.min.z - increaseBy;
+  const maxZ = previousRegion.max.z + increaseBy;
+  const minY = previousRegion.min.y;
+  const maxY = previousRegion.max.y;
+
+  return {
+    intent: previousPlan.intent,
+    targetWorld: previousPlan.targetWorld,
+    targetRegion: {
+      world: previousRegion.world,
+      min: { x: minX, y: minY, z: minZ },
+      max: { x: maxX, y: maxY, z: maxZ },
+    },
+    assumptions: [
+      `Expanding the previous structure footprint by ${increaseBy} blocks on each horizontal side using ${block}.`,
+    ],
+    passes: [
+      {
+        name: "structure_footprint_expand",
+        goal: "Increase structure footprint while preserving existing height.",
+        primitives: [
+          {
+            type: "fill_cuboid",
+            from: { x: minX, y: minY, z: minZ },
+            to: { x: maxX, y: maxY, z: previousRegion.min.z - 1 },
+            block,
+          },
+          {
+            type: "fill_cuboid",
+            from: { x: minX, y: minY, z: previousRegion.max.z + 1 },
+            to: { x: maxX, y: maxY, z: maxZ },
+            block,
+          },
+          {
+            type: "fill_cuboid",
+            from: { x: minX, y: minY, z: previousRegion.min.z },
+            to: { x: previousRegion.min.x - 1, y: maxY, z: previousRegion.max.z },
+            block,
+          },
+          {
+            type: "fill_cuboid",
+            from: { x: previousRegion.max.x + 1, y: minY, z: previousRegion.min.z },
+            to: { x: maxX, y: maxY, z: previousRegion.max.z },
+            block,
+          },
+        ],
+      },
+    ],
+    reply: `Making it ${increaseBy} blocks bigger.`,
+    needsMoreInfo: false,
+  };
+}
+
 function buildStructureFollowUpClarification(request: ChatCommandRequest): Plan {
   const point = asBlock(request.player.position);
   return {
@@ -160,6 +231,27 @@ function parseHeightDelta(message: string): number | undefined {
 
   const fallback = Number.parseInt(fallbackMatch[1], 10);
   return Number.isFinite(fallback) ? Math.max(1, Math.min(8, fallback)) : undefined;
+}
+
+function parseFootprintDelta(message: string): number | undefined {
+  const lowered = message.toLowerCase();
+  if (!lowered.includes("bigger") && !lowered.includes("larger")) {
+    return undefined;
+  }
+
+  const byMatch = lowered.match(/(?:by|add)\s+(\d+)/);
+  if (byMatch) {
+    const delta = Number.parseInt(byMatch[1], 10);
+    return Number.isFinite(delta) ? Math.max(1, Math.min(4, delta)) : undefined;
+  }
+
+  const fallbackMatch = lowered.match(/\b(\d+)\b/);
+  if (!fallbackMatch) {
+    return undefined;
+  }
+
+  const fallback = Number.parseInt(fallbackMatch[1], 10);
+  return Number.isFinite(fallback) ? Math.max(1, Math.min(4, fallback)) : undefined;
 }
 
 function isMaterialFollowUpMessage(message: string): boolean {
@@ -202,6 +294,13 @@ function isHeightAdjustableStructurePlan(plan?: Plan): plan is Plan {
 }
 
 function isMaterialAdjustableStructurePlan(plan?: Plan): plan is Plan {
+  if (!plan || plan.needsMoreInfo || plan.passes.length === 0) {
+    return false;
+  }
+  return hasAdditiveStructurePrimitive(plan);
+}
+
+function isFootprintAdjustableStructurePlan(plan?: Plan): plan is Plan {
   if (!plan || plan.needsMoreInfo || plan.passes.length === 0) {
     return false;
   }

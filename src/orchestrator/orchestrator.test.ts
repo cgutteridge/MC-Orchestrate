@@ -518,6 +518,113 @@ describe("Orchestrator", () => {
     });
   });
 
+  it("falls back to heuristic bigger follow-up when AI provider fails", async () => {
+    let callCount = 0;
+    const provider: ChatProvider = {
+      name: "test",
+      async chat() {
+        callCount += 1;
+        if (callCount === 1) {
+          return JSON.stringify({
+            intent: "build_structure",
+            targetWorld: "world",
+            targetRegion: {
+              world: "world",
+              min: { x: 0, y: 64, z: 0 },
+              max: { x: 0, y: 66, z: 0 },
+            },
+            assumptions: [],
+            passes: [
+              {
+                name: "base",
+                goal: "Build structure.",
+                primitives: [
+                  {
+                    type: "fill_cuboid",
+                    from: { x: 0, y: 64, z: 0 },
+                    to: { x: 0, y: 66, z: 0 },
+                    block: "minecraft:white_wool",
+                  },
+                ],
+              },
+            ],
+            reply: "Built.",
+            needsMoreInfo: false,
+          });
+        }
+        throw new Error("provider unavailable");
+      },
+    };
+
+    const bridge = new FakeBridge();
+    const orchestrator = new Orchestrator(
+      bridge as never,
+      "/Users/cjg/Projects/MC-Orchestrate/minecraft-server",
+      provider,
+    );
+
+    await orchestrator.handleChatCommand({
+      ...request,
+      message: "build me a small column",
+      localContext: {
+        ...request.localContext,
+        targetBlock: {
+          x: 0,
+          y: 64,
+          z: 0,
+          type: "minecraft:short_grass",
+        },
+      },
+      recentMessages: [],
+    });
+
+    const second = await orchestrator.handleChatCommand({
+      ...request,
+      message: "make it bigger by 1",
+      localContext: {
+        ...request.localContext,
+        targetBlock: {
+          x: 0,
+          y: 64,
+          z: 0,
+          type: "minecraft:short_grass",
+        },
+      },
+      recentMessages: [],
+    });
+
+    expect(second.status).toBe("executed");
+    expect(second.reply).toContain("1 blocks bigger");
+    const fillCommands = bridge.commands.filter((command) => command.kind === "fill");
+    expect(fillCommands).toHaveLength(5);
+    expect(fillCommands.slice(1)).toEqual([
+      {
+        kind: "fill",
+        from: { x: -1, y: 64, z: -1 },
+        to: { x: 1, y: 66, z: -1 },
+        block: "minecraft:white_wool",
+      },
+      {
+        kind: "fill",
+        from: { x: -1, y: 64, z: 1 },
+        to: { x: 1, y: 66, z: 1 },
+        block: "minecraft:white_wool",
+      },
+      {
+        kind: "fill",
+        from: { x: -1, y: 64, z: 0 },
+        to: { x: -1, y: 66, z: 0 },
+        block: "minecraft:white_wool",
+      },
+      {
+        kind: "fill",
+        from: { x: 1, y: 64, z: 0 },
+        to: { x: 1, y: 66, z: 0 },
+        block: "minecraft:white_wool",
+      },
+    ]);
+  });
+
   it("reports the failed execution step back to Minecraft instead of masking it", async () => {
     const provider: ChatProvider = {
       name: "test",

@@ -48,7 +48,7 @@ Research-informed execution lane based on `deep-research-report.md`.
 
 2. Follow-Up Context Reliability and Diagnostics
    - Subtasks:
-     - Finish carry-over tests for follow-ups (`bigger`, `oak`, `I can't see it`, `taller by N`).
+     - Finish carry-over tests for follow-ups (`I can't see it`, `taller by N` edge phrasing).
      - Keep request-id correlation stable across planner/provider/bridge logs.
      - Preserve last-built-structure context behavior under non-structure commands.
    - Notes:

@@ -10,7 +10,16 @@
      - Evidence: `npm test`, `npm run build`
      - Evidence: commit `8922aec`
 
-2. Follow-Up Structure Context Hardening
+2. Generic Bigger Follow-Up Fallback
+   - Subtasks:
+     - Added heuristic follow-up handling for `bigger`/`larger` requests using the last bot-built structure context.
+     - Expanded footprint horizontally as deterministic ring fills while preserving prior structure height and primary material.
+     - Added orchestrator fallback coverage for AI-provider failure on bigger follow-up turns.
+   - Notes:
+     - Completed: 2026-03-21
+     - Evidence: `npm test`, `npm run build`
+
+3. Follow-Up Structure Context Hardening
    - Subtasks:
      - Prefer extending the last bot-built structure for `taller`/`higher` follow-ups instead of relying on tower keyword heuristics.
      - Preserve previous footprint and primary material when extending.
@@ -20,7 +29,7 @@
      - Evidence: `npm test`, `npm run build`, `npm run plugin:build`
      - Evidence: commit `8b3194d`
 
-3. Material Slot Resolver v1
+4. Material Slot Resolver v1
    - Subtasks:
      - Added symbolic material-slot support in resolver (`material:wall`, `material:roof`, `material:floor`, `material:trim`, `material:detail`, `material:wood`, `material:stone`, `material:glass`, `material:wool`).
      - Added deterministic context-aware slot ranking using nearby block histogram and player material hints.
