@@ -1,0 +1,86 @@
+#!/usr/bin/node
+const net = require('node:net');
+const client = net.createConnection({ port: 7070 }, () => {
+  console.log('connected to server!');
+});
+
+client.on('data', (data) => {
+  // Handle data from the server, if necessary
+});
+
+client.on('end', () => {
+  console.log('disconnected from server');
+  process.exit(0);
+});
+
+const commandQueue = [];
+let isProcessingQueue = false;
+
+client.on('connect', () => {
+  draw3DPig(10, 150, 100); // Adjust starting coordinates as needed
+});
+
+function draw3DPig(x, y, z) {
+  // Simple 3D pig design (simplified for example purposes)
+  const depth = 4; // Depth of the 3D pig
+  for (let d = 0; d < depth; d++) {
+    // Call drawPig function with adjusted z coordinate for depth
+    drawPig(x, y, z + d);
+  }
+}
+
+function drawPig(x, y, z) {
+  // Simplified pig design for brevity
+  const pigDesign = [
+    "PPPPP",
+    "PBBBP",
+    "PPPPP",
+    " PPP "
+  ];
+
+  pigDesign.forEach((line, row) => {
+    for (let col = 0; col < line.length; col++) {
+      const blockType = getBlockType(line[col]);
+      if (blockType) {
+        enqueueCommand(`setBlock ${x + col} ${y + pigDesign.length - 1 - row} ${z} ${blockType}\n`);
+      }
+    }
+  });
+  processQueue();
+}
+
+function getBlockType(char) {
+  switch (char) {
+    case 'P': return "minecraft:pink_wool";
+    case 'B': return "minecraft:black_wool";
+    default: return null;
+  }
+}
+
+function enqueueCommand(command) {
+  commandQueue.push(command);
+}
+
+function processQueue() {
+  if (isProcessingQueue || commandQueue.length === 0) {
+    return;
+  }
+  isProcessingQueue = true;
+  const intervalId = setInterval(() => {
+    if (commandQueue.length === 0) {
+      clearInterval(intervalId);
+      isProcessingQueue = false;
+      return;
+    }
+    const command = commandQueue.shift();
+    client.write(command);
+  }, 100); // Adjust delay as necessary to avoid flooding the server
+}
+
+function setBlock(x, y, z, type) {
+  enqueueCommand(`setBlock ${x} ${y} ${z} ${type}\n`);
+  if (!isProcessingQueue) {
+    processQueue();
+  }
+}
+
