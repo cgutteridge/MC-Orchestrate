@@ -10,6 +10,9 @@ const KNOWN_BLOCKS = [
   "dirt",
 ] as const;
 
+/**
+ * Extracts a requested block height from freeform player text when present.
+ */
 export function parseRequestedHeight(message: string): number | undefined {
   const match = message.match(/(\d+)\s*block/);
   if (!match) {
@@ -20,6 +23,9 @@ export function parseRequestedHeight(message: string): number | undefined {
   return Number.isFinite(value) ? Math.max(1, Math.min(16, value)) : undefined;
 }
 
+/**
+ * Extracts a supported material hint from freeform player text when present.
+ */
 export function parseRequestedBlock(message: string): string | undefined {
   const lowered = message.toLowerCase();
   const found = KNOWN_BLOCKS.find((candidate) =>
@@ -28,6 +34,9 @@ export function parseRequestedBlock(message: string): string | undefined {
   return found ? `minecraft:${found}` : undefined;
 }
 
+/**
+ * Computes a block anchor in front of the player based on their current look vector.
+ */
 export function anchorPoint(
   request: ChatCommandRequest,
   distance: number,
@@ -43,6 +52,9 @@ export function anchorPoint(
   };
 }
 
+/**
+ * Rounds a floating-point position into the block cell that contains it.
+ */
 export function asBlock(position: { x: number; y: number; z: number }): Point {
   return {
     x: Math.round(position.x),
@@ -51,6 +63,9 @@ export function asBlock(position: { x: number; y: number; z: number }): Point {
   };
 }
 
+/**
+ * Creates the smallest default target region centered on the speaking player.
+ */
 export function defaultRegion(request: ChatCommandRequest): Region {
   const point = asBlock(request.player.position);
   return {
@@ -60,6 +75,9 @@ export function defaultRegion(request: ChatCommandRequest): Region {
   };
 }
 
+/**
+ * Reorders cuboid corners so `from` is always the minimum point and `to` the maximum point.
+ */
 export function normalizeCuboid(from: Point, to: Point): {
   from: Point;
   to: Point;
@@ -78,6 +96,9 @@ export function normalizeCuboid(from: Point, to: Point): {
   };
 }
 
+/**
+ * Returns a target region with normalized min/max bounds.
+ */
 export function normalizeRegion(region: Region): Region {
   const normalized = normalizeCuboid(region.min, region.max);
   return {

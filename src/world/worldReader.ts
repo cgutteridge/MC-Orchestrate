@@ -4,14 +4,23 @@ import { parse } from "prismarine-nbt";
 
 type NbtSummary = Record<string, unknown>;
 
+/**
+ * Provides read-only access to world metadata and region listings on disk.
+ */
 export class WorldReader {
   constructor(private readonly minecraftDir: string) {}
 
+  /**
+   * Reads a summarized view of the world's `level.dat` file when available.
+   */
   async readLevelMetadata(worldName = "world"): Promise<NbtSummary | undefined> {
     const filePath = path.join(this.minecraftDir, worldName, "level.dat");
     return readNbtSummary(filePath);
   }
 
+  /**
+   * Reads a summarized view of a player's NBT metadata file when available.
+   */
   async readPlayerMetadata(playerUuid: string, worldName = "world"): Promise<NbtSummary | undefined> {
     const filePath = path.join(
       this.minecraftDir,
@@ -22,6 +31,9 @@ export class WorldReader {
     return readNbtSummary(filePath);
   }
 
+  /**
+   * Lists region files for the given world directory in sorted order.
+   */
   async listRegionFiles(worldName = "world"): Promise<string[]> {
     const regionDir = path.join(this.minecraftDir, worldName, "region");
     try {

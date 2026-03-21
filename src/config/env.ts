@@ -49,6 +49,9 @@ export type AppConfig = {
   };
 };
 
+/**
+ * Loads and validates environment-driven application configuration.
+ */
 export function loadConfig(): AppConfig {
   const parsed = Schema.parse(process.env);
   const azureConfigured =

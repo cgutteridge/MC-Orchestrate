@@ -1,5 +1,8 @@
 import type { ChatCommandRequest } from "../types/plugin.js";
 
+/**
+ * Builds the planner prompt/messages sent to the LLM for structured build planning.
+ */
 export function buildPlannerMessages(request: ChatCommandRequest) {
   const schemaGuide = {
     intent: "remove_tree | build_tower | build_house | unknown",

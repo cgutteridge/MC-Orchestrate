@@ -1,5 +1,8 @@
 import type { BridgeBatchBlock, BridgeCommand } from "./types.js";
 
+/**
+ * Converts a typed bridge command into the line-oriented protocol used on the TCP socket.
+ */
 export function serializeBridgeCommand(command: BridgeCommand): string[] {
   switch (command.kind) {
     case "say":
@@ -21,6 +24,9 @@ export function serializeBridgeCommand(command: BridgeCommand): string[] {
   }
 }
 
+/**
+ * Normalizes batch block coordinates before queueing them for bridge execution.
+ */
 export function normalizeBatchBlocks(blocks: BridgeBatchBlock[]): BridgeBatchBlock[] {
   return blocks.map((block) => ({
     x: Math.trunc(block.x),

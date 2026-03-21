@@ -14,6 +14,9 @@ type BridgeServerOptions = {
   javaBin?: string;
 };
 
+/**
+ * Owns the local Minecraft server process and the bounded bridge command protocol.
+ */
 export class BridgeServer {
   private readonly server: Server;
   private readonly sockets = new Set<Socket>();
@@ -36,6 +39,9 @@ export class BridgeServer {
     this.server = net.createServer((socket) => this.handleConnection(socket));
   }
 
+  /**
+   * Starts the Minecraft child process and the TCP bridge listener.
+   */
   async start(): Promise<void> {
     this.minecraft = this.spawnMinecraft();
 
@@ -76,6 +82,9 @@ export class BridgeServer {
     });
   }
 
+  /**
+   * Executes a validated bridge command and records it in the action log when context is provided.
+   */
   async executeCommand(
     command: BridgeCommand,
     context?: { requestId: string; playerUuid: string; playerName: string },

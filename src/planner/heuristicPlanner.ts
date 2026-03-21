@@ -7,6 +7,9 @@ import {
 } from "./requestContext.js";
 import { PlanSchema, type Plan } from "./schema.js";
 
+/**
+ * Returns a deterministic fallback plan for the small set of built-in v1 commands.
+ */
 export function buildHeuristicPlan(
   request: ChatCommandRequest,
 ): Plan | undefined {

@@ -2,6 +2,9 @@ import { loadConfig } from "../../config/env.js";
 import { AzureOpenAIChatProvider } from "./azureOpenAIClient.js";
 import type { ChatProvider } from "./types.js";
 
+/**
+ * Creates the configured chat provider, or returns `undefined` when AI planning is disabled.
+ */
 export function createChatProvider(
   debug = false,
   logPath?: string,

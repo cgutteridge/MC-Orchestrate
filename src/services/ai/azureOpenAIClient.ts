@@ -6,6 +6,9 @@ import type {
 } from "./types.js";
 import { extractJsonValue, parseJsonStrict } from "./json.js";
 
+/**
+ * Minimal Azure OpenAI chat client wrapper used by the planner.
+ */
 export class AzureOpenAIChatProvider implements ChatProvider {
   public readonly name = "azure-openai";
   private readonly timeoutMs = 20000;
@@ -20,6 +23,9 @@ export class AzureOpenAIChatProvider implements ChatProvider {
     private readonly contentFilterPolicyId?: string,
   ) {}
 
+  /**
+   * Sends the planner message set to Azure OpenAI and returns the raw assistant content.
+   */
   async chat(
     messages: ChatMessage[],
     options?: ChatCompletionOptions,

@@ -54,6 +54,9 @@ const RequestSchema: ZodType<ChatCommandRequest> = z.object({
 
 const MAX_REQUEST_BYTES = 512 * 1024;
 
+/**
+ * Starts the localhost HTTP API used by the Spigot plugin to submit requests.
+ */
 export function createHttpServer(
   orchestrator: Orchestrator,
   host: string,

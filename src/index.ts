@@ -35,6 +35,9 @@ async function main(): Promise<void> {
   );
 }
 
+/**
+ * Bootstraps the local bridge, planner, and HTTP entrypoint for the repo.
+ */
 main().catch((error) => {
   process.stderr.write(
     `${error instanceof Error ? error.stack ?? error.message : String(error)}\n`,

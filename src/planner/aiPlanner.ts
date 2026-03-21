@@ -10,6 +10,9 @@ import {
 } from "./requestContext.js";
 import { IntentSchema, PlanSchema, type Plan } from "./schema.js";
 
+/**
+ * Builds a validated plan from an LLM response, repairing minor schema omissions when possible.
+ */
 export async function buildAiPlan(
   provider: ChatProvider,
   request: ChatCommandRequest,

@@ -7,6 +7,9 @@ import { compilePlanToBridgeCommands } from "../planner/compilePlan.js";
 import { buildHeuristicPlan } from "../planner/heuristicPlanner.js";
 import { validatePlanSafety } from "../planner/safety.js";
 
+/**
+ * Coordinates chat requests, planning, safety checks, and bridge execution.
+ */
 export class Orchestrator {
   private readonly worldReader: WorldReader;
 
@@ -18,6 +21,9 @@ export class Orchestrator {
     this.worldReader = new WorldReader(minecraftDir);
   }
 
+  /**
+   * Handles a single in-game chat command from the plugin boundary.
+   */
   async handleChatCommand(
     request: ChatCommandRequest,
   ): Promise<ChatCommandResponse> {

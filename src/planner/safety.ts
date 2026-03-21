@@ -6,6 +6,9 @@ const MAX_BLOCKS_PER_REQUEST = 2048;
 const MAX_REGION_WIDTH = 16;
 const MAX_REGION_HEIGHT = 32;
 
+/**
+ * Enforces the v1 safety envelope for size, distance, and world locality.
+ */
 export function validatePlanSafety(
   request: ChatCommandRequest,
   plan: Plan,
