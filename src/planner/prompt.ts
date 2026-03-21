@@ -5,7 +5,7 @@ import type { ChatCommandRequest } from "../types/plugin.js";
  */
 export function buildPlannerMessages(request: ChatCommandRequest) {
   const schemaGuide = {
-    intent: "remove_tree | build_tower | build_house | unknown",
+    intent: "string (snake_case label, e.g. build_bridge; use unknown when unclear)",
     targetWorld: "string",
     targetRegion: {
       world: "string",
@@ -74,11 +74,14 @@ export function buildPlannerMessages(request: ChatCommandRequest) {
           "The request includes recentMessages, which are the player's prior recent bot prompts in chronological order.",
           "Use recentMessages to resolve clarification follow-ups and short replies, but treat message as the latest instruction.",
           "If the request is ambiguous, unsupported, or under-specified, return needsMoreInfo=true, passes=[], and a short clarification.",
-          "Supported intents are remove_tree, build_tower, build_house, unknown.",
+          "Intent is a short snake_case label describing the requested operation.",
+          "Use unknown when the request is ambiguous or unsupported.",
           "Only emit primitive types that include all required fields shown in the schema guide.",
           "clear_region does not include a block field.",
           "Prefer concrete modern block ids such as minecraft:oak_planks, minecraft:oak_fence, minecraft:grass_block, minecraft:stone, minecraft:cobblestone, minecraft:glass, and minecraft:white_wool.",
           "Do not use vague or obsolete block names like minecraft:wood or minecraft:wool when a concrete default variant is intended.",
+          "You may use symbolic material slots in block fields when exact materials are unclear: material:wall, material:roof, material:floor, material:trim, material:detail, material:wood, material:stone, material:glass, material:wool.",
+          "When using symbolic slots, keep them semantically correct for the primitive's purpose (for example roof uses material:roof).",
           "Do not invent coordinates, regions, or target areas when asking for clarification.",
           "Use short player-facing reply text.",
           `Schema guide: ${JSON.stringify(schemaGuide)}`,

@@ -44,11 +44,135 @@ class FakeBridge {
 }
 
 describe("Orchestrator", () => {
-  it("uses orchestrator-side recent history when plugin recentMessages are empty", async () => {
+  it("falls back to heuristic follow-up planning when AI provider fails", async () => {
+    let callCount = 0;
+    const provider: ChatProvider = {
+      name: "test",
+      async chat() {
+        callCount += 1;
+        if (callCount === 1) {
+          return JSON.stringify({
+            intent: "build_structure",
+            targetWorld: "world",
+            targetRegion: {
+              world: "world",
+              min: { x: 0, y: 64, z: 0 },
+              max: { x: 0, y: 68, z: 0 },
+            },
+            assumptions: [],
+            passes: [
+              {
+                name: "base",
+                goal: "Build structure.",
+                primitives: [
+                  {
+                    type: "fill_cuboid",
+                    from: { x: 0, y: 64, z: 0 },
+                    to: { x: 0, y: 68, z: 0 },
+                    block: "minecraft:white_wool",
+                  },
+                ],
+              },
+            ],
+            reply: "Built.",
+            needsMoreInfo: false,
+          });
+        }
+        return "not json";
+      },
+    };
+
     const bridge = new FakeBridge();
     const orchestrator = new Orchestrator(
       bridge as never,
       "/Users/cjg/Projects/MC-Orchestrate/minecraft-server",
+      provider,
+    );
+
+    await orchestrator.handleChatCommand({
+      ...request,
+      message: "build me a column",
+      localContext: {
+        ...request.localContext,
+        targetBlock: {
+          x: 0,
+          y: 64,
+          z: 0,
+          type: "minecraft:short_grass",
+        },
+      },
+      recentMessages: [],
+    });
+
+    const second = await orchestrator.handleChatCommand({
+      ...request,
+      message: "make it taller by 2",
+      localContext: {
+        ...request.localContext,
+        targetBlock: {
+          x: 0,
+          y: 64,
+          z: 0,
+          type: "minecraft:short_grass",
+        },
+      },
+      recentMessages: [],
+    });
+
+    expect(second.status).toBe("executed");
+    expect(second.reply).toContain("2 blocks taller");
+    const fillCommands = bridge.commands.filter((command) => command.kind === "fill");
+    expect(fillCommands).toHaveLength(2);
+    expect(fillCommands[1]).toEqual({
+      kind: "fill",
+      from: { x: 0, y: 69, z: 0 },
+      to: { x: 0, y: 70, z: 0 },
+      block: "minecraft:white_wool",
+    });
+  });
+
+  it("uses orchestrator-side recent history when plugin recentMessages are empty", async () => {
+    const bridge = new FakeBridge();
+    let callCount = 0;
+    const provider: ChatProvider = {
+      name: "test",
+      async chat() {
+        callCount += 1;
+        if (callCount > 1) {
+          throw new Error("provider unavailable");
+        }
+        return JSON.stringify({
+          intent: "build_tower",
+          targetWorld: "world",
+          targetRegion: {
+            world: "world",
+            min: { x: 0, y: 64, z: 0 },
+            max: { x: 0, y: 68, z: 0 },
+          },
+          assumptions: [],
+          passes: [
+            {
+              name: "tower_column",
+              goal: "Build the tower shaft.",
+              primitives: [
+                {
+                  type: "fill_cuboid",
+                  from: { x: 0, y: 64, z: 0 },
+                  to: { x: 0, y: 68, z: 0 },
+                  block: "minecraft:white_wool",
+                },
+              ],
+            },
+          ],
+          reply: "Building a 5-block tower.",
+          needsMoreInfo: false,
+        });
+      },
+    };
+    const orchestrator = new Orchestrator(
+      bridge as never,
+      "/Users/cjg/Projects/MC-Orchestrate/minecraft-server",
+      provider,
     );
 
     await orchestrator.handleChatCommand({
@@ -96,9 +220,77 @@ describe("Orchestrator", () => {
 
   it("keeps the last built structure context across non-structure commands", async () => {
     const bridge = new FakeBridge();
+    const provider: ChatProvider = {
+      name: "test",
+      async chat(messages) {
+        const userPrompt = messages.find((message) => message.role === "user")?.content ?? "";
+        const isTallerFollowUp = userPrompt.includes("\"message\": \"make it taller by 2\"");
+        if (isTallerFollowUp) {
+          throw new Error("provider unavailable");
+        }
+        const isTree = userPrompt.includes("\"message\": \"delete this tree\"");
+        if (isTree) {
+          return JSON.stringify({
+            intent: "remove_tree",
+            targetWorld: "world",
+            targetRegion: {
+              world: "world",
+              min: { x: 0, y: 64, z: 0 },
+              max: { x: 2, y: 72, z: 2 },
+            },
+            assumptions: [],
+            passes: [
+              {
+                name: "remove_logs",
+                goal: "Remove logs.",
+                primitives: [
+                  {
+                    type: "replace_in_region",
+                    from: { x: 0, y: 64, z: 0 },
+                    to: { x: 2, y: 72, z: 2 },
+                    fromBlock: "minecraft:oak_log",
+                    toBlock: "minecraft:air",
+                  },
+                ],
+              },
+            ],
+            reply: "Removing that tree.",
+            needsMoreInfo: false,
+          });
+        }
+
+        return JSON.stringify({
+          intent: "build_tower",
+          targetWorld: "world",
+          targetRegion: {
+            world: "world",
+            min: { x: 0, y: 64, z: 0 },
+            max: { x: 0, y: 68, z: 0 },
+          },
+          assumptions: [],
+          passes: [
+            {
+              name: "tower_column",
+              goal: "Build the tower shaft.",
+              primitives: [
+                {
+                  type: "fill_cuboid",
+                  from: { x: 0, y: 64, z: 0 },
+                  to: { x: 0, y: 68, z: 0 },
+                  block: "minecraft:white_wool",
+                },
+              ],
+            },
+          ],
+          reply: "Building a 5-block tower.",
+          needsMoreInfo: false,
+        });
+      },
+    };
     const orchestrator = new Orchestrator(
       bridge as never,
       "/Users/cjg/Projects/MC-Orchestrate/minecraft-server",
+      provider,
     );
 
     await orchestrator.handleChatCommand({

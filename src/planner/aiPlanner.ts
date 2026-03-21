@@ -11,7 +11,7 @@ import {
   parseRequestedHeight,
   structureAnchorPoint,
 } from "./requestContext.js";
-import { IntentSchema, PlanSchema, type Intent, type Plan } from "./schema.js";
+import { PlanSchema, type Plan } from "./schema.js";
 
 /**
  * Builds a validated plan from an LLM response, repairing minor schema omissions when possible.
@@ -88,17 +88,14 @@ function repairLoosePlanCandidate(
     typeof candidate.clarification === "string"
       ? candidate.clarification
       : undefined;
-  const rawIntent =
-    IntentSchema.safeParse(candidate.intent).success
-      ? (candidate.intent as Intent)
-      : "unknown";
+  const rawIntent = normalizeIntentLabel(candidate.intent) ?? "unknown";
   let needsMoreInfo =
     candidate.needsMoreInfo === true || candidatePasses.length === 0;
 
-  if (!needsMoreInfo && shouldClarifyIntent(rawIntent, request)) {
+  if (!needsMoreInfo && shouldClarifyByAction(candidatePasses, request)) {
     needsMoreInfo = true;
     clarification =
-      "I can build a house, build a tower, or remove a tree. What would you like?";
+      "I need a clearer action. Tell me whether you want to build, remove, or modify something.";
   }
 
   const targetWorld = needsMoreInfo
@@ -252,32 +249,112 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
-const HOUSE_KEYWORDS = ["house", "cottage", "hut", "cabin", "home"];
-const TOWER_KEYWORDS = ["tower", "pillar", "column", "spire"];
-const TREE_KEYWORDS = ["tree", "trees", "log", "logs", "stump", "leaves"];
+const BUILD_ACTION_TOKENS = [
+  "build",
+  "make",
+  "create",
+  "construct",
+  "place",
+];
 
-function shouldClarifyIntent(intent: Intent, request: ChatCommandRequest): boolean {
-  if (intent === "unknown") {
+const REMOVE_ACTION_TOKENS = [
+  "remove",
+  "delete",
+  "clear",
+  "destroy",
+  "chop",
+  "cut",
+];
+
+function shouldClarifyByAction(
+  passes: Array<Record<string, unknown>>,
+  request: ChatCommandRequest,
+): boolean {
+  const context = [request.message, ...request.recentMessages].join(" ");
+  const requestAction = classifyRequestAction(context);
+  if (requestAction === "unknown") {
     return false;
   }
-
-  const context = [request.message, ...request.recentMessages].join(" ");
-  const matches =
-    intent === "build_house"
-      ? containsKeyword(context, HOUSE_KEYWORDS)
-      : intent === "build_tower"
-        ? containsKeyword(context, TOWER_KEYWORDS)
-        : intent === "remove_tree"
-          ? containsKeyword(context, TREE_KEYWORDS)
-          : false;
-
-  return !matches;
+  const planAction = classifyPlanAction(passes);
+  if (planAction === "unknown") {
+    return false;
+  }
+  return requestAction !== planAction;
 }
 
 function containsKeyword(message: string, keywords: string[]): boolean {
   return keywords.some((keyword) =>
     new RegExp(`\\b${escapeRegex(keyword)}\\b`, "i").test(message),
   );
+}
+
+function classifyRequestAction(message: string): "build" | "remove" | "unknown" {
+  const hasBuildAction = containsKeyword(message, BUILD_ACTION_TOKENS);
+  const hasRemoveAction = containsKeyword(message, REMOVE_ACTION_TOKENS);
+  if (hasBuildAction && !hasRemoveAction) {
+    return "build";
+  }
+  if (hasRemoveAction && !hasBuildAction) {
+    return "remove";
+  }
+  return "unknown";
+}
+
+function classifyPlanAction(
+  passes: Array<Record<string, unknown>>,
+): "build" | "remove" | "unknown" {
+  let buildSignals = 0;
+  let removeSignals = 0;
+
+  for (const pass of passes) {
+    const primitives = Array.isArray(pass.primitives) ? pass.primitives : [];
+    for (const primitive of primitives) {
+      if (!isRecord(primitive) || typeof primitive.type !== "string") {
+        continue;
+      }
+      switch (primitive.type) {
+        case "set_block":
+        case "fill_cuboid":
+        case "hollow_cuboid":
+        case "cylinder":
+          buildSignals += 1;
+          break;
+        case "clear_region":
+          removeSignals += 1;
+          break;
+        case "replace_in_region":
+          if (primitive.toBlock === "minecraft:air") {
+            removeSignals += 1;
+          } else {
+            buildSignals += 1;
+          }
+          break;
+      }
+    }
+  }
+
+  if (buildSignals > 0 && removeSignals === 0) {
+    return "build";
+  }
+  if (removeSignals > 0 && buildSignals === 0) {
+    return "remove";
+  }
+  return "unknown";
+}
+
+function normalizeIntentLabel(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  if (normalized.length === 0) {
+    return undefined;
+  }
+  return normalized;
 }
 
 function escapeRegex(value: string): string {

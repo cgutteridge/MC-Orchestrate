@@ -37,11 +37,15 @@ export class Orchestrator {
     const previousPlan = this.lastBuiltStructurePlanByPlayer.get(request.player.uuid);
 
     try {
-      let plan =
-        buildHeuristicPlan(planningRequest, previousPlan) ??
-        (this.provider
-          ? await buildAiPlan(this.provider, planningRequest, this.plannerLogger)
-          : undefined);
+      let plan: Plan | undefined;
+      if (this.provider) {
+        try {
+          plan = await buildAiPlan(this.provider, planningRequest, this.plannerLogger);
+        } catch {
+          plan = undefined;
+        }
+      }
+      plan ??= buildHeuristicPlan(planningRequest, previousPlan);
 
       if (!plan) {
         const levelSummary = await this.worldReader.readLevelMetadata();
@@ -172,10 +176,6 @@ export class Orchestrator {
 }
 
 function isBuiltStructurePlan(plan: Plan): boolean {
-  if (plan.intent === "remove_tree" || plan.intent === "unknown") {
-    return false;
-  }
-
   for (const pass of plan.passes) {
     for (const primitive of pass.primitives) {
       if (

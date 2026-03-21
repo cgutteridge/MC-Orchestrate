@@ -1,11 +1,9 @@
 import { z } from "zod";
 
-export const IntentSchema = z.enum([
-  "remove_tree",
-  "build_tower",
-  "build_house",
-  "unknown",
-]);
+export const IntentSchema = z
+  .string()
+  .min(1)
+  .regex(/^[a-z0-9_]+$/);
 
 export const PointSchema = z.object({
   x: z.number().int(),

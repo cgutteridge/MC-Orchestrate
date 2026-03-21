@@ -57,6 +57,6 @@ export type ChatCommandResponse = {
   status: "executed" | "needs_more_info" | "rejected" | "error";
   reply: string;
   requestId: string;
-  intent: "remove_tree" | "build_tower" | "build_house" | "unknown";
+  intent: string;
   executedActions?: number;
 };

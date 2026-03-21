@@ -32,6 +32,7 @@ describe("buildPlannerMessages", () => {
     const messages = buildPlannerMessages(request);
 
     expect(messages[0]?.content).toContain("recentMessages");
+    expect(messages[0]?.content).toContain("material:wall");
     expect(messages[1]?.content).toContain("\"recentMessages\"");
     expect(messages[1]?.content).toContain("make me a cottage");
     expect(messages[1]?.content).toContain("actually smaller");

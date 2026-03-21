@@ -299,7 +299,7 @@ describe("buildAiPlan", () => {
     });
   });
 
-  it("forces clarification when intent does not match the player request", async () => {
+  it("forces clarification when plan action mismatches the player request", async () => {
     const provider: ChatProvider = {
       name: "test",
       async chat() {
@@ -327,11 +327,47 @@ describe("buildAiPlan", () => {
 
     const plan = await buildAiPlan(provider, {
       ...request,
-      message: "write me a poem",
+      message: "delete this tree",
     });
 
     expect(plan.needsMoreInfo).toBe(true);
     expect(plan.passes).toEqual([]);
-    expect(plan.clarification).toContain("build a house");
+    expect(plan.clarification).toContain("clearer action");
+  });
+
+  it("does not force clarification for generic build wording without conflicting intent hints", async () => {
+    const provider: ChatProvider = {
+      name: "test",
+      async chat() {
+        return JSON.stringify({
+          intent: "build_house",
+          passes: [
+            {
+              name: "shell",
+              goal: "Build something.",
+              primitives: [
+                {
+                  type: "fill_cuboid",
+                  from: { x: -51, y: 113, z: -17 },
+                  to: { x: -49, y: 117, z: -15 },
+                  block: "minecraft:stone",
+                },
+              ],
+            },
+          ],
+          reply: "Building it.",
+          needsMoreInfo: false,
+        });
+      },
+    };
+
+    const plan = await buildAiPlan(provider, {
+      ...request,
+      message: "make me a cabin here",
+    });
+
+    expect(plan.needsMoreInfo).toBe(false);
+    expect(plan.intent).toBe("build_house");
+    expect(plan.passes).toHaveLength(1);
   });
 });

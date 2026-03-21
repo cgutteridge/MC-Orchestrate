@@ -1,103 +1,179 @@
 # Tasks
 
+## Tracking Protocol
+
+- Status sections are lifecycle buckets:
+  - `Now`: active implementation work.
+  - `Next`: queued after active work.
+  - `Later`: valid backlog items not scheduled yet.
+  - `Done`: completed and verified work only.
+- Every task in `Now`/`Next`/`Later` should include:
+  - Title line
+  - `Subtasks` list
+  - `Notes` list
+- Completion rule:
+  - Move completed work into `Done`; do not leave completed items mixed into active queues.
+  - Add completion date (`YYYY-MM-DD`) and evidence (tests, logs, commit id).
+  - If only part of a task is complete, keep it in place and note completed slices explicitly.
+- Detail policy:
+  - Keep this file concise for daily execution.
+  - Store detailed specs, acceptance criteria, and rollback plans in the `tasks/` folder.
+
+## Backlog Layout
+
+- Backlog index: `tasks/README.md`
+- Phase 1 foundations: `tasks/phase-1-foundations.md`
+- Phase 2 terrain and blending: `tasks/phase-2-terrain-blending.md`
+- Phase 3 retrieval/refinement/undo: `tasks/phase-3-retrieval-refinement-undo.md`
+- World mutation path investigation: `tasks/world-mutation-path.md`
+- Open questions and risks: `tasks/open-questions.md`
+
 ## Now
 
-1. Planner Contract Hardening
-   - Subtasks:
-     - Align AI planner prompt and executor schema exactly so primitives use matching field names and shapes end to end.
-     - Stop coercing unrelated requests into `build_house` or other nearest-match intents.
-     - Strip or reject invented target regions and coordinates when the model is only asking for clarification.
-     - Review `logs/ai-planner.jsonl` and `logs/ai-provider.log` after each planner change until false positives are removed.
-   - Notes:
-     - This task is complete only when unsupported/ambiguous requests consistently fail closed to clarification.
+Research-informed execution lane based on `deep-research-report.md`.
 
-2. Material Resolution Pipeline
+1. Phase 1 Foundations Execution
    - Subtasks:
-     - Keep a dedicated material-resolution stage between planning and execution.
-     - Normalize both heuristic and AI plans through one material pipeline before compiling bridge commands.
-     - Keep and evolve a small approved starter palette (e.g., `wool`, `wood`, `stone bricks` -> valid ids).
-     - Add a token-efficient block-selection system so plans can use a broad real Minecraft block set without pasting huge block lists into prompts.
-     - Reject or clarify under-specified decorative/material requests instead of inventing invalid/obsolete block ids.
-     - Teach planner prompts to emit either concrete block ids or symbolic material slots that the resolver can map safely.
+     - Execute `tasks/phase-1-foundations.md` in this order:
+       - Material Knowledge Base + palette resolver
+       - DIG schema/persistence + revision patching
+       - Deterministic compiler for core templates
+       - Planner contract and semantic safety checks
+     - Keep deterministic outputs and bounded token behavior as hard requirements.
+     - Wire acceptance tests and feature flags before broad rollout.
    - Notes:
-     - Resolution failures should return clarification, never silent fallback to risky block ids.
-     - Block variety should improve while prompt size remains bounded.
+     - This is the highest-value lane and should stay active until phase exit criteria pass.
+     - Keep prompts free of global material catalogs.
 
-3. Terrain Snapshot and Site Context
+2. Follow-Up Context Reliability and Diagnostics
    - Subtasks:
-     - Add terrain snapshot generation in the Spigot plugin.
-     - Extend plugin payloads with surface height, top blocks, obstacles, and bounded occupancy summary.
-     - Teach the planner to use terrain data for site preparation before building.
+     - Finish carry-over tests for follow-ups (`bigger`, `oak`, `I can't see it`, `taller by N`).
+     - Keep request-id correlation stable across planner/provider/bridge logs.
+     - Preserve last-built-structure context behavior under non-structure commands.
    - Notes:
-     - Keep payload size bounded and useful for near-field planning.
+     - This directly affects user trust and test velocity.
 
-4. Build Primitive and Heuristic Coverage
+3. Azure Planner Path Baseline Validation
    - Subtasks:
-     - Add primitives: plane, dome, ramp, tunnel, and roof helpers.
-     - Improve heuristic `build_house` so it adapts to uneven terrain instead of assuming flat ground.
+     - Run real Azure path with representative prompts and collect provider traces.
+     - Replay traces against schema and semantic checks.
+     - Record fixtures for regression use after each major planner change.
    - Notes:
-     - Add focused regression tests for each new primitive and anchoring case.
+     - Keep local heuristic fallback behavior unchanged when Azure path is unavailable.
 
-5. Azure Planner Path Validation
+4. World Mutation Path Decision Prep
    - Subtasks:
-     - Exercise the Azure planner path with a real `.env`.
-     - Validate structured JSON responses against the pass-based schema.
+     - Maintain current-path documentation (`tasks/world-mutation-path.md`).
+     - Define acceptance criteria for any plugin-API migration path.
+     - Produce a decision record comparing command-path vs plugin-API vs hybrid execution.
    - Notes:
-     - Capture representative provider traces for regression checks.
+     - Do not begin risky migration work until decision criteria are agreed.
+
+5. Open Questions Resolution
+   - Subtasks:
+     - Resolve decision-blocking items in `tasks/open-questions.md`:
+       - server target scope
+       - mutation backend direction
+       - interiors scope now vs later
+       - hard safety envelope
+       - style-lock policy across refinements
+     - Track each resolution in backlog notes before dependent implementation starts.
+   - Notes:
+     - Unresolved questions should block only the dependent tasks, not all work.
 
 6. Backlog and Code Review Hygiene
    - Subtasks:
-     - Run regular code reviews on active TypeScript/plugin paths and fix small issues early.
-     - Add newly discovered defects, cleanup work, and design follow-ups to this backlog as they are confirmed.
+     - Run periodic review passes on planner/orchestrator/plugin paths.
+     - Add concrete defects and follow-up actions to this backlog immediately.
+     - Move completed work to `Done` with evidence.
    - Notes:
-     - Treat this as continuous work that supports all tasks above.
+     - Keep this as continuous support work.
 
 ## Next
 
-- Expand the material resolver from a tiny starter palette to structured palettes for `stone`, `wood`, `glass`, `wool`, roofing, and detail blocks.
-- Extend the starter material palette to cover common AI outputs such as `fence`, `grass_block`, logs, planks, leaves, and other valid everyday blocks so the resolver does not over-clarify obviously buildable requests.
-- Build a compact block taxonomy/index (tags + constraints + style metadata) and use retrieval/ranking to present only top-N valid candidates to the model per material slot.
-- Add material-aware build specs so shapes and palettes are planned separately and can be swapped without regenerating geometry.
-- Fix live clarification carry-over so follow-up prompts such as `bigger`, `oak`, or `I can't see it` actually arrive with recent prompt history instead of showing `recentMessages: []` in provider logs.
-- Add iterative build execution with `observe -> replan -> continue` for multi-pass jobs.
-- Add a post-execution refinement loop where the planner receives the altered zone snapshot and can either approve the result or return a revision.
-- Support refinement revisions as either full-area replacement plans or sparse per-block delta edits, then compile both through the same safety/material pipeline.
-- Add richer build specs for house, basement, bridge, tunnel, and dome.
-- Add footprint sanity checks and minimum viable dimensions so requests like cottages, pens, and statues do not validate as tiny 2xN slivers or other obviously degenerate shapes.
-- Add pass ordering and semantic validation so destructive/site-prep steps happen before finish steps, preventing plans like `fill water` followed by `clear air` from undoing themselves.
-- Change plugin/site context capture so when there is no hit block the request includes a forward build-site sample and surface probe ahead of the player, instead of only sampling the tiny air cube around the player's body.
-- Support above-ground and below-ground target interpretation such as `under here`, `into this hill`, and `beneath my house`.
-- Distinguish surface, inset, underground, and elevated placement modes so anchors do not always snap builds to surface level.
-- Add better tree removal targeting for non-oak trees and irregular canopies.
-- Add execution progress replies and clearer error/clarification messages in game.
-- Surface per-step execution failures to the Minecraft player immediately instead of hiding them behind generic success/error replies.
-- Add cancellation or job interruption support for long-running builds.
-- Store an undo buffer for the last prompted AI change, treating the original plan plus all refinement-loop revisions as one undo unit.
+1. Phase 2 Terrain Context and Blending
+   - Subtasks:
+     - Execute `tasks/phase-2-terrain-blending.md`:
+       - TerrainContextCard generator
+       - Terrain-adaptive compile transforms
+       - Placement mode expansion
+       - Terrain-oriented primitive hardening
+   - Notes:
+     - Start once Phase 1 foundations are stable enough for terrain integration.
+
+2. Execution UX and Job Control
+   - Subtasks:
+     - Add progress/status messaging and explicit per-step failure surfacing.
+     - Add cancellation/interruption semantics for long-running jobs.
+     - Keep messaging tied to request-id and transaction context.
+   - Notes:
+     - Coordinate this with refinement-loop and undo design to avoid duplicate control paths.
+
+3. Benchmark and Evaluation Harness
+   - Subtasks:
+     - Build repeatable scenario fixtures for terrain and structure quality checks.
+     - Add automatic scoring for structural validity, terrain intrusion, palette diversity, and budget compliance.
+     - Add baseline-vs-new comparisons before enabling each major phase by default.
+   - Notes:
+     - Needed to validate deep-research recommendations objectively.
 
 ## Later
 
-- Add decorative/detail passes using palettes and style presets.
-- Add biome-aware and locally available material preferences so builds can adapt away from hard-coded global defaults.
-- Add support for preserving nearby player builds by detecting likely man-made structures.
-- Add terrain-aware support structures, retaining walls, and foundations automatically.
-- Add repair mode so the bot can inspect an incomplete build and finish or fix it.
-- Add build templates or saved specs that the planner can reuse.
+1. Phase 3 Retrieval, Refinement, and Undo
+   - Subtasks:
+     - Execute `tasks/phase-3-retrieval-refinement-undo.md`:
+       - Retrieval library and bounded prompt injection
+       - Bounded refinement loop with DIG patches
+       - Transaction log and undo buffer
+       - Material variety quality gates
+   - Notes:
+     - Keep rollout gated behind benchmark and safety outcomes.
+
+2. Decorative and Biome Style Expansion
+   - Subtasks:
+     - Add richer decorative/detail passes and style presets.
+     - Expand biome-aware material/style preferences.
+     - Add repair mode and reusable build templates/specs.
+   - Notes:
+     - Keep this separate from core correctness and safety milestones.
+
+3. Nearby Build Preservation
+   - Subtasks:
+     - Add detection for likely player-made nearby structures.
+     - Add avoidance/protection policies during planning and execution.
+   - Notes:
+     - Requires stable terrain/context and safety metadata.
+
+## Done
+
+1. Follow-Up Structure Context Hardening
+   - Subtasks:
+     - Prefer extending the last bot-built structure for `taller`/`higher` follow-ups instead of relying on tower keyword heuristics.
+     - Preserve previous footprint and primary material when extending.
+     - Keep non-structure commands from overwriting the stored structure follow-up context.
+   - Notes:
+     - Completed: 2026-03-21
+     - Evidence: `npm test`, `npm run build`, `npm run plugin:build`
+     - Evidence: commit `8b3194d`
+
+2. Material Slot Resolver v1
+   - Subtasks:
+     - Added symbolic material-slot support in resolver (`material:wall`, `material:roof`, `material:floor`, `material:trim`, `material:detail`, `material:wood`, `material:stone`, `material:glass`, `material:wool`).
+     - Added deterministic context-aware slot ranking using nearby block histogram and player material hints.
+     - Expanded supported palette aliases for roof variants (`spruce_stairs`, `stone_brick_stairs`, `cobblestone_stairs`).
+     - Updated planner prompt guidance to allow symbolic slots.
+     - Added regression tests for slot resolution, spruce preference, and unknown-slot clarification.
+   - Notes:
+     - Completed: 2026-03-21
+     - Evidence: `npm test`, `npm run build`
 
 ## Risks and Unknowns
 
-- The current local terrain snapshot is still too shallow for reliable large builds.
-- Complex underground work will need stronger solid/air/cave detection than the current context model provides.
-- Azure planner prompts may need iteration to keep responses strictly within the pass-based schema.
-- The current intent vocabulary is too narrow, which encourages the model to misclassify unrelated requests into the nearest supported build type.
-- Material names from user text and model output are currently much fuzzier than geometry, so block-id drift will keep causing execution failures until resolution is treated as a first-class planning step.
-- The current anchoring helpers still bias toward surface-adjacent placement, which will be wrong for requests that should be inset into terrain, underground, or suspended in the air.
-- The planner still accepts geometrically valid but semantically poor micro-builds, so schema validation alone is not enough to stop low-quality cottages, pens, and other tiny structures from executing.
-- Even when primitives validate individually, pass order can still be semantically wrong and lead to self-cancelling builds or cleared finished work.
-- When `targetBlock` is absent, the current payload still overrepresents the space around the player rather than the intended build area ahead, which biases the planner toward tiny floating or misplaced builds.
-- Large `batchSet` payloads may need chunking if builds get much more ambitious.
+- Detailed risk register and unresolved decisions are tracked in `tasks/open-questions.md`.
+- Keep this section as a short pointer; maintain detailed risk notes in the dedicated file.
 
 ## Working Practice
 
 - Treat code review as recurring engineering work, not a one-off phase near release.
-- Prefer fixing small structural issues when found instead of letting them accumulate into broad cleanup passes.
-- Record follow-up issues here when they are real and actionable, even if they are not part of the current coding task.
+- Prefer fixing small structural issues early instead of letting them accumulate.
+- Keep this file concise; push deep execution detail into the phase docs.

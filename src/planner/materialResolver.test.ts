@@ -189,4 +189,133 @@ describe("resolvePlanMaterials", () => {
       toBlock: "minecraft:air",
     });
   });
+
+  it("resolves symbolic material slots using local nearby context", () => {
+    const plan: Plan = {
+      intent: "build_house",
+      targetWorld: "world",
+      targetRegion: {
+        world: "world",
+        min: { x: 0, y: 64, z: 0 },
+        max: { x: 3, y: 68, z: 3 },
+      },
+      assumptions: [],
+      passes: [
+        {
+          name: "shell",
+          goal: "Build shell with symbolic slots.",
+          primitives: [
+            {
+              type: "fill_cuboid",
+              from: { x: 0, y: 64, z: 0 },
+              to: { x: 3, y: 67, z: 3 },
+              block: "material:wall",
+            },
+            {
+              type: "fill_cuboid",
+              from: { x: 0, y: 68, z: 0 },
+              to: { x: 3, y: 68, z: 3 },
+              block: "material:roof",
+            },
+          ],
+        },
+      ],
+      reply: "Building it.",
+      needsMoreInfo: false,
+    };
+
+    const resolved = resolvePlanMaterials(plan, {
+      ...request,
+      localContext: {
+        ...request.localContext,
+        nearbyBlocks: [
+          { x: 0, y: 64, z: 0, type: "minecraft:cobblestone" },
+          { x: 1, y: 64, z: 0, type: "minecraft:cobblestone" },
+          { x: 2, y: 64, z: 0, type: "minecraft:cobblestone" },
+          { x: 3, y: 64, z: 0, type: "minecraft:stone_bricks" },
+        ],
+      },
+    });
+
+    expect(resolved.needsMoreInfo).toBe(false);
+    expect(resolved.passes[0]?.primitives[0]).toMatchObject({
+      block: "minecraft:cobblestone",
+    });
+    expect(resolved.passes[0]?.primitives[1]).toMatchObject({
+      block: "minecraft:cobblestone_stairs",
+    });
+  });
+
+  it("resolves spruce roof slots from explicit player preference", () => {
+    const plan: Plan = {
+      intent: "build_house",
+      targetWorld: "world",
+      targetRegion: {
+        world: "world",
+        min: { x: 0, y: 64, z: 0 },
+        max: { x: 3, y: 68, z: 3 },
+      },
+      assumptions: [],
+      passes: [
+        {
+          name: "roof",
+          goal: "Build roof.",
+          primitives: [
+            {
+              type: "fill_cuboid",
+              from: { x: 0, y: 68, z: 0 },
+              to: { x: 3, y: 68, z: 3 },
+              block: "slot:roof",
+            },
+          ],
+        },
+      ],
+      reply: "Building it.",
+      needsMoreInfo: false,
+    };
+
+    const resolved = resolvePlanMaterials(plan, {
+      ...request,
+      message: "build me a spruce roof house",
+    });
+
+    expect(resolved.passes[0]?.primitives[0]).toMatchObject({
+      block: "minecraft:spruce_stairs",
+    });
+  });
+
+  it("asks for clarification when a symbolic material slot is unknown", () => {
+    const plan: Plan = {
+      intent: "build_house",
+      targetWorld: "world",
+      targetRegion: {
+        world: "world",
+        min: { x: 0, y: 64, z: 0 },
+        max: { x: 1, y: 65, z: 1 },
+      },
+      assumptions: [],
+      passes: [
+        {
+          name: "shell",
+          goal: "Build shell.",
+          primitives: [
+            {
+              type: "fill_cuboid",
+              from: { x: 0, y: 64, z: 0 },
+              to: { x: 1, y: 65, z: 1 },
+              block: "material:chimney",
+            },
+          ],
+        },
+      ],
+      reply: "Building it.",
+      needsMoreInfo: false,
+    };
+
+    const resolved = resolvePlanMaterials(plan, request);
+
+    expect(resolved.needsMoreInfo).toBe(true);
+    expect(resolved.passes).toEqual([]);
+    expect(resolved.clarification).toContain("material:chimney");
+  });
 });

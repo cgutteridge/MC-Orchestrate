@@ -35,103 +35,26 @@ const baseRequest: ChatCommandRequest = {
 };
 
 describe("buildHeuristicPlan", () => {
-  it("builds a tower plan from a direct request", () => {
-    // arrange
-    const request = {
+  it("returns undefined for direct requests so AI can handle broader intents", () => {
+    const tower = buildHeuristicPlan({
       ...baseRequest,
       message: "make me a 5 block stone tower here",
-    };
-
-    // act
-    const plan = buildHeuristicPlan(request);
-
-    // assert
-    expect(plan?.intent).toBe("build_tower");
-    expect(plan?.passes).toHaveLength(1);
-    expect(plan?.reply).toContain("5-block tower");
-  });
-
-  it("builds a remove tree plan when the player is looking at a tree", () => {
-    // arrange
-    const request = {
-      ...baseRequest,
-      message: "delete this tree",
-    };
-
-    // act
-    const plan = buildHeuristicPlan(request);
-
-    // assert
-    expect(plan?.intent).toBe("remove_tree");
-    expect(plan?.passes.length).toBeGreaterThan(0);
-  });
-
-  it("builds a multi-pass house plan", () => {
-    // arrange
-    const request = {
+    });
+    const house = buildHeuristicPlan({
       ...baseRequest,
       message: "make me a house here",
-    };
-
-    // act
-    const plan = buildHeuristicPlan(request);
-
-    // assert
-    expect(plan?.intent).toBe("build_house");
-    expect(plan?.passes.map((pass) => pass.name)).toEqual([
-      "site_prep",
-      "foundation",
-      "walls",
-      "openings",
-      "roof",
-    ]);
-    expect(plan?.targetRegion.min).toEqual({ x: -54, y: 114, z: -20 });
-    expect(plan?.targetRegion.max).toEqual({ x: -48, y: 120, z: -14 });
-  });
-
-  it("returns undefined for unsupported requests", () => {
-    // arrange
-    const request = {
-      ...baseRequest,
-      message: "write me a poem",
-    };
-
-    // act
-    const plan = buildHeuristicPlan(request);
-
-    // assert
-    expect(plan).toBeUndefined();
-  });
-
-  it("handles tower follow-ups like 'make it taller' using recent context", () => {
-    const request = {
-      ...baseRequest,
-      message: "make it taller by 2",
-      recentMessages: ["build a tower from wool"],
-      localContext: {
-        ...baseRequest.localContext,
-        targetBlock: {
-          x: -51,
-          y: 113,
-          z: -17,
-          type: "minecraft:short_grass",
-        },
-      },
-    };
-
-    const plan = buildHeuristicPlan(request);
-
-    expect(plan?.intent).toBe("build_tower");
-    expect(plan?.reply).toContain("2 blocks taller");
-    expect(plan?.targetRegion.min).toEqual({ x: -51, y: 113, z: -17 });
-    expect(plan?.targetRegion.max).toEqual({ x: -51, y: 119, z: -17 });
-    expect(plan?.passes[0]?.primitives[0]).toMatchObject({
-      type: "fill_cuboid",
-      block: "minecraft:white_wool",
     });
+    const tree = buildHeuristicPlan({
+      ...baseRequest,
+      message: "delete this tree",
+    });
+
+    expect(tower).toBeUndefined();
+    expect(house).toBeUndefined();
+    expect(tree).toBeUndefined();
   });
 
-  it("asks for clarification when 'taller' has no tower context", () => {
+  it("asks for clarification when 'taller' has no previous structure context", () => {
     const request = {
       ...baseRequest,
       message: "make it taller by 2",
@@ -150,14 +73,14 @@ describe("buildHeuristicPlan", () => {
     expect(plan?.clarification).toContain("structure context");
   });
 
-  it("extends the previously executed tower footprint when available", () => {
+  it("extends the previous structure footprint for taller follow-ups", () => {
     const request = {
       ...baseRequest,
       message: "make it taller by 2",
       recentMessages: [],
     };
     const previousPlan: Plan = {
-      intent: "build_tower",
+      intent: "build_structure",
       targetWorld: "world",
       targetRegion: {
         world: "world",
@@ -167,8 +90,8 @@ describe("buildHeuristicPlan", () => {
       assumptions: [],
       passes: [
         {
-          name: "tower",
-          goal: "Build base tower.",
+          name: "base",
+          goal: "Build base structure.",
           primitives: [
             {
               type: "fill_cuboid",
@@ -185,6 +108,7 @@ describe("buildHeuristicPlan", () => {
 
     const plan = buildHeuristicPlan(request, previousPlan);
 
+    expect(plan?.intent).toBe("build_structure");
     expect(plan?.needsMoreInfo).toBe(false);
     expect(plan?.passes).toHaveLength(1);
     expect(plan?.passes[0]?.primitives[0]).toEqual({
@@ -193,54 +117,49 @@ describe("buildHeuristicPlan", () => {
       to: { x: -49, y: 119, z: -15 },
       block: "minecraft:white_wool",
     });
+    expect(plan?.targetRegion).toEqual({
+      world: "world",
+      min: { x: -51, y: 113, z: -17 },
+      max: { x: -49, y: 119, z: -15 },
+    });
   });
 
-  it("extends the previously executed non-tower structure footprint when available", () => {
+  it("does not treat non-structure plans as height-adjustable follow-up context", () => {
     const request = {
       ...baseRequest,
       message: "make it taller by 2",
-      recentMessages: [],
     };
     const previousPlan: Plan = {
-      intent: "build_house",
+      intent: "remove_tree",
       targetWorld: "world",
       targetRegion: {
         world: "world",
-        min: { x: -54, y: 114, z: -20 },
-        max: { x: -48, y: 120, z: -14 },
+        min: { x: -51, y: 113, z: -17 },
+        max: { x: -49, y: 117, z: -15 },
       },
       assumptions: [],
       passes: [
         {
-          name: "walls",
-          goal: "Build walls.",
+          name: "cleanup",
+          goal: "Remove logs.",
           primitives: [
             {
-              type: "hollow_cuboid",
-              from: { x: -54, y: 115, z: -20 },
-              to: { x: -48, y: 118, z: -14 },
-              block: "minecraft:oak_planks",
+              type: "replace_in_region",
+              from: { x: -51, y: 113, z: -17 },
+              to: { x: -49, y: 117, z: -15 },
+              fromBlock: "minecraft:oak_log",
+              toBlock: "minecraft:air",
             },
           ],
         },
       ],
-      reply: "Built.",
+      reply: "Removed.",
       needsMoreInfo: false,
     };
 
     const plan = buildHeuristicPlan(request, previousPlan);
 
-    expect(plan?.intent).toBe("build_house");
-    expect(plan?.passes[0]?.primitives[0]).toEqual({
-      type: "fill_cuboid",
-      from: { x: -54, y: 121, z: -20 },
-      to: { x: -48, y: 122, z: -14 },
-      block: "minecraft:oak_planks",
-    });
-    expect(plan?.targetRegion).toEqual({
-      world: "world",
-      min: { x: -54, y: 114, z: -20 },
-      max: { x: -48, y: 122, z: -14 },
-    });
+    expect(plan?.intent).toBe("unknown");
+    expect(plan?.needsMoreInfo).toBe(true);
   });
 });
