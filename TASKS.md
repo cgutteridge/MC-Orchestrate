@@ -48,8 +48,13 @@ Research-informed execution lane based on `deep-research-report.md`.
      - Material KB progress: symbolic slots done; structural constraint pruning done
        (NON_STRUCTURAL_BLOCKS + GRAVITY_BLOCKS enforced for build primitives);
        `replace_in_region` correctly exempt (allows air/water in operational context).
-     - Remaining: candidate list injection into prompt (planner chooses by index,
-       not free-form id); candidate cap enforcement (≤12 per slot, ≤40 total).
+     - Nearby block context card injected into user message (top 5 structural
+       blocks by count, terrain excluded). LLM now sees local material hints
+       without the prompt containing a global block catalog.
+     - System prompt updated: prefers symbolic slots over free-form block names;
+       concrete id only when player explicitly named a material.
+     - Remaining: full candidate-list injection with indexed selection (planner
+       chooses by number); per-slot candidate cap enforcement (≤12 per slot).
 
 2. Follow-Up Context Reliability and Diagnostics
    - Subtasks:

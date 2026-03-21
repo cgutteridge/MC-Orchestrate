@@ -23,6 +23,16 @@
      - Completed: 2026-03-21
      - Evidence: `npm test`, `npm run build` — 38 → 53 tests, all green.
 
+8. Phase 1 Material KB — Prompt Context Card and Symbolic Slot Preference (2026-03-21)
+   - Subtasks:
+     - Added `buildNearbyContextSummary`: computes top-5 nearby structural blocks (terrain excluded) and formats as a compact one-line card.
+     - Injected context card into the user message so the LLM sees local material hints without a global block catalog.
+     - Replaced "Prefer concrete modern block ids" system instruction with "Prefer symbolic slots; only use concrete id when the player explicitly named the material".
+     - Added 3 new tests: symbolic slot preference instruction present, context card with structural blocks, context card omitted for terrain-only.
+   - Notes:
+     - Completed: 2026-03-21
+     - Evidence: `npm test`, `npm run build` — 61 → 64 tests, all green.
+
 7. Phase 1 Material KB — Structural Constraint Pruning (2026-03-21)
    - Subtasks:
      - Added `NON_STRUCTURAL_BLOCKS` (air, water, lava, grass_block, dirt, leaves) and `GRAVITY_BLOCKS` (sand, gravel, all 16 concrete powder variants) to `materialPalette.ts`.

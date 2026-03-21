@@ -1,6 +1,51 @@
 import type { ChatCommandRequest } from "../types/plugin.js";
 
 /**
+ * Block types that carry no information about a player's intended build
+ * material and should be excluded from the nearby context card.
+ */
+const CONTEXT_SKIP_BLOCKS = new Set([
+  "minecraft:air",
+  "minecraft:water",
+  "minecraft:lava",
+  "minecraft:grass_block",
+  "minecraft:dirt",
+  "minecraft:dirt_path",
+  "minecraft:oak_leaves",
+  "minecraft:birch_leaves",
+  "minecraft:spruce_leaves",
+  "minecraft:short_grass",
+  "minecraft:tall_grass",
+]);
+
+/**
+ * Builds a compact one-line summary of the most common nearby non-terrain
+ * blocks, or `undefined` when no relevant blocks are present.
+ */
+function buildNearbyContextSummary(request: ChatCommandRequest): string | undefined {
+  const counts = new Map<string, number>();
+  for (const block of request.localContext.nearbyBlocks) {
+    const type = block.type.toLowerCase().trim();
+    if (CONTEXT_SKIP_BLOCKS.has(type)) {
+      continue;
+    }
+    counts.set(type, (counts.get(type) ?? 0) + 1);
+  }
+
+  if (counts.size === 0) {
+    return undefined;
+  }
+
+  const top = [...counts.entries()]
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 5)
+    .map(([block, count]) => `${block.replace("minecraft:", "")} ×${count}`)
+    .join(", ");
+
+  return `Nearby materials: ${top}.`;
+}
+
+/**
  * Builds the planner prompt/messages sent to the LLM for structured build planning.
  */
 export function buildPlannerMessages(request: ChatCommandRequest) {
@@ -84,10 +129,11 @@ export function buildPlannerMessages(request: ChatCommandRequest) {
           "Use unknown when the request is ambiguous or unsupported.",
           "Only emit primitive types that include all required fields shown in the schema guide.",
           "clear_region does not include a block field.",
-          "Prefer concrete modern block ids such as minecraft:oak_planks, minecraft:oak_fence, minecraft:grass_block, minecraft:stone, minecraft:cobblestone, minecraft:glass, and minecraft:white_wool.",
-          "Do not use vague or obsolete block names like minecraft:wood or minecraft:wool when a concrete default variant is intended.",
-          "You may use symbolic material slots in block fields when exact materials are unclear: material:wall, material:roof, material:floor, material:trim, material:detail, material:wood, material:stone, material:glass, material:wool.",
-          "When using symbolic slots, keep them semantically correct for the primitive's purpose (for example roof uses material:roof).",
+          "Prefer symbolic material slots over free-form block names. Use symbolic slots when the player has not specified a particular material, so the server can pick the best block from the local environment.",
+          "Only use a concrete block id when the player has explicitly named that specific material (for example 'glass tower' → minecraft:glass, 'stone house' → material:wall resolved to stone-family).",
+          "Do not use vague or obsolete block ids like minecraft:wood or minecraft:wool. Use symbolic slots or concrete default variants instead.",
+          "Supported symbolic slots: material:wall, material:roof, material:floor, material:trim, material:detail, material:wood, material:stone, material:glass, material:wool.",
+          "Keep symbolic slots semantically correct for their purpose (for example roof primitives use material:roof, wall primitives use material:wall).",
           "Do not invent coordinates, regions, or target areas when asking for clarification.",
           "Use short player-facing reply text.",
           `Schema guide: ${JSON.stringify(schemaGuide)}`,
@@ -97,8 +143,11 @@ export function buildPlannerMessages(request: ChatCommandRequest) {
       role: "user" as const,
       content: [
         "Plan this Minecraft build request as JSON.",
+        buildNearbyContextSummary(request),
         JSON.stringify(request, null, 2),
-      ].join("\n\n"),
+      ]
+        .filter(Boolean)
+        .join("\n\n"),
     },
   ];
 }
