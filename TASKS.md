@@ -45,14 +45,23 @@ Research-informed execution lane based on `deep-research-report.md`.
    - Notes:
      - This is the highest-value lane and should stay active until phase exit criteria pass.
      - Keep prompts free of global material catalogs.
+     - Material KB progress: symbolic slots done; structural constraint pruning done
+       (NON_STRUCTURAL_BLOCKS + GRAVITY_BLOCKS enforced for build primitives);
+       `replace_in_region` correctly exempt (allows air/water in operational context).
+     - Remaining: candidate list injection into prompt (planner chooses by index,
+       not free-form id); candidate cap enforcement (≤12 per slot, ≤40 total).
 
 2. Follow-Up Context Reliability and Diagnostics
    - Subtasks:
-     - Finish carry-over tests for follow-ups (`I can't see it`, `taller by N` edge phrasing).
      - Keep request-id correlation stable across planner/provider/bridge logs.
      - Preserve last-built-structure context behavior under non-structure commands.
    - Notes:
      - This directly affects user trust and test velocity.
+     - All heuristic follow-ups implemented and tested: `oak`, `bigger`, `taller`,
+       `higher`, `use X instead`, `with X`, `as X`, `I can't see it`, `where is it`,
+       `taller by N` edge phrasing (N > 8 clamp, bare-number, no-number default).
+     - `buildStructureMaterialFollowUpFromPreviousPlan` replaces ALL primitive
+       blocks with the new material. Revisit when style-lock policy is decided.
 
 3. Azure Planner Path Baseline Validation
    - Subtasks:
@@ -89,6 +98,15 @@ Research-informed execution lane based on `deep-research-report.md`.
      - Move completed work to `Done` with evidence.
    - Notes:
      - Keep this as continuous support work.
+     - Review pass 2026-03-21 (behavioral): fixed `isWoodBlock` stone-stairs
+       misclassification, tightened cylinder drop guard, extracted shared
+       `escapeRegex`, fixed `{{ wall }}` trim bug. 38 → 50 tests.
+     - Vibe-coding pass 2026-03-21: removed vestigial worldReader disk reads,
+       removed dead `debug` flag, collapsed 3 duplicate plan-guard predicates,
+       fixed hardcoded "taller" clarification reply, normalised fill/clear cuboid
+       compile path, cylinder safety cap added, re-export chain cleaned,
+       `createChatProvider` config ownership fixed, Java orphan imports removed,
+       prompt schema guide split. 50 → 53 tests.
 
 ## Next
 
@@ -117,6 +135,27 @@ Research-informed execution lane based on `deep-research-report.md`.
      - Add baseline-vs-new comparisons before enabling each major phase by default.
    - Notes:
      - Needed to validate deep-research recommendations objectively.
+
+## Known Small Defects (fix when touched)
+
+- `parseRequestedBlock` returns only the first matched `minecraft:` id in a
+  message; multi-block messages silently ignore later ids. Acceptable for now;
+  document before expanding material resolution.
+- `structureAnchorPoint` in `requestContext.ts` is a trivial forwarding alias
+  for `structureCenterPoint`. Remove one or add a doc comment explaining the
+  distinction before the next requestContext refactor.
+- `isBuiltStructurePlan` (orchestrator) and `isAdjustableStructurePlan`
+  (heuristicPlanner) share overlapping additive-primitive walk logic. Consolidate
+  when the structure-context shape changes (e.g. DIG integration).
+- `WorldReader.readPlayerMetadata` is a dead public method — no callers. Remove
+  or use it when terrain context / DIG integration begins.
+- `managedBlocks` in `BridgeServer` is an unbounded dedup cache that never
+  evicts. Fine for a dev-session server; add a max-size cap or session-scoped
+  reset if the server runs long-term.
+- Plugin `serverContextJson` sends `world.getEnvironment().name()` → `"NORMAL"` /
+  `"NETHER"` / `"THE_END"`. TypeScript code doesn't validate this field but test
+  fixtures use `"minecraft:overworld"`. Align formats if dimension ever becomes
+  meaningful on the TS side.
 
 ## Later
 
