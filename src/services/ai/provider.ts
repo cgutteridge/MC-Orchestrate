@@ -20,7 +20,7 @@ export function createChatProvider(
     config.azureOpenAI.apiVersion,
     config.azureOpenAI.deployment,
     debug,
-    logPath,
+    logPath ?? config.ai.providerLogPath,
     config.azureOpenAI.policyId,
   );
 }

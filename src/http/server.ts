@@ -1,5 +1,4 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import type { ZodType } from "zod";
 import { z } from "zod";
 import type { Orchestrator } from "../orchestrator/orchestrator.js";
 import type { ChatCommandRequest } from "../types/plugin.js";
@@ -24,7 +23,7 @@ const PlayerSummarySchema = z.object({
   position: Vec3Schema,
 });
 
-const RequestSchema: ZodType<ChatCommandRequest> = z.object({
+const RequestSchema = z.object({
   requestId: z.string(),
   player: PlayerSummarySchema.extend({
     yaw: z.number(),
@@ -32,6 +31,7 @@ const RequestSchema: ZodType<ChatCommandRequest> = z.object({
     lookVector: Vec3Schema,
   }),
   message: z.string(),
+  recentMessages: z.array(z.string()).default([]),
   localContext: z.object({
     targetBlock: BlockSampleSchema.optional(),
     nearbyBlocks: z.array(BlockSampleSchema),

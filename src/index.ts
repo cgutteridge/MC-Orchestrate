@@ -4,11 +4,13 @@ import { BridgeServer } from "./bridge/bridgeServer.js";
 import { loadConfig } from "./config/env.js";
 import { createHttpServer } from "./http/server.js";
 import { Orchestrator } from "./orchestrator/orchestrator.js";
+import { PlannerLogger } from "./planner/planLogger.js";
 import { createChatProvider } from "./services/ai/provider.js";
 
 async function main(): Promise<void> {
   const config = loadConfig();
   const actionLogger = new ActionLogger(config.minecraft.actionLogPath);
+  const plannerLogger = new PlannerLogger(config.ai.plannerLogPath);
   const bridge = new BridgeServer(
     {
       host: config.minecraft.tcpHost,
@@ -20,11 +22,12 @@ async function main(): Promise<void> {
     actionLogger,
   );
 
-  const provider = createChatProvider();
+  const provider = createChatProvider(false, config.ai.providerLogPath);
   const orchestrator = new Orchestrator(
     bridge,
     path.resolve(process.cwd(), config.minecraft.minecraftDir),
     provider,
+    plannerLogger,
   );
 
   await bridge.start();

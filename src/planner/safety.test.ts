@@ -15,6 +15,7 @@ const request: ChatCommandRequest = {
     lookVector: { x: 1, y: 0, z: 0 },
   },
   message: "make me a tower here",
+  recentMessages: [],
   localContext: {
     nearbyBlocks: [],
     nearbyEntities: [],

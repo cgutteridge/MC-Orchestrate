@@ -36,8 +36,15 @@ If Azure OpenAI is configured, the orchestrator can use it for planning. If it i
 - `AZURE_OPENAI_API_VERSION`
 - `AZURE_OPENAI_DEPLOYMENT`
 - `AZURE_OPENAI_POLICY_ID` (optional)
+- `MCORCH_AI_LOG` (optional planner JSONL log path)
+- `MCORCH_AI_PROVIDER_LOG` (optional raw provider log path)
 
 These match the env contract used in `../azure-ai`.
+
+Planner and provider diagnostics default to:
+
+- `logs/ai-planner.jsonl`
+- `logs/ai-provider.log`
 
 ## Plugin
 

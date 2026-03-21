@@ -27,6 +27,8 @@ const Schema = z.object({
   MINECRAFT_JAR: optionalNonEmpty,
   JAVA_BIN: optionalNonEmpty,
   MCORCH_ACTION_LOG: optionalNonEmpty,
+  MCORCH_AI_LOG: optionalNonEmpty,
+  MCORCH_AI_PROVIDER_LOG: optionalNonEmpty,
 });
 
 export type AppConfig = {
@@ -46,6 +48,10 @@ export type AppConfig = {
     minecraftJar: string;
     javaBin?: string;
     actionLogPath: string;
+  };
+  ai: {
+    plannerLogPath: string;
+    providerLogPath: string;
   };
 };
 
@@ -80,6 +86,11 @@ export function loadConfig(): AppConfig {
       minecraftJar: parsed.MINECRAFT_JAR ?? "spigot-1.21.1.jar",
       javaBin: parsed.JAVA_BIN,
       actionLogPath: parsed.MCORCH_ACTION_LOG ?? "logs/bridge-actions.jsonl",
+    },
+    ai: {
+      plannerLogPath: parsed.MCORCH_AI_LOG ?? "logs/ai-planner.jsonl",
+      providerLogPath:
+        parsed.MCORCH_AI_PROVIDER_LOG ?? "logs/ai-provider.log",
     },
   };
 }

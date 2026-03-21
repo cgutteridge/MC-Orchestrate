@@ -18,16 +18,18 @@ import org.bukkit.util.Vector;
 final class JsonPayloadBuilder {
     private static final Pattern STATUS_PATTERN = Pattern.compile("\"status\"\\s*:\\s*\"((?:\\\\.|[^\"\\\\])*)\"");
     private static final Pattern REPLY_PATTERN = Pattern.compile("\"reply\"\\s*:\\s*\"((?:\\\\.|[^\"\\\\])*)\"");
+    private static final Pattern ERROR_PATTERN = Pattern.compile("\"error\"\\s*:\\s*\"((?:\\\\.|[^\"\\\\])*)\"");
 
     private JsonPayloadBuilder() {
     }
 
-    static String buildRequestJson(String requestId, Player player, String message) {
+    static String buildRequestJson(String requestId, Player player, String message, List<String> recentMessages) {
         StringBuilder json = new StringBuilder();
         json.append("{");
         appendField(json, "requestId", requestId).append(",");
         json.append("\"player\":").append(playerJson(player)).append(",");
         appendField(json, "message", message).append(",");
+        json.append("\"recentMessages\":").append(stringArrayJson(recentMessages)).append(",");
         json.append("\"localContext\":").append(localContextJson(player)).append(",");
         json.append("\"serverContext\":").append(serverContextJson(player.getWorld()));
         json.append("}");
@@ -37,7 +39,8 @@ final class JsonPayloadBuilder {
     static ResponseSummary extractResponseSummary(String json) {
         return new ResponseSummary(
             extractJsonString(STATUS_PATTERN, json),
-            extractJsonString(REPLY_PATTERN, json)
+            extractJsonString(REPLY_PATTERN, json),
+            extractJsonString(ERROR_PATTERN, json)
         );
     }
 
@@ -166,6 +169,18 @@ final class JsonPayloadBuilder {
         return json.toString();
     }
 
+    private static String stringArrayJson(List<String> values) {
+        StringBuilder json = new StringBuilder("[");
+        for (int i = 0; i < values.size(); i++) {
+            if (i > 0) {
+                json.append(",");
+            }
+            json.append("\"").append(escape(values.get(i))).append("\"");
+        }
+        json.append("]");
+        return json.toString();
+    }
+
     private static String blockJson(Block block) {
         StringBuilder json = new StringBuilder();
         json.append("{");
@@ -205,10 +220,12 @@ final class JsonPayloadBuilder {
     static final class ResponseSummary {
         private final String status;
         private final String reply;
+        private final String error;
 
-        ResponseSummary(String status, String reply) {
+        ResponseSummary(String status, String reply, String error) {
             this.status = status;
             this.reply = reply;
+            this.error = error;
         }
 
         String status() {
@@ -217,6 +234,10 @@ final class JsonPayloadBuilder {
 
         String reply() {
             return reply;
+        }
+
+        String error() {
+            return error;
         }
     }
 }

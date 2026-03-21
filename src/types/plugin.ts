@@ -48,6 +48,7 @@ export type ChatCommandRequest = {
   requestId: string;
   player: PlayerSnapshot;
   message: string;
+  recentMessages: string[];
   localContext: LocalContext;
   serverContext: ServerContext;
 };

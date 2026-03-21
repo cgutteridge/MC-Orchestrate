@@ -7,6 +7,12 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Deque;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
@@ -24,8 +30,10 @@ import org.bukkit.util.Vector;
 
 public final class McOrchestratePlugin extends JavaPlugin implements Listener {
     private static final String BOT_PREFIX = "bot:";
+    private static final int MAX_RECENT_MESSAGES = 10;
     private HttpClient httpClient;
     private URI orchestratorUri;
+    private final Map<UUID, Deque<String>> recentMessagesByPlayer = new HashMap<>();
 
     @Override
     public void onEnable() {
@@ -57,7 +65,9 @@ public final class McOrchestratePlugin extends JavaPlugin implements Listener {
 
     private void handleBotMessage(Player player, String message) {
         String requestId = UUID.randomUUID().toString();
-        String payload = JsonPayloadBuilder.buildRequestJson(requestId, player, message);
+        List<String> recentMessages = recentMessages(player);
+        rememberMessage(player, message);
+        String payload = JsonPayloadBuilder.buildRequestJson(requestId, player, message, recentMessages);
         HttpRequest request = HttpRequest.newBuilder(orchestratorUri)
             .timeout(Duration.ofSeconds(20))
             .header("Content-Type", "application/json")
@@ -70,7 +80,12 @@ public final class McOrchestratePlugin extends JavaPlugin implements Listener {
                     JsonPayloadBuilder.extractResponseSummary(response.body());
                 Bukkit.getScheduler().runTask(this, () -> {
                     String reply = summary.reply();
+                    String error = summary.error();
                     if (reply == null || reply.isBlank()) {
+                        if (error != null && !error.isBlank()) {
+                            player.sendMessage("[Bot] " + error);
+                            return;
+                        }
                         player.sendMessage("[Bot] I did not get a usable reply.");
                         return;
                     }
@@ -86,5 +101,21 @@ public final class McOrchestratePlugin extends JavaPlugin implements Listener {
                 );
                 return null;
             });
+    }
+
+    private List<String> recentMessages(Player player) {
+        Deque<String> recent = recentMessagesByPlayer.get(player.getUniqueId());
+        return recent == null ? List.of() : new ArrayList<>(recent);
+    }
+
+    private void rememberMessage(Player player, String message) {
+        Deque<String> recent = recentMessagesByPlayer.computeIfAbsent(
+            player.getUniqueId(),
+            ignored -> new ArrayDeque<>()
+        );
+        recent.addLast(message);
+        while (recent.size() > MAX_RECENT_MESSAGES) {
+            recent.removeFirst();
+        }
     }
 }

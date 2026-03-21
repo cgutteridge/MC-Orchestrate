@@ -1,9 +1,11 @@
 import type { ChatCommandRequest } from "../types/plugin.js";
 import {
-  anchorPoint,
   asBlock,
+  normalizeRegion,
   parseRequestedBlock,
   parseRequestedHeight,
+  structureFootprintOrigin,
+  structureAnchorPoint,
 } from "./requestContext.js";
 import { PlanSchema, type Plan } from "./schema.js";
 
@@ -12,8 +14,21 @@ import { PlanSchema, type Plan } from "./schema.js";
  */
 export function buildHeuristicPlan(
   request: ChatCommandRequest,
+  previousPlan?: Plan,
 ): Plan | undefined {
   const message = request.message.toLowerCase();
+  const recent = request.recentMessages.map((entry) => entry.toLowerCase());
+  if (message.includes("taller") || message.includes("higher")) {
+    if (isHeightAdjustableStructurePlan(previousPlan)) {
+      return PlanSchema.parse(
+        buildStructureFollowUpFromPreviousPlan(request, previousPlan),
+      );
+    }
+    if (recent.some((entry) => entry.includes("tower"))) {
+      return PlanSchema.parse(buildTowerFollowUpPlan(request));
+    }
+    return PlanSchema.parse(buildStructureFollowUpClarification(request));
+  }
   if (message.includes("house")) {
     return PlanSchema.parse(buildHousePlan(request));
   }
@@ -29,9 +44,102 @@ export function buildHeuristicPlan(
   return undefined;
 }
 
+function buildTowerFollowUpPlan(request: ChatCommandRequest): Plan {
+  const baseHeight = mostRecentRequestedHeight(request.recentMessages) ?? 5;
+  const increaseBy = parseHeightDelta(request.message) ?? 2;
+  const height = Math.max(1, Math.min(16, baseHeight + increaseBy));
+  const base = structureAnchorPoint(request, 4);
+  const block =
+    parseRequestedBlock(request.message) ??
+    mostRecentRequestedBlock(request.recentMessages) ??
+    "minecraft:stone";
+
+  return {
+    intent: "build_tower",
+    targetWorld: request.player.world,
+    targetRegion: {
+      world: request.player.world,
+      min: base,
+      max: { x: base.x, y: base.y + height - 1, z: base.z },
+    },
+    assumptions: [`Interpreting follow-up as making the previous tower taller by ${increaseBy} blocks.`],
+    passes: [
+      {
+        name: "tower_column",
+        goal: "Build the taller tower shaft.",
+        primitives: [
+          {
+            type: "fill_cuboid",
+            from: base,
+            to: { x: base.x, y: base.y + height - 1, z: base.z },
+            block,
+          },
+        ],
+      },
+    ],
+    reply: `Making it ${increaseBy} blocks taller.`,
+    needsMoreInfo: false,
+  };
+}
+
+function buildStructureFollowUpFromPreviousPlan(
+  request: ChatCommandRequest,
+  previousPlan: Plan,
+): Plan {
+  const increaseBy = parseHeightDelta(request.message) ?? 2;
+  const previousRegion = normalizeRegion(previousPlan.targetRegion);
+  const block = extractPrimaryBuildBlock(previousPlan) ?? "minecraft:stone";
+  const from = {
+    x: previousRegion.min.x,
+    y: previousRegion.max.y + 1,
+    z: previousRegion.min.z,
+  };
+  const to = {
+    x: previousRegion.max.x,
+    y: previousRegion.max.y + increaseBy,
+    z: previousRegion.max.z,
+  };
+
+  const intent =
+    previousPlan.intent === "build_house" ? "build_house" : "build_tower";
+
+  return {
+    intent,
+    targetWorld: previousPlan.targetWorld,
+    targetRegion: {
+      world: previousRegion.world,
+      min: previousRegion.min,
+      max: {
+        x: previousRegion.max.x,
+        y: previousRegion.max.y + increaseBy,
+        z: previousRegion.max.z,
+      },
+    },
+    assumptions: [
+      `Extending the previously built structure by ${increaseBy} blocks using ${block}.`,
+    ],
+    passes: [
+      {
+        name: "structure_extension",
+        goal: "Increase structure height by extending the existing footprint.",
+        primitives: [
+          {
+            type: "fill_cuboid",
+            from,
+            to,
+            block,
+          },
+        ],
+      },
+    ],
+    reply: `Making it ${increaseBy} blocks taller.`,
+    needsMoreInfo: false,
+  };
+}
+
 function buildTowerPlan(request: ChatCommandRequest): Plan {
   const height = parseRequestedHeight(request.message) ?? 5;
-  const base = anchorPoint(request, 2);
+  const base = structureAnchorPoint(request, 4);
   const block = parseRequestedBlock(request.message) ?? "minecraft:stone";
 
   return {
@@ -63,9 +171,9 @@ function buildTowerPlan(request: ChatCommandRequest): Plan {
 }
 
 function buildHousePlan(request: ChatCommandRequest): Plan {
-  const base = anchorPoint(request, 3);
   const width = 7;
   const depth = 7;
+  const base = structureFootprintOrigin(request, width, depth, 2);
   const wallHeight = 4;
   const wallBlock = parseRequestedBlock(request.message) ?? "minecraft:oak_planks";
   const roofBlock = "minecraft:cobblestone";
@@ -253,4 +361,108 @@ function buildRemoveTreePlan(request: ChatCommandRequest): Plan {
     reply: "Removing that tree.",
     needsMoreInfo: false,
   };
+}
+
+function buildStructureFollowUpClarification(request: ChatCommandRequest): Plan {
+  const point = asBlock(request.player.position);
+  return {
+    intent: "unknown",
+    targetWorld: request.player.world,
+    targetRegion: {
+      world: request.player.world,
+      min: point,
+      max: point,
+    },
+    assumptions: [],
+    passes: [],
+    reply: "Tell me which structure to make taller.",
+    needsMoreInfo: true,
+    clarification:
+      "I need structure context. Try `make the wool tower taller by 2` or look at the structure and ask again.",
+  };
+}
+
+function parseHeightDelta(message: string): number | undefined {
+  const lowered = message.toLowerCase();
+  if (!lowered.includes("taller") && !lowered.includes("higher")) {
+    return undefined;
+  }
+
+  const byMatch = lowered.match(/(?:by|add)\s+(\d+)/);
+  if (byMatch) {
+    const delta = Number.parseInt(byMatch[1], 10);
+    return Number.isFinite(delta) ? Math.max(1, Math.min(8, delta)) : undefined;
+  }
+
+  const fallbackMatch = lowered.match(/\b(\d+)\b/);
+  if (!fallbackMatch) {
+    return undefined;
+  }
+
+  const fallback = Number.parseInt(fallbackMatch[1], 10);
+  return Number.isFinite(fallback) ? Math.max(1, Math.min(8, fallback)) : undefined;
+}
+
+function mostRecentRequestedHeight(messages: string[]): number | undefined {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const parsed = parseRequestedHeight(messages[index]);
+    if (parsed !== undefined) {
+      return parsed;
+    }
+  }
+  return undefined;
+}
+
+function mostRecentRequestedBlock(messages: string[]): string | undefined {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const parsed = parseRequestedBlock(messages[index]);
+    if (parsed) {
+      return parsed;
+    }
+  }
+  return undefined;
+}
+
+function extractPrimaryBuildBlock(plan: Plan): string | undefined {
+  for (const pass of plan.passes) {
+    for (const primitive of pass.primitives) {
+      switch (primitive.type) {
+        case "set_block":
+        case "fill_cuboid":
+        case "hollow_cuboid":
+        case "cylinder":
+          return primitive.block;
+        case "replace_in_region":
+        case "clear_region":
+          break;
+      }
+    }
+  }
+  return undefined;
+}
+
+function isHeightAdjustableStructurePlan(plan?: Plan): plan is Plan {
+  if (!plan || plan.needsMoreInfo || plan.passes.length === 0) {
+    return false;
+  }
+  if (plan.intent === "remove_tree" || plan.intent === "unknown") {
+    return false;
+  }
+  return hasAdditiveStructurePrimitive(plan);
+}
+
+function hasAdditiveStructurePrimitive(plan: Plan): boolean {
+  for (const pass of plan.passes) {
+    for (const primitive of pass.primitives) {
+      if (
+        primitive.type === "set_block" ||
+        primitive.type === "fill_cuboid" ||
+        primitive.type === "hollow_cuboid" ||
+        primitive.type === "cylinder"
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
