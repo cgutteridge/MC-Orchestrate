@@ -7,6 +7,7 @@ import type { PlannerLogger } from "../planner/planLogger.js";
 import { buildHeuristicPlan } from "../planner/heuristicPlanner.js";
 import { resolvePlanMaterials } from "../planner/materialResolver.js";
 import { validatePlanSafety } from "../planner/safety.js";
+import { validatePlanSemantics } from "../planner/semantics.js";
 import type { Plan } from "../planner/schema.js";
 
 /**
@@ -58,6 +59,16 @@ export class Orchestrator {
         return {
           status: "rejected",
           reply: unsafeReason,
+          requestId: request.requestId,
+          intent: plan.intent,
+        };
+      }
+
+      const semanticReason = validatePlanSemantics(plan);
+      if (semanticReason) {
+        return {
+          status: "rejected",
+          reply: semanticReason,
           requestId: request.requestId,
           intent: plan.intent,
         };

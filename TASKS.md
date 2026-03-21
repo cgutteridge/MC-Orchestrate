@@ -36,10 +36,10 @@ Research-informed execution lane based on `deep-research-report.md`.
 1. Phase 1 Foundations Execution
    - Subtasks:
      - Execute `tasks/phase-1-foundations.md` in this order:
-       - Material Knowledge Base + palette resolver
+       - ~~Material Knowledge Base + palette resolver~~ (done — see notes)
        - DIG schema/persistence + revision patching
        - Deterministic compiler for core templates
-       - Planner contract and semantic safety checks
+       - ~~Planner contract and semantic safety checks~~ (partially done — see notes)
      - Keep deterministic outputs and bounded token behavior as hard requirements.
      - Wire acceptance tests and feature flags before broad rollout.
    - Notes:
@@ -55,6 +55,10 @@ Research-informed execution lane based on `deep-research-report.md`.
        concrete id only when player explicitly named a material.
      - Remaining: full candidate-list injection with indexed selection (planner
        chooses by number); per-slot candidate cap enforcement (≤12 per slot).
+     - Task 4 (Planner contract): pass-order semantic check done —
+       `validatePlanSemantics` rejects plans where a destructive pass encloses
+       an earlier build pass. Degenerate dimension checks and per-intent shape
+       sanity checks are still outstanding.
 
 2. Follow-Up Context Reliability and Diagnostics
    - Subtasks:

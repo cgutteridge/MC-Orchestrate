@@ -23,6 +23,22 @@
      - Completed: 2026-03-21
      - Evidence: `npm test`, `npm run build` — 38 → 53 tests, all green.
 
+9. Phase 1 Task 4 — Pass-Order Semantic Guardrail (2026-03-21)
+   - Subtasks:
+     - Added `src/planner/semantics.ts` with `validatePlanSemantics`.
+     - `detectPassOrderViolation` flags plans where a destructive primitive
+       (`clear_region` or `replace_in_region` with `toBlock=air`) encloses or
+       equals an earlier build primitive's region. Hollowing (inner clear smaller
+       than the fill) is correctly allowed.
+     - Wired `validatePlanSemantics` into orchestrator after `validatePlanSafety`
+       with `status: "rejected"` response.
+     - 7 unit tests covering: normal plan, hollow pattern, same-region clear,
+       enclosing clear, replace-with-air, replace-with-non-air (valid restyle),
+       empty plan. Plus 1 orchestrator integration test.
+   - Notes:
+     - Completed: 2026-03-21
+     - Evidence: `npm test`, `npm run build` — 64 → 72 tests, all green.
+
 8. Phase 1 Material KB — Prompt Context Card and Symbolic Slot Preference (2026-03-21)
    - Subtasks:
      - Added `buildNearbyContextSummary`: computes top-5 nearby structural blocks (terrain excluded) and formats as a compact one-line card.

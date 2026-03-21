@@ -411,6 +411,59 @@ describe("Orchestrator", () => {
     expect(bridge.commands).toEqual([]);
   });
 
+  it("rejects a plan that would undo its own earlier build steps", async () => {
+    const provider: ChatProvider = {
+      name: "test",
+      async chat() {
+        return JSON.stringify({
+          intent: "build_house",
+          targetWorld: "world",
+          targetRegion: {
+            world: "world",
+            min: { x: 0, y: 64, z: 0 },
+            max: { x: 6, y: 70, z: 6 },
+          },
+          assumptions: [],
+          passes: [
+            {
+              name: "build",
+              goal: "Build walls.",
+              primitives: [
+                {
+                  type: "fill_cuboid",
+                  from: { x: 0, y: 64, z: 0 },
+                  to: { x: 6, y: 70, z: 6 },
+                  block: "minecraft:stone",
+                },
+              ],
+            },
+            {
+              name: "undo",
+              goal: "Clear the same region.",
+              primitives: [
+                {
+                  type: "clear_region",
+                  from: { x: 0, y: 64, z: 0 },
+                  to: { x: 6, y: 70, z: 6 },
+                },
+              ],
+            },
+          ],
+          reply: "Done.",
+          needsMoreInfo: false,
+        });
+      },
+    };
+    const bridge = new FakeBridge();
+    const orchestrator = new Orchestrator(bridge as never, provider);
+
+    const response = await orchestrator.handleChatCommand(request);
+
+    expect(response.status).toBe("rejected");
+    expect(response.reply).toContain("undo");
+    expect(bridge.commands).toEqual([]);
+  });
+
   it("falls back to heuristic material follow-up when AI provider fails", async () => {
     let callCount = 0;
     const provider: ChatProvider = {
