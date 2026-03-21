@@ -23,6 +23,18 @@
      - Completed: 2026-03-21
      - Evidence: `npm test`, `npm run build` — 38 → 53 tests, all green.
 
+10. Phase 1 Task 3 — Deterministic Template Compilers: Tower + Cottage (2026-03-21)
+    - Subtasks:
+      - Added `src/planner/templates.ts` with typed `TowerParams` / `CottageParams` records and pure `compileTowerTemplate` / `compileCottageTemplate` functions. Geometry and material slots are fully separate.
+      - Tower: square footprint (2–8 wide), height (3–16), hollow flag, symbolic or concrete block. Even-width footprints centred correctly.
+      - Cottage: 7×7 footprint, 4-block walls, hollow shell pass + flat roof pass. Wall and roof use independent symbolic slots.
+      - Added `parseTowerRequest` and `parseCottageRequest` parsers with a complexity blocklist (spiral, lighthouse, pointed, etc.) that routes complex requests to the AI.
+      - Wired into `buildHeuristicPlan` before follow-up dispatch; template path only runs when no `previousPlan` is in context.
+      - 13 template unit tests (determinism, bounding box, hollow flag, budget compliance) + 5 integration tests in heuristicPlanner.
+    - Notes:
+      - Completed: 2026-03-21
+      - Evidence: `npm test`, `npm run build` — 72 → 91 tests, all green.
+
 9. Phase 1 Task 4 — Pass-Order Semantic Guardrail (2026-03-21)
    - Subtasks:
      - Added `src/planner/semantics.ts` with `validatePlanSemantics`.

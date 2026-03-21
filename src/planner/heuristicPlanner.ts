@@ -3,8 +3,100 @@ import { parseRequestedBlock } from "./materialPalette.js";
 import {
   asBlock,
   normalizeRegion,
+  parseRequestedHeight,
+  structureFootprintOrigin,
 } from "./requestContext.js";
-import { PlanSchema, type Plan } from "./schema.js";
+import type { Plan } from "./schema.js";
+import { PlanSchema } from "./schema.js";
+import {
+  type CottageParams,
+  type TowerParams,
+  compileCottageTemplate,
+  compileTowerTemplate,
+} from "./templates.js";
+
+/**
+ * Words that suggest a complex variation the AI should handle rather than a
+ * deterministic template compiler.
+ */
+const TEMPLATE_COMPLEXITY_BLOCKLIST =
+  /\b(spiral|lighthouse|pointed|staircase|circular|octagon|round|floating|underwater|upside)\b/;
+
+/**
+ * Attempts to parse a simple tower request into typed template parameters.
+ * Returns `undefined` when the request is too complex or ambiguous for the
+ * deterministic compiler.
+ */
+function parseTowerRequest(
+  request: ChatCommandRequest,
+): TowerParams | undefined {
+  const message = request.message.toLowerCase().trim();
+  if (!message.includes("tower")) {
+    return undefined;
+  }
+  if (TEMPLATE_COMPLEXITY_BLOCKLIST.test(message)) {
+    return undefined;
+  }
+
+  const height = Math.max(3, Math.min(16, parseRequestedHeight(request.message) ?? 8));
+  const hollow = message.includes("hollow");
+
+  const widthMatch = message.match(/(\d+)\s*(?:wide|by\s*\d+|block\s*wide)/);
+  const width = widthMatch
+    ? Math.max(2, Math.min(8, Number.parseInt(widthMatch[1], 10)))
+    : 3;
+
+  const block = parseRequestedBlock(request.message) ?? "material:wall";
+  const anchor = structureFootprintOrigin(request, width, width);
+
+  return {
+    world: request.player.world,
+    anchor,
+    height,
+    width,
+    hollow,
+    block,
+  };
+}
+
+/**
+ * Attempts to parse a simple cottage request into typed template parameters.
+ * Returns `undefined` when the request is too complex or ambiguous.
+ */
+function parseCottageRequest(
+  request: ChatCommandRequest,
+): CottageParams | undefined {
+  const message = request.message.toLowerCase().trim();
+  if (!message.includes("cottage") && !message.includes("house") && !message.includes("hut")) {
+    return undefined;
+  }
+  if (TEMPLATE_COMPLEXITY_BLOCKLIST.test(message)) {
+    return undefined;
+  }
+  // Let the AI handle explicit size specifications — keep the template for
+  // generic unqualified requests only.
+  if (/\d+\s*(by|\×|x)\s*\d+/.test(message)) {
+    return undefined;
+  }
+
+  const wallBlock = parseRequestedBlock(request.message) ?? "material:wall";
+  const roofBlock = "material:roof";
+  const width = 7;
+  const depth = 7;
+  const wallHeight = 4;
+
+  const origin = structureFootprintOrigin(request, width, depth);
+
+  return {
+    world: request.player.world,
+    origin,
+    width,
+    depth,
+    wallHeight,
+    wallBlock,
+    roofBlock,
+  };
+}
 
 /**
  * Returns a deterministic fallback plan for the small set of built-in v1 commands.
@@ -14,6 +106,21 @@ export function buildHeuristicPlan(
   previousPlan?: Plan,
 ): Plan | undefined {
   const message = request.message.toLowerCase().trim();
+
+  // Template compilers — only run when there is no prior plan context to
+  // follow up on, so explicit follow-up phrases always take priority.
+  if (!previousPlan) {
+    const towerParams = parseTowerRequest(request);
+    if (towerParams) {
+      return PlanSchema.parse(compileTowerTemplate(towerParams));
+    }
+
+    const cottageParams = parseCottageRequest(request);
+    if (cottageParams) {
+      return PlanSchema.parse(compileCottageTemplate(cottageParams));
+    }
+  }
+
   const requestedBlock = parseRequestedBlock(message);
   if (requestedBlock && isMaterialFollowUpMessage(message)) {
     if (isAdjustableStructurePlan(previousPlan)) {

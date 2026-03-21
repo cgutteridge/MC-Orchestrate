@@ -34,24 +34,127 @@ const baseRequest: ChatCommandRequest = {
   },
 };
 
+describe("buildHeuristicPlan — template dispatch", () => {
+  it("compiles a simple tower request deterministically", () => {
+    const request = {
+      ...baseRequest,
+      message: "make me a stone tower here",
+    };
+
+    const a = buildHeuristicPlan(request);
+    const b = buildHeuristicPlan(request);
+
+    expect(a?.intent).toBe("build_tower");
+    expect(a?.needsMoreInfo).toBe(false);
+    expect(a?.passes).toHaveLength(1);
+    expect(JSON.stringify(a)).toBe(JSON.stringify(b));
+  });
+
+  it("compiles a hollow tower when 'hollow' is in the message", () => {
+    const plan = buildHeuristicPlan({
+      ...baseRequest,
+      message: "build a hollow tower here",
+    });
+
+    expect(plan?.passes[0]?.primitives[0]).toMatchObject({
+      type: "hollow_cuboid",
+    });
+  });
+
+  it("compiles a cottage request deterministically", () => {
+    const request = {
+      ...baseRequest,
+      message: "build me a house here",
+    };
+
+    const a = buildHeuristicPlan(request);
+    const b = buildHeuristicPlan(request);
+
+    expect(a?.intent).toBe("build_cottage");
+    expect(a?.needsMoreInfo).toBe(false);
+    expect(a?.passes).toHaveLength(2);
+    expect(JSON.stringify(a)).toBe(JSON.stringify(b));
+  });
+
+  it("returns undefined for complex template variations so AI handles them", () => {
+    const spiral = buildHeuristicPlan({
+      ...baseRequest,
+      message: "build me a spiral tower here",
+    });
+    const lighthouse = buildHeuristicPlan({
+      ...baseRequest,
+      message: "build me a lighthouse",
+    });
+
+    expect(spiral).toBeUndefined();
+    expect(lighthouse).toBeUndefined();
+  });
+
+  it("does not use template compilers when following up on a previous plan", () => {
+    // If a previous plan exists, follow-up context takes priority over new template dispatch.
+    const previousPlan: Plan = {
+      intent: "build_tower",
+      targetWorld: "world",
+      targetRegion: {
+        world: "world",
+        min: { x: -1, y: 64, z: -1 },
+        max: { x: 1, y: 71, z: 1 },
+      },
+      assumptions: [],
+      passes: [
+        {
+          name: "tower_column",
+          goal: "Build tower.",
+          primitives: [
+            {
+              type: "fill_cuboid",
+              from: { x: -1, y: 64, z: -1 },
+              to: { x: 1, y: 71, z: 1 },
+              block: "minecraft:stone",
+            },
+          ],
+        },
+      ],
+      reply: "Built.",
+      needsMoreInfo: false,
+    };
+
+    // "use stone instead" — with previous plan, should restyle, not build new
+    const plan = buildHeuristicPlan(
+      { ...baseRequest, message: "use stone instead" },
+      previousPlan,
+    );
+
+    // Should be a material restyle applied to the previous structure's region.
+    expect(plan?.intent).toBe("build_tower");
+    expect(plan?.passes[0]?.primitives[0]).toMatchObject({
+      block: "minecraft:stone",
+    });
+    expect(plan?.targetRegion).toEqual(previousPlan.targetRegion);
+  });
+});
+
 describe("buildHeuristicPlan", () => {
-  it("returns undefined for direct requests so AI can handle broader intents", () => {
-    const tower = buildHeuristicPlan({
-      ...baseRequest,
-      message: "make me a 5 block stone tower here",
-    });
-    const house = buildHeuristicPlan({
-      ...baseRequest,
-      message: "make me a house here",
-    });
+  it("returns undefined for requests outside the heuristic scope so the AI handles them", () => {
+    // Removal commands are not handled heuristically (no structure template).
     const tree = buildHeuristicPlan({
       ...baseRequest,
       message: "delete this tree",
     });
+    // Complex variations are explicitly excluded from template compilers.
+    const spiral = buildHeuristicPlan({
+      ...baseRequest,
+      message: "build me a spiral staircase",
+    });
+    // Requests with no known template trigger fall through.
+    const bridge = buildHeuristicPlan({
+      ...baseRequest,
+      message: "build me a bridge",
+    });
 
-    expect(tower).toBeUndefined();
-    expect(house).toBeUndefined();
     expect(tree).toBeUndefined();
+    expect(spiral).toBeUndefined();
+    expect(bridge).toBeUndefined();
   });
 
   it("asks for clarification when 'taller' has no previous structure context", () => {
