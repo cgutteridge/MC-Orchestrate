@@ -23,6 +23,17 @@
      - Completed: 2026-03-21
      - Evidence: `npm test`, `npm run build` — 38 → 53 tests, all green.
 
+12. Phase 1 Task 3 — Deterministic Template Compilers: Barn + Gazebo (2026-03-21)
+    - Subtasks:
+      - Added `BarnParams` + `compileBarnTemplate`: hollow_cuboid walls + A-frame gabled roof. Roof pitch is computed from depth — each layer steps inward by 1 on each Z side. For depth=8: 3 roof fill_cuboid layers; ridge is always the narrowest central slice.
+      - Added `GazeboParams` + `compileGazeboTemplate`: hollow cylinder platform ring + 4 vertical `fill_cuboid` posts at N/S/E/W + solid cylinder roof cap. Three passes.
+      - Added `parseBarnRequest` (triggers on "barn", "stable", "shed") and `parseGazeboRequest` (triggers on "gazebo", "pavilion", "pergola") with shared complexity blocklist.
+      - Both wired into `buildHeuristicPlan` before follow-up dispatch.
+      - 10 template unit tests + 2 integration tests. 100 → 115 tests, all green.
+    - Notes:
+      - Completed: 2026-03-21
+      - Evidence: `npm test`, `npm run build`
+
 11. Phase 1 Task 3 — Deterministic Template Compiler: Bridge (2026-03-21)
     - Subtasks:
       - Added `BridgeParams` type and `compileBridgeTemplate` in `templates.ts`.

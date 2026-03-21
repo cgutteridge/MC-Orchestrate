@@ -155,6 +155,31 @@ describe("buildHeuristicPlan — template dispatch", () => {
 });
 
 describe("buildHeuristicPlan", () => {
+  it("compiles a barn request with gabled roof", () => {
+    const plan = buildHeuristicPlan({
+      ...baseRequest,
+      message: "build me a barn here",
+    });
+
+    expect(plan?.intent).toBe("build_barn");
+    expect(plan?.needsMoreInfo).toBe(false);
+    expect(plan?.passes).toHaveLength(2);
+    expect(plan?.passes[1]?.name).toBe("gabled_roof");
+  });
+
+  it("compiles a gazebo request with platform, posts and roof", () => {
+    const plan = buildHeuristicPlan({
+      ...baseRequest,
+      message: "build me a gazebo here",
+    });
+
+    expect(plan?.intent).toBe("build_gazebo");
+    expect(plan?.needsMoreInfo).toBe(false);
+    expect(plan?.passes).toHaveLength(3);
+    expect(plan?.passes[0]?.name).toBe("platform");
+    expect(plan?.passes[2]?.name).toBe("roof_cap");
+  });
+
   it("returns undefined for requests outside the heuristic scope so the AI handles them", () => {
     // Removal commands are not handled heuristically (no structure template).
     const tree = buildHeuristicPlan({
@@ -167,14 +192,14 @@ describe("buildHeuristicPlan", () => {
       message: "build me a spiral staircase",
     });
     // Requests with no known template trigger fall through to the AI.
-    const barn = buildHeuristicPlan({
+    const pyramid = buildHeuristicPlan({
       ...baseRequest,
-      message: "build me a barn",
+      message: "build me a pyramid",
     });
 
     expect(tree).toBeUndefined();
     expect(spiral).toBeUndefined();
-    expect(barn).toBeUndefined();
+    expect(pyramid).toBeUndefined();
   });
 
   it("asks for clarification when 'taller' has no previous structure context", () => {

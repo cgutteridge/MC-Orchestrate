@@ -1,10 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
+  compileBarnTemplate,
   compileBridgeTemplate,
   compileCottageTemplate,
+  compileGazeboTemplate,
   compileTowerTemplate,
 } from "./templates.js";
-import type { BridgeParams, CottageParams, TowerParams } from "./templates.js";
+import type {
+  BarnParams,
+  BridgeParams,
+  CottageParams,
+  GazeboParams,
+  TowerParams,
+} from "./templates.js";
 
 // ---------------------------------------------------------------------------
 // Tower
@@ -244,5 +252,138 @@ describe("compileCottageTemplate", () => {
     expect(dx).toBeLessThanOrEqual(16);
     expect(dy).toBeLessThanOrEqual(32);
     expect(dz).toBeLessThanOrEqual(16);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Barn
+// ---------------------------------------------------------------------------
+
+describe("compileBarnTemplate", () => {
+  const base: BarnParams = {
+    world: "world",
+    origin: { x: 0, y: 64, z: 0 },
+    width: 12,
+    depth: 8,
+    wallHeight: 4,
+    wallBlock: "material:wall",
+    roofBlock: "material:roof",
+  };
+
+  it("produces a deterministic plan for the same params", () => {
+    const a = compileBarnTemplate(base);
+    const b = compileBarnTemplate(base);
+    expect(JSON.stringify(a)).toBe(JSON.stringify(b));
+  });
+
+  it("sets intent to build_barn", () => {
+    expect(compileBarnTemplate(base).intent).toBe("build_barn");
+  });
+
+  it("emits walls pass then gabled_roof pass", () => {
+    const plan = compileBarnTemplate(base);
+    expect(plan.passes[0]?.name).toBe("walls");
+    expect(plan.passes[1]?.name).toBe("gabled_roof");
+    expect(plan.passes[0]?.primitives[0]).toMatchObject({ type: "hollow_cuboid" });
+  });
+
+  it("gabled roof for depth=8 has 3 fill_cuboid layers stepping inward by 1 on each side", () => {
+    const plan = compileBarnTemplate(base);
+    const roofPrimitives = plan.passes[1]?.primitives ?? [];
+    // depth=8 → 3 roof layers
+    expect(roofPrimitives).toHaveLength(3);
+    // Layer 0: z=1..6 (1 inset from each side of 0..7)
+    expect(roofPrimitives[0]).toMatchObject({ from: { z: 1 }, to: { z: 6 } });
+    // Layer 1: z=2..5
+    expect(roofPrimitives[1]).toMatchObject({ from: { z: 2 }, to: { z: 5 } });
+    // Layer 2 (ridge): z=3..4
+    expect(roofPrimitives[2]).toMatchObject({ from: { z: 3 }, to: { z: 4 } });
+  });
+
+  it("roof ridge sits above wall top", () => {
+    const plan = compileBarnTemplate(base);
+    // wallHeight=4, origin.y=64 → wallTop=67; first roof layer y=68
+    expect(plan.passes[1]?.primitives[0]).toMatchObject({ from: { y: 68 } });
+  });
+
+  it("bounding box covers walls + all roof layers", () => {
+    const plan = compileBarnTemplate(base);
+    // 3 roof layers: y=68, 69, 70 → max.y = 70
+    expect(plan.targetRegion.max.y).toBe(70);
+  });
+
+  it("stays within safety budget for default params", () => {
+    const plan = compileBarnTemplate(base);
+    const dx = plan.targetRegion.max.x - plan.targetRegion.min.x + 1;
+    const dz = plan.targetRegion.max.z - plan.targetRegion.min.z + 1;
+    expect(dx).toBeLessThanOrEqual(16);
+    expect(dz).toBeLessThanOrEqual(16);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Gazebo
+// ---------------------------------------------------------------------------
+
+describe("compileGazeboTemplate", () => {
+  const base: GazeboParams = {
+    world: "world",
+    center: { x: 0, y: 64, z: 0 },
+    radius: 4,
+    postHeight: 4,
+    platformBlock: "material:wood",
+    postBlock: "material:trim",
+    roofBlock: "material:roof",
+  };
+
+  it("produces a deterministic plan for the same params", () => {
+    const a = compileGazeboTemplate(base);
+    const b = compileGazeboTemplate(base);
+    expect(JSON.stringify(a)).toBe(JSON.stringify(b));
+  });
+
+  it("sets intent to build_gazebo", () => {
+    expect(compileGazeboTemplate(base).intent).toBe("build_gazebo");
+  });
+
+  it("emits three passes: platform, posts, roof_cap", () => {
+    const plan = compileGazeboTemplate(base);
+    expect(plan.passes).toHaveLength(3);
+    expect(plan.passes[0]?.name).toBe("platform");
+    expect(plan.passes[1]?.name).toBe("posts");
+    expect(plan.passes[2]?.name).toBe("roof_cap");
+  });
+
+  it("platform is a hollow cylinder at ground level", () => {
+    const plan = compileGazeboTemplate(base);
+    expect(plan.passes[0]?.primitives[0]).toMatchObject({
+      type: "cylinder",
+      hollow: true,
+      axis: "y",
+      radius: 4,
+      height: 1,
+      center: { x: 0, y: 64, z: 0 },
+    });
+  });
+
+  it("posts pass has 4 fill_cuboid primitives at N/S/E/W positions", () => {
+    const plan = compileGazeboTemplate(base);
+    const posts = plan.passes[1]?.primitives ?? [];
+    expect(posts).toHaveLength(4);
+    // North post: z = center.z + radius = 4
+    expect(posts[0]).toMatchObject({ from: { z: 4 }, to: { z: 4 } });
+    // South post: z = center.z - radius = -4
+    expect(posts[1]).toMatchObject({ from: { z: -4 }, to: { z: -4 } });
+  });
+
+  it("roof cap is a solid cylinder at the top of the posts", () => {
+    const plan = compileGazeboTemplate(base);
+    // roofY = center.y + postHeight + 1 = 64 + 4 + 1 = 69
+    expect(plan.passes[2]?.primitives[0]).toMatchObject({
+      type: "cylinder",
+      hollow: false,
+      center: { y: 69 },
+      radius: 4,
+    });
   });
 });

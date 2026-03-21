@@ -9,11 +9,15 @@ import {
 import type { Plan } from "./schema.js";
 import { PlanSchema } from "./schema.js";
 import {
+  type BarnParams,
   type BridgeParams,
   type CottageParams,
+  type GazeboParams,
   type TowerParams,
+  compileBarnTemplate,
   compileBridgeTemplate,
   compileCottageTemplate,
+  compileGazeboTemplate,
   compileTowerTemplate,
 } from "./templates.js";
 
@@ -58,6 +62,84 @@ function parseTowerRequest(
     width,
     hollow,
     block,
+  };
+}
+
+/**
+ * Attempts to parse a simple barn request into typed template parameters.
+ * Returns `undefined` when the request is too complex or ambiguous.
+ */
+function parseBarnRequest(
+  request: ChatCommandRequest,
+): BarnParams | undefined {
+  const message = request.message.toLowerCase().trim();
+  if (!message.includes("barn") && !message.includes("stable") && !message.includes("shed")) {
+    return undefined;
+  }
+  if (TEMPLATE_COMPLEXITY_BLOCKLIST.test(message)) {
+    return undefined;
+  }
+
+  const wallBlock = parseRequestedBlock(request.message) ?? "material:wall";
+  const roofBlock = "material:roof";
+  const width = 12;
+  const depth = 8;
+  const wallHeight = 4;
+
+  const origin = structureFootprintOrigin(request, width, depth);
+
+  return {
+    world: request.player.world,
+    origin,
+    width,
+    depth,
+    wallHeight,
+    wallBlock,
+    roofBlock,
+  };
+}
+
+/**
+ * Attempts to parse a simple gazebo request into typed template parameters.
+ * Returns `undefined` when the request is too complex or ambiguous.
+ */
+function parseGazeboRequest(
+  request: ChatCommandRequest,
+): GazeboParams | undefined {
+  const message = request.message.toLowerCase().trim();
+  if (
+    !message.includes("gazebo") &&
+    !message.includes("pavilion") &&
+    !message.includes("pergola")
+  ) {
+    return undefined;
+  }
+  if (TEMPLATE_COMPLEXITY_BLOCKLIST.test(message)) {
+    return undefined;
+  }
+
+  const platformBlock = parseRequestedBlock(request.message) ?? "material:wood";
+  const postBlock = "material:trim";
+  const roofBlock = "material:roof";
+  const radius = 4;
+  const postHeight = 4;
+
+  // structureFootprintOrigin gives the min corner; offset by radius to get centre.
+  const footprintMin = structureFootprintOrigin(request, radius * 2 + 1, radius * 2 + 1);
+  const gazeboCenter = {
+    x: footprintMin.x + radius,
+    y: footprintMin.y,
+    z: footprintMin.z + radius,
+  };
+
+  return {
+    world: request.player.world,
+    center: gazeboCenter,
+    radius,
+    postHeight,
+    platformBlock,
+    postBlock,
+    roofBlock,
   };
 }
 
@@ -192,6 +274,16 @@ export function buildHeuristicPlan(
     const cottageParams = parseCottageRequest(request);
     if (cottageParams) {
       return PlanSchema.parse(compileCottageTemplate(cottageParams));
+    }
+
+    const barnParams = parseBarnRequest(request);
+    if (barnParams) {
+      return PlanSchema.parse(compileBarnTemplate(barnParams));
+    }
+
+    const gazeboParams = parseGazeboRequest(request);
+    if (gazeboParams) {
+      return PlanSchema.parse(compileGazeboTemplate(gazeboParams));
     }
   }
 

@@ -1,4 +1,4 @@
-import type { Plan, Point } from "./schema.js";
+import type { BuildPass, Plan, Point } from "./schema.js";
 
 // ---------------------------------------------------------------------------
 // Tower template
@@ -252,6 +252,232 @@ export function compileCottageTemplate(params: CottageParams): Plan {
       },
     ],
     reply: `Building a ${width}×${depth} cottage.`,
+    needsMoreInfo: false,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Barn template
+// ---------------------------------------------------------------------------
+
+export type BarnParams = {
+  /** World the barn is placed in. */
+  world: string;
+  /** Bottom-front-left corner of the barn footprint. */
+  origin: Point;
+  /** Width along the X axis (minimum 5, default 12). */
+  width: number;
+  /** Depth along the Z axis (minimum 5, default 8). Determines roof pitch. */
+  depth: number;
+  /** Wall height in blocks (minimum 3, default 4). */
+  wallHeight: number;
+  /** Block for the hollow walls. Accepts symbolic slots. */
+  wallBlock: string;
+  /** Block for the gabled roof layers. Accepts symbolic slots. */
+  roofBlock: string;
+};
+
+/**
+ * Compiles a barn template into a deterministic plan.
+ *
+ * Pass order:
+ * 1. Walls — hollow cuboid forming four walls, floor, and ceiling.
+ * 2. Gabled roof — a series of fill_cuboid layers that step inward by one
+ *    block on each Z side per layer, producing a pitched A-frame roof.
+ *    The ridge is the narrowest central slice.
+ */
+export function compileBarnTemplate(params: BarnParams): Plan {
+  const { world, origin, width, depth, wallHeight, wallBlock, roofBlock } = params;
+
+  const wallFrom: Point = { ...origin };
+  const wallTo: Point = {
+    x: origin.x + width - 1,
+    y: origin.y + wallHeight - 1,
+    z: origin.z + depth - 1,
+  };
+
+  const roofPass = buildGabledRoofPass(wallFrom, wallTo, roofBlock);
+
+  const maxRoofY =
+    roofPass.primitives.length > 0
+      ? origin.y + wallHeight + roofPass.primitives.length - 1
+      : wallTo.y;
+
+  return {
+    intent: "build_barn",
+    targetWorld: world,
+    targetRegion: {
+      world,
+      min: wallFrom,
+      max: { x: wallTo.x, y: maxRoofY, z: wallTo.z },
+    },
+    assumptions: [
+      `Deterministic barn template: ${width}×${depth} footprint, ${wallHeight}-block walls, ${roofPass.primitives.length}-layer gabled roof.`,
+    ],
+    passes: [
+      {
+        name: "walls",
+        goal: `Build ${width}×${depth} barn shell (hollow walls, floor, ceiling).`,
+        primitives: [
+          { type: "hollow_cuboid", from: wallFrom, to: wallTo, block: wallBlock },
+        ],
+      },
+      roofPass,
+    ],
+    reply: `Building a ${width}×${depth} barn.`,
+    needsMoreInfo: false,
+  };
+}
+
+/**
+ * Builds a single multi-primitive pass for a gabled (A-frame) roof above a
+ * given wall box. Each layer steps one block inward on both Z sides per Y
+ * level, producing a triangular cross-section when viewed from the ends.
+ */
+function buildGabledRoofPass(wallFrom: Point, wallTo: Point, block: string): BuildPass {
+  const primitives: BuildPass["primitives"] = [];
+  const wallTopY = wallTo.y;
+
+  for (let layer = 0; ; layer++) {
+    const y = wallTopY + 1 + layer;
+    const zFrom = wallFrom.z + layer + 1;
+    const zTo = wallTo.z - layer - 1;
+    if (zFrom > zTo) {
+      break;
+    }
+    primitives.push({
+      type: "fill_cuboid",
+      from: { x: wallFrom.x, y, z: zFrom },
+      to: { x: wallTo.x, y, z: zTo },
+      block,
+    });
+  }
+
+  return {
+    name: "gabled_roof",
+    goal: "Build A-frame gabled roof.",
+    primitives: primitives.length > 0 ? primitives : [
+      // Fallback: flat cap if depth is too small to pitch
+      {
+        type: "fill_cuboid",
+        from: { x: wallFrom.x, y: wallTopY + 1, z: wallFrom.z },
+        to: { x: wallTo.x, y: wallTopY + 1, z: wallTo.z },
+        block,
+      },
+    ],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Gazebo template
+// ---------------------------------------------------------------------------
+
+export type GazeboParams = {
+  /** World the gazebo is placed in. */
+  world: string;
+  /** Centre of the gazebo at ground-floor level. */
+  center: Point;
+  /** Radius of the platform ring in blocks (2–5, default 4). */
+  radius: number;
+  /** Height of the support posts in blocks (3–5, default 4). */
+  postHeight: number;
+  /** Block for the platform ring and inner floor. Accepts symbolic slots. */
+  platformBlock: string;
+  /** Block for the four vertical posts. Accepts symbolic slots. */
+  postBlock: string;
+  /** Block for the solid roof cap. Accepts symbolic slots. */
+  roofBlock: string;
+};
+
+/**
+ * Compiles a gazebo template into a deterministic plan.
+ *
+ * Pass order:
+ * 1. Platform ring — hollow cylinder at ground level (the edge surround).
+ * 2. Posts — four vertical fill_cuboids at N/S/E/W positions on the ring edge.
+ * 3. Roof cap — solid cylinder disc at the top of the posts.
+ */
+export function compileGazeboTemplate(params: GazeboParams): Plan {
+  const { world, center, radius, postHeight, platformBlock, postBlock, roofBlock } = params;
+
+  const roofY = center.y + postHeight + 1;
+
+  const posts: BuildPass["primitives"] = [
+    {
+      type: "fill_cuboid",
+      from: { x: center.x, y: center.y + 1, z: center.z + radius },
+      to: { x: center.x, y: center.y + postHeight, z: center.z + radius },
+      block: postBlock,
+    },
+    {
+      type: "fill_cuboid",
+      from: { x: center.x, y: center.y + 1, z: center.z - radius },
+      to: { x: center.x, y: center.y + postHeight, z: center.z - radius },
+      block: postBlock,
+    },
+    {
+      type: "fill_cuboid",
+      from: { x: center.x + radius, y: center.y + 1, z: center.z },
+      to: { x: center.x + radius, y: center.y + postHeight, z: center.z },
+      block: postBlock,
+    },
+    {
+      type: "fill_cuboid",
+      from: { x: center.x - radius, y: center.y + 1, z: center.z },
+      to: { x: center.x - radius, y: center.y + postHeight, z: center.z },
+      block: postBlock,
+    },
+  ];
+
+  return {
+    intent: "build_gazebo",
+    targetWorld: world,
+    targetRegion: {
+      world,
+      min: { x: center.x - radius, y: center.y, z: center.z - radius },
+      max: { x: center.x + radius, y: roofY, z: center.z + radius },
+    },
+    assumptions: [
+      `Deterministic gazebo template: radius ${radius}, ${postHeight}-block posts.`,
+    ],
+    passes: [
+      {
+        name: "platform",
+        goal: "Build circular platform ring.",
+        primitives: [
+          {
+            type: "cylinder",
+            center: { x: center.x, y: center.y, z: center.z },
+            radius,
+            height: 1,
+            block: platformBlock,
+            hollow: true,
+            axis: "y",
+          },
+        ],
+      },
+      {
+        name: "posts",
+        goal: "Add four cardinal support posts.",
+        primitives: posts,
+      },
+      {
+        name: "roof_cap",
+        goal: "Add solid cylinder roof cap.",
+        primitives: [
+          {
+            type: "cylinder",
+            center: { x: center.x, y: roofY, z: center.z },
+            radius,
+            height: 1,
+            block: roofBlock,
+            hollow: false,
+            axis: "y",
+          },
+        ],
+      },
+    ],
+    reply: `Building a gazebo with radius ${radius}.`,
     needsMoreInfo: false,
   };
 }
