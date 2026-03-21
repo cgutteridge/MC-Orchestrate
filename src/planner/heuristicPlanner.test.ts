@@ -162,4 +162,68 @@ describe("buildHeuristicPlan", () => {
     expect(plan?.intent).toBe("unknown");
     expect(plan?.needsMoreInfo).toBe(true);
   });
+
+  it("restyles the previous structure when a follow-up material is requested", () => {
+    const request = {
+      ...baseRequest,
+      message: "use oak instead",
+      recentMessages: [],
+    };
+    const previousPlan: Plan = {
+      intent: "build_structure",
+      targetWorld: "world",
+      targetRegion: {
+        world: "world",
+        min: { x: -51, y: 113, z: -17 },
+        max: { x: -49, y: 117, z: -15 },
+      },
+      assumptions: [],
+      passes: [
+        {
+          name: "base",
+          goal: "Build base structure.",
+          primitives: [
+            {
+              type: "fill_cuboid",
+              from: { x: -51, y: 113, z: -17 },
+              to: { x: -49, y: 117, z: -15 },
+              block: "minecraft:white_wool",
+            },
+          ],
+        },
+      ],
+      reply: "Built.",
+      needsMoreInfo: false,
+    };
+
+    const plan = buildHeuristicPlan(request, previousPlan);
+
+    expect(plan?.intent).toBe("build_structure");
+    expect(plan?.needsMoreInfo).toBe(false);
+    expect(plan?.passes[0]?.primitives[0]).toEqual({
+      type: "fill_cuboid",
+      from: { x: -51, y: 113, z: -17 },
+      to: { x: -49, y: 117, z: -15 },
+      block: "minecraft:oak_planks",
+    });
+    expect(plan?.reply).toContain("minecraft:oak_planks");
+  });
+
+  it("asks for clarification on material follow-up with no structure context", () => {
+    const request = {
+      ...baseRequest,
+      message: "oak",
+      recentMessages: [],
+      localContext: {
+        ...baseRequest.localContext,
+        targetBlock: undefined,
+      },
+    };
+
+    const plan = buildHeuristicPlan(request);
+
+    expect(plan?.intent).toBe("unknown");
+    expect(plan?.needsMoreInfo).toBe(true);
+    expect(plan?.clarification).toContain("structure context");
+  });
 });

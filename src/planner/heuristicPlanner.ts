@@ -2,6 +2,7 @@ import type { ChatCommandRequest } from "../types/plugin.js";
 import {
   asBlock,
   normalizeRegion,
+  parseRequestedBlock,
 } from "./requestContext.js";
 import { PlanSchema, type Plan } from "./schema.js";
 
@@ -12,7 +13,17 @@ export function buildHeuristicPlan(
   request: ChatCommandRequest,
   previousPlan?: Plan,
 ): Plan | undefined {
-  const message = request.message.toLowerCase();
+  const message = request.message.toLowerCase().trim();
+  const requestedBlock = parseRequestedBlock(message);
+  if (requestedBlock && isMaterialFollowUpMessage(message)) {
+    if (isMaterialAdjustableStructurePlan(previousPlan)) {
+      return PlanSchema.parse(
+        buildStructureMaterialFollowUpFromPreviousPlan(previousPlan, requestedBlock),
+      );
+    }
+    return PlanSchema.parse(buildStructureFollowUpClarification(request));
+  }
+
   if (message.includes("taller") || message.includes("higher")) {
     if (isHeightAdjustableStructurePlan(previousPlan)) {
       return PlanSchema.parse(
@@ -76,6 +87,41 @@ function buildStructureFollowUpFromPreviousPlan(
   };
 }
 
+function buildStructureMaterialFollowUpFromPreviousPlan(
+  previousPlan: Plan,
+  block: string,
+): Plan {
+  const previousRegion = normalizeRegion(previousPlan.targetRegion);
+  return {
+    intent: previousPlan.intent,
+    targetWorld: previousPlan.targetWorld,
+    targetRegion: previousRegion,
+    assumptions: [
+      `Restyling the previously built structure in ${block}.`,
+    ],
+    passes: previousPlan.passes.map((pass) => ({
+      ...pass,
+      primitives: pass.primitives.map((primitive) => {
+        switch (primitive.type) {
+          case "set_block":
+          case "fill_cuboid":
+          case "hollow_cuboid":
+          case "cylinder":
+            return {
+              ...primitive,
+              block,
+            };
+          case "replace_in_region":
+          case "clear_region":
+            return primitive;
+        }
+      }),
+    })),
+    reply: `Restyling it in ${block}.`,
+    needsMoreInfo: false,
+  };
+}
+
 function buildStructureFollowUpClarification(request: ChatCommandRequest): Plan {
   const point = asBlock(request.player.position);
   return {
@@ -116,6 +162,20 @@ function parseHeightDelta(message: string): number | undefined {
   return Number.isFinite(fallback) ? Math.max(1, Math.min(8, fallback)) : undefined;
 }
 
+function isMaterialFollowUpMessage(message: string): boolean {
+  const trimmed = message.trim().toLowerCase();
+  if (trimmed.length === 0) {
+    return false;
+  }
+  if (/\b(build|create|construct|remove|delete|destroy)\b/.test(trimmed)) {
+    return false;
+  }
+  if (!/\b(it|that|same|instead|swap|change|use|in)\b/.test(trimmed)) {
+    return trimmed.split(/\s+/).length === 1;
+  }
+  return true;
+}
+
 function extractPrimaryBuildBlock(plan: Plan): string | undefined {
   for (const pass of plan.passes) {
     for (const primitive of pass.primitives) {
@@ -135,6 +195,13 @@ function extractPrimaryBuildBlock(plan: Plan): string | undefined {
 }
 
 function isHeightAdjustableStructurePlan(plan?: Plan): plan is Plan {
+  if (!plan || plan.needsMoreInfo || plan.passes.length === 0) {
+    return false;
+  }
+  return hasAdditiveStructurePrimitive(plan);
+}
+
+function isMaterialAdjustableStructurePlan(plan?: Plan): plan is Plan {
   if (!plan || plan.needsMoreInfo || plan.passes.length === 0) {
     return false;
   }
