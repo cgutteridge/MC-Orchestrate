@@ -1,6 +1,5 @@
 import type { ChatCommandRequest } from "../types/plugin.js";
 import type { Point, Region } from "./schema.js";
-import { normalizeBlockId, parseRequestedBlock } from "./materialPalette.js";
 
 const REPLACEABLE_TARGET_BLOCKS = new Set([
   "minecraft:air",
@@ -40,11 +39,6 @@ export function parseRequestedHeight(message: string): number | undefined {
   const value = Number.parseInt(match[1], 10);
   return Number.isFinite(value) ? Math.max(1, Math.min(16, value)) : undefined;
 }
-
-/**
- * Extracts a supported material hint from freeform player text when present.
- */
-export { parseRequestedBlock, normalizeBlockId };
 
 /**
  * Computes a block anchor in front of the player based on their current look vector.

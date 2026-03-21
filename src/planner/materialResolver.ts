@@ -1,7 +1,9 @@
 import type { ChatCommandRequest } from "../types/plugin.js";
 import { PlanSchema, type Plan, type Primitive } from "./schema.js";
 import {
+  GRAVITY_BLOCKS,
   MATERIAL_ALIASES,
+  NON_STRUCTURAL_BLOCKS,
   SUPPORTED_BLOCK_IDS,
   SUPPORTED_MATERIAL_HINTS,
   parseRequestedBlock,
@@ -86,6 +88,15 @@ type MaterialResolutionContext = {
   prefersStone: boolean;
 };
 
+/**
+ * Resolves all symbolic material slots and generic aliases in a plan's
+ * primitives to concrete `minecraft:` block ids, using the player's nearby
+ * block histogram and explicit material hints as ranking signals.
+ *
+ * When any block cannot be resolved safely the entire plan is replaced with a
+ * `needsMoreInfo` clarification so the player is never silently given a bad
+ * build.
+ */
 export function resolvePlanMaterials(
   plan: Plan,
   request: ChatCommandRequest,
@@ -130,24 +141,26 @@ function resolvePrimitiveMaterials(
     case "set_block":
       return {
         ...primitive,
-        block: resolveBlockId(primitive.block, unresolved, context),
+        block: resolveBlockId(primitive.block, unresolved, context, true),
       };
     case "fill_cuboid":
     case "hollow_cuboid":
       return {
         ...primitive,
-        block: resolveBlockId(primitive.block, unresolved, context),
-      };
-    case "replace_in_region":
-      return {
-        ...primitive,
-        fromBlock: resolveBlockId(primitive.fromBlock, unresolved, context),
-        toBlock: resolveBlockId(primitive.toBlock, unresolved, context),
+        block: resolveBlockId(primitive.block, unresolved, context, true),
       };
     case "cylinder":
       return {
         ...primitive,
-        block: resolveBlockId(primitive.block, unresolved, context),
+        block: resolveBlockId(primitive.block, unresolved, context, true),
+      };
+    case "replace_in_region":
+      // fromBlock and toBlock may be operational values (minecraft:air to clear,
+      // minecraft:water to fill) — structural constraint does not apply.
+      return {
+        ...primitive,
+        fromBlock: resolveBlockId(primitive.fromBlock, unresolved, context, false),
+        toBlock: resolveBlockId(primitive.toBlock, unresolved, context, false),
       };
     case "clear_region":
       return primitive;
@@ -158,6 +171,7 @@ function resolveBlockId(
   block: string,
   unresolved: Set<string>,
   context: MaterialResolutionContext,
+  structural: boolean,
 ): string {
   const normalized = block.toLowerCase().trim();
   const slot = parseMaterialSlot(normalized);
@@ -170,17 +184,27 @@ function resolveBlockId(
     return block;
   }
 
-  const mapped = MATERIAL_ALIASES[normalized];
-  if (mapped) {
-    return mapped;
+  const mapped = MATERIAL_ALIASES[normalized] ?? (SUPPORTED_BLOCK_IDS.has(normalized) ? normalized : undefined);
+  if (!mapped) {
+    unresolved.add(block);
+    return block;
   }
 
-  if (SUPPORTED_BLOCK_IDS.has(normalized)) {
-    return normalized;
+  if (structural && isUnsafeForStructure(mapped)) {
+    unresolved.add(block);
+    return block;
   }
 
-  unresolved.add(block);
-  return block;
+  return mapped;
+}
+
+/**
+ * Returns `true` when a block is unsuitable for use in structural build
+ * primitives — either because it is non-solid/fluid or because it is
+ * gravity-affected and will fall without support.
+ */
+function isUnsafeForStructure(block: string): boolean {
+  return NON_STRUCTURAL_BLOCKS.has(block) || GRAVITY_BLOCKS.has(block);
 }
 
 function buildMaterialResolutionContext(
@@ -234,7 +258,7 @@ function parseMaterialSlot(value: string): MaterialSlot | undefined {
     return MATERIAL_SLOT_ALIASES[value.slice(1)];
   }
   if (value.startsWith("{{") && value.endsWith("}}")) {
-    return MATERIAL_SLOT_ALIASES[value.slice(2, -2)];
+    return MATERIAL_SLOT_ALIASES[value.slice(2, -2).trim()];
   }
   return undefined;
 }
@@ -318,9 +342,7 @@ function isWoodBlock(block: string): boolean {
     block.includes("oak_") ||
     block.includes("spruce_") ||
     block.includes("_planks") ||
-    block.includes("_log") ||
-    block.includes("_fence") ||
-    block.includes("_stairs")
+    block.includes("_log")
   );
 }
 

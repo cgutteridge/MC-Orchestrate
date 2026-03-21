@@ -83,11 +83,7 @@ describe("Orchestrator", () => {
     };
 
     const bridge = new FakeBridge();
-    const orchestrator = new Orchestrator(
-      bridge as never,
-      "/Users/cjg/Projects/MC-Orchestrate/minecraft-server",
-      provider,
-    );
+    const orchestrator = new Orchestrator(bridge as never, provider);
 
     await orchestrator.handleChatCommand({
       ...request,
@@ -169,11 +165,7 @@ describe("Orchestrator", () => {
         });
       },
     };
-    const orchestrator = new Orchestrator(
-      bridge as never,
-      "/Users/cjg/Projects/MC-Orchestrate/minecraft-server",
-      provider,
-    );
+    const orchestrator = new Orchestrator(bridge as never, provider);
 
     await orchestrator.handleChatCommand({
       ...request,
@@ -287,11 +279,7 @@ describe("Orchestrator", () => {
         });
       },
     };
-    const orchestrator = new Orchestrator(
-      bridge as never,
-      "/Users/cjg/Projects/MC-Orchestrate/minecraft-server",
-      provider,
-    );
+    const orchestrator = new Orchestrator(bridge as never, provider);
 
     await orchestrator.handleChatCommand({
       ...request,
@@ -373,11 +361,7 @@ describe("Orchestrator", () => {
       },
     };
     const bridge = new FakeBridge();
-    const orchestrator = new Orchestrator(
-      bridge as never,
-      "/Users/cjg/Projects/MC-Orchestrate/minecraft-server",
-      provider,
-    );
+    const orchestrator = new Orchestrator(bridge as never, provider);
 
     // act
     const response = await orchestrator.handleChatCommand(request);
@@ -414,11 +398,7 @@ describe("Orchestrator", () => {
       },
     };
     const bridge = new FakeBridge();
-    const orchestrator = new Orchestrator(
-      bridge as never,
-      "/Users/cjg/Projects/MC-Orchestrate/minecraft-server",
-      provider,
-    );
+    const orchestrator = new Orchestrator(bridge as never, provider);
 
     const response = await orchestrator.handleChatCommand({
       ...request,
@@ -470,11 +450,7 @@ describe("Orchestrator", () => {
     };
 
     const bridge = new FakeBridge();
-    const orchestrator = new Orchestrator(
-      bridge as never,
-      "/Users/cjg/Projects/MC-Orchestrate/minecraft-server",
-      provider,
-    );
+    const orchestrator = new Orchestrator(bridge as never, provider);
 
     await orchestrator.handleChatCommand({
       ...request,
@@ -557,11 +533,7 @@ describe("Orchestrator", () => {
     };
 
     const bridge = new FakeBridge();
-    const orchestrator = new Orchestrator(
-      bridge as never,
-      "/Users/cjg/Projects/MC-Orchestrate/minecraft-server",
-      provider,
-    );
+    const orchestrator = new Orchestrator(bridge as never, provider);
 
     await orchestrator.handleChatCommand({
       ...request,
@@ -673,11 +645,7 @@ describe("Orchestrator", () => {
     };
     const bridge = new FakeBridge();
     bridge.failOnCallNumber = 2;
-    const orchestrator = new Orchestrator(
-      bridge as never,
-      "/Users/cjg/Projects/MC-Orchestrate/minecraft-server",
-      provider,
-    );
+    const orchestrator = new Orchestrator(bridge as never, provider);
 
     const response = await orchestrator.handleChatCommand({
       ...request,

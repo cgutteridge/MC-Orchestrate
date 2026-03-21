@@ -25,34 +25,26 @@ function compilePrimitive(primitive: Primitive): BridgeCommand[] {
           block: primitive.block,
         },
       ];
-    case "fill_cuboid":
-      return [
-        {
-          kind: "fill",
-          from: primitive.from,
-          to: primitive.to,
-          block: primitive.block,
-        },
-      ];
-    case "clear_region":
-      return [
-        {
-          kind: "fill",
-          from: primitive.from,
-          to: primitive.to,
-          block: "minecraft:air",
-        },
-      ];
-    case "replace_in_region":
+    case "fill_cuboid": {
+      const fill = normalizeCuboid(primitive.from, primitive.to);
+      return [{ kind: "fill", from: fill.from, to: fill.to, block: primitive.block }];
+    }
+    case "clear_region": {
+      const clear = normalizeCuboid(primitive.from, primitive.to);
+      return [{ kind: "fill", from: clear.from, to: clear.to, block: "minecraft:air" }];
+    }
+    case "replace_in_region": {
+      const replace = normalizeCuboid(primitive.from, primitive.to);
       return [
         {
           kind: "replace",
-          from: primitive.from,
-          to: primitive.to,
+          from: replace.from,
+          to: replace.to,
           fromBlock: primitive.fromBlock,
           toBlock: primitive.toBlock,
         },
       ];
+    }
     case "hollow_cuboid":
       return compileHollowCuboid(primitive.from, primitive.to, primitive.block);
     case "cylinder":

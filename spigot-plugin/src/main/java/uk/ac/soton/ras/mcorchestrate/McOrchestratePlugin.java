@@ -15,18 +15,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.bukkit.Bukkit;
-import org.bukkit.Location;
-import org.bukkit.Material;
-import org.bukkit.World;
-import org.bukkit.block.Block;
-import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.AsyncPlayerChatEvent;
 import org.bukkit.plugin.java.JavaPlugin;
-import org.bukkit.util.Vector;
 
 public final class McOrchestratePlugin extends JavaPlugin implements Listener {
     private static final String BOT_PREFIX = "bot:";
@@ -80,6 +74,9 @@ public final class McOrchestratePlugin extends JavaPlugin implements Listener {
                     JsonPayloadBuilder.extractResponseSummary(response.body());
                 Bukkit.getScheduler().runTask(this, () -> {
                     String reply = summary.reply();
+                    // error is non-null only for HTTP-level failures (e.g. 400
+                    // from Zod validation), not for orchestrator error responses
+                    // which carry their message in the reply field.
                     String error = summary.error();
                     if (reply == null || reply.isBlank()) {
                         if (error != null && !error.isBlank()) {
@@ -90,6 +87,9 @@ public final class McOrchestratePlugin extends JavaPlugin implements Listener {
                         return;
                     }
 
+                    // For "executed" responses the bridge already sent a
+                    // /say command that broadcasts to all players, so we
+                    // skip a redundant private message here.
                     if (!"executed".equals(summary.status())) {
                         player.sendMessage("[Bot] " + reply);
                     }

@@ -140,6 +140,34 @@ describe("buildAiPlan", () => {
     expect(plan.passes).toEqual([]);
   });
 
+  it("drops a partially-specified cylinder when the player did not ask for one", async () => {
+    const provider: ChatProvider = {
+      name: "test",
+      async chat() {
+        return JSON.stringify({
+          intent: "unknown",
+          passes: [
+            {
+              name: "mystery",
+              goal: "Build something.",
+              // radius provided but center and height absent — should still be dropped
+              primitives: [{ type: "cylinder", radius: 3 }],
+            },
+          ],
+          reply: "Building something.",
+          needsMoreInfo: false,
+        });
+      },
+    };
+
+    const plan = await buildAiPlan(provider, {
+      ...request,
+      message: "make me a cottage here",
+    });
+
+    expect(plan.passes).toEqual([]);
+  });
+
   it("drops under-specified cylinders unless the player explicitly asked for one", async () => {
     const provider: ChatProvider = {
       name: "test",

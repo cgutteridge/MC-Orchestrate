@@ -1,6 +1,6 @@
 import type { ChatCommandRequest } from "../types/plugin.js";
-import { normalizeRegion } from "./requestContext.js";
-import type { Plan } from "./schema.js";
+import { normalizeCuboid, normalizeRegion } from "./requestContext.js";
+import type { Plan, Primitive } from "./schema.js";
 
 const MAX_BLOCKS_PER_REQUEST = 2048;
 const MAX_REGION_WIDTH = 16;
@@ -35,6 +35,15 @@ export function validatePlanSafety(
     return "That would change too many blocks at once.";
   }
 
+  // The targetRegion bounding-box check above does not account for cylinder
+  // primitives, whose block count depends on radius/height rather than the
+  // declared region. Check the estimated primitive block count separately so
+  // large cylinders cannot bypass the limit.
+  const primitiveBlockCount = estimatePlanBlockCount(plan);
+  if (primitiveBlockCount > MAX_BLOCKS_PER_REQUEST) {
+    return "That would change too many blocks at once.";
+  }
+
   const dx = Math.abs(
     Math.round((targetRegion.min.x + targetRegion.max.x) / 2) -
       Math.round(request.player.position.x),
@@ -48,4 +57,36 @@ export function validatePlanSafety(
   }
 
   return undefined;
+}
+
+/**
+ * Estimates the total number of blocks affected by all primitives in the plan.
+ * Uses conservative upper bounds (e.g. solid-cylinder formula) so the check
+ * fails closed when the AI over-generates.
+ */
+function estimatePlanBlockCount(plan: Plan): number {
+  let total = 0;
+  for (const pass of plan.passes) {
+    for (const primitive of pass.primitives) {
+      total += estimatePrimitiveBlockCount(primitive);
+    }
+  }
+  return total;
+}
+
+function estimatePrimitiveBlockCount(primitive: Primitive): number {
+  switch (primitive.type) {
+    case "set_block":
+      return 1;
+    case "fill_cuboid":
+    case "hollow_cuboid":
+    case "clear_region":
+    case "replace_in_region": {
+      const { from, to } = normalizeCuboid(primitive.from, primitive.to);
+      return (to.x - from.x + 1) * (to.y - from.y + 1) * (to.z - from.z + 1);
+    }
+    case "cylinder":
+      // Solid-cylinder formula as an upper bound regardless of hollow flag.
+      return Math.ceil(Math.PI * primitive.radius * primitive.radius * primitive.height);
+  }
 }

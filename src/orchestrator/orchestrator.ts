@@ -1,7 +1,6 @@
 import { BridgeServer } from "../bridge/bridgeServer.js";
 import type { ChatProvider } from "../services/ai/types.js";
 import type { ChatCommandRequest, ChatCommandResponse } from "../types/plugin.js";
-import { WorldReader } from "../world/worldReader.js";
 import { buildAiPlan } from "../planner/aiPlanner.js";
 import { compilePlanToBridgeCommands } from "../planner/compilePlan.js";
 import type { PlannerLogger } from "../planner/planLogger.js";
@@ -14,18 +13,14 @@ import type { Plan } from "../planner/schema.js";
  * Coordinates chat requests, planning, safety checks, and bridge execution.
  */
 export class Orchestrator {
-  private readonly worldReader: WorldReader;
   private readonly recentMessagesByPlayer = new Map<string, string[]>();
   private readonly lastBuiltStructurePlanByPlayer = new Map<string, Plan>();
 
   constructor(
     private readonly bridge: BridgeServer,
-    minecraftDir: string,
     private readonly provider?: ChatProvider,
     private readonly plannerLogger?: PlannerLogger,
-  ) {
-    this.worldReader = new WorldReader(minecraftDir);
-  }
+  ) {}
 
   /**
    * Handles a single in-game chat command from the plugin boundary.
@@ -48,14 +43,9 @@ export class Orchestrator {
       plan ??= buildHeuristicPlan(planningRequest, previousPlan);
 
       if (!plan) {
-        const levelSummary = await this.worldReader.readLevelMetadata();
-        const regions = await this.worldReader.listRegionFiles();
         return {
           status: "needs_more_info",
-          reply:
-            levelSummary || regions.length > 0
-              ? "I need a more specific building instruction."
-              : "I need a more specific instruction.",
+          reply: "I need a more specific building instruction.",
           requestId: request.requestId,
           intent: "unknown",
         };

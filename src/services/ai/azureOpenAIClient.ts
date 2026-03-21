@@ -18,7 +18,6 @@ export class AzureOpenAIChatProvider implements ChatProvider {
     private readonly apiKey: string,
     private readonly apiVersion: string,
     private readonly deployment: string,
-    private readonly debug = false,
     private readonly logPath?: string,
     private readonly contentFilterPolicyId?: string,
   ) {}
@@ -59,9 +58,6 @@ export class AzureOpenAIChatProvider implements ChatProvider {
       });
       const text = await response.text();
 
-      if (this.debug) {
-        process.stderr.write(`[debug] ${response.status} ${text}\n`);
-      }
       if (this.logPath) {
         await this.appendLog(url, body, response.status, text);
       }

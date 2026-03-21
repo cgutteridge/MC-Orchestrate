@@ -1,13 +1,13 @@
 import type { ChatProvider } from "../services/ai/types.js";
 import { extractJsonValue, parseJsonStrict } from "../services/ai/json.js";
 import type { ChatCommandRequest } from "../types/plugin.js";
+import { escapeRegex } from "../utils/regex.js";
+import { normalizeBlockId, parseRequestedBlock } from "./materialPalette.js";
 import type { PlannerLogger } from "./planLogger.js";
 import { buildPlannerMessages } from "./prompt.js";
 import {
   anchorPoint,
   defaultRegion,
-  normalizeBlockId,
-  parseRequestedBlock,
   parseRequestedHeight,
   structureAnchorPoint,
 } from "./requestContext.js";
@@ -160,20 +160,24 @@ function repairPrimitive(
   const lowerMessage = request.message.toLowerCase();
 
   switch (type) {
-    case "cylinder":
-      if (
-        !lowerMessage.includes("cylinder") &&
-        !asPointRecord(record.center ?? parameters?.center) &&
-        typeof (record.radius ?? parameters?.radius) !== "number" &&
-        typeof (record.height ?? parameters?.height) !== "number"
-      ) {
+    case "cylinder": {
+      const cylinderCenter = asPointRecord(
+        record.center ?? parameters?.center,
+      );
+      const cylinderRadius = record.radius ?? parameters?.radius;
+      const cylinderHeight = record.height ?? parameters?.height;
+      const fullySpecified =
+        cylinderCenter &&
+        typeof cylinderRadius === "number" &&
+        typeof cylinderHeight === "number";
+      if (!lowerMessage.includes("cylinder") && !fullySpecified) {
         return undefined;
       }
       return {
         type,
-        center: asPointRecord(record.center ?? parameters?.center) ?? structureAnchor,
-        radius: asInt(record.radius ?? parameters?.radius, 2),
-        height: asInt(record.height ?? parameters?.height, height),
+        center: cylinderCenter ?? structureAnchor,
+        radius: asInt(cylinderRadius, 2),
+        height: asInt(cylinderHeight, height),
         block:
           typeof (record.block ?? parameters?.block) === "string"
             ? normalizeBlockId(String(record.block ?? parameters?.block))
@@ -191,6 +195,7 @@ function repairPrimitive(
               ? parameters.axis
             : "y",
       };
+    }
     case "fill_cuboid":
     case "hollow_cuboid":
     case "clear_region":
@@ -355,10 +360,6 @@ function normalizeIntentLabel(value: unknown): string | undefined {
     return undefined;
   }
   return normalized;
-}
-
-function escapeRegex(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function asPointRecord(value: unknown): Record<string, unknown> | undefined {

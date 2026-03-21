@@ -1,8 +1,8 @@
 import type { ChatCommandRequest } from "../types/plugin.js";
+import { parseRequestedBlock } from "./materialPalette.js";
 import {
   asBlock,
   normalizeRegion,
-  parseRequestedBlock,
 } from "./requestContext.js";
 import { PlanSchema, type Plan } from "./schema.js";
 
@@ -16,31 +16,39 @@ export function buildHeuristicPlan(
   const message = request.message.toLowerCase().trim();
   const requestedBlock = parseRequestedBlock(message);
   if (requestedBlock && isMaterialFollowUpMessage(message)) {
-    if (isMaterialAdjustableStructurePlan(previousPlan)) {
+    if (isAdjustableStructurePlan(previousPlan)) {
       return PlanSchema.parse(
         buildStructureMaterialFollowUpFromPreviousPlan(previousPlan, requestedBlock),
       );
     }
-    return PlanSchema.parse(buildStructureFollowUpClarification(request));
+    return PlanSchema.parse(buildStructureFollowUpClarification(request, "material"));
   }
 
   if (message.includes("taller") || message.includes("higher")) {
-    if (isHeightAdjustableStructurePlan(previousPlan)) {
+    if (isAdjustableStructurePlan(previousPlan)) {
       return PlanSchema.parse(
         buildStructureFollowUpFromPreviousPlan(request, previousPlan),
       );
     }
-    return PlanSchema.parse(buildStructureFollowUpClarification(request));
+    return PlanSchema.parse(buildStructureFollowUpClarification(request, "height"));
   }
 
   if (message.includes("bigger") || message.includes("larger")) {
-    if (isFootprintAdjustableStructurePlan(previousPlan)) {
+    if (isAdjustableStructurePlan(previousPlan)) {
       return PlanSchema.parse(
         buildStructureFootprintFollowUpFromPreviousPlan(request, previousPlan),
       );
     }
-    return PlanSchema.parse(buildStructureFollowUpClarification(request));
+    return PlanSchema.parse(buildStructureFollowUpClarification(request, "footprint"));
   }
+
+  if (isLocationQuery(message)) {
+    if (previousPlan) {
+      return PlanSchema.parse(buildStructureLocationReply(request, previousPlan));
+    }
+    return PlanSchema.parse(buildStructureFollowUpClarification(request, "location"));
+  }
+
   return undefined;
 }
 
@@ -193,7 +201,20 @@ function buildStructureFootprintFollowUpFromPreviousPlan(
   };
 }
 
-function buildStructureFollowUpClarification(request: ChatCommandRequest): Plan {
+const CLARIFICATION_REPLY: Record<
+  "height" | "footprint" | "material" | "location",
+  string
+> = {
+  height: "Tell me which structure to make taller.",
+  footprint: "Tell me which structure to make bigger.",
+  material: "Tell me which structure to restyle.",
+  location: "I don't have a recent structure to locate.",
+};
+
+function buildStructureFollowUpClarification(
+  request: ChatCommandRequest,
+  kind: "height" | "footprint" | "material" | "location",
+): Plan {
   const point = asBlock(request.player.position);
   return {
     intent: "unknown",
@@ -205,10 +226,41 @@ function buildStructureFollowUpClarification(request: ChatCommandRequest): Plan 
     },
     assumptions: [],
     passes: [],
-    reply: "Tell me which structure to make taller.",
+    reply: CLARIFICATION_REPLY[kind],
     needsMoreInfo: true,
     clarification:
-      "I need structure context. Try `make that structure taller by 2` or look at the structure and ask again.",
+      "I need structure context. Try looking at the structure and asking again.",
+  };
+}
+
+const LOCATION_QUERY_PATTERN =
+  /\b(can'?t see|cannot see|can'?t find|where is it|where did it go|where'?s it|lost it)\b/;
+
+function isLocationQuery(message: string): boolean {
+  return LOCATION_QUERY_PATTERN.test(message);
+}
+
+function buildStructureLocationReply(
+  request: ChatCommandRequest,
+  previousPlan: Plan,
+): Plan {
+  const region = normalizeRegion(previousPlan.targetRegion);
+  const cx = Math.round((region.min.x + region.max.x) / 2);
+  const cy = region.min.y;
+  const cz = Math.round((region.min.z + region.max.z) / 2);
+  const reply = `It's around (${cx}, ${cy}, ${cz}).`;
+  const point = asBlock(request.player.position);
+  return {
+    intent: "unknown",
+    targetWorld: request.player.world,
+    targetRegion: { world: request.player.world, min: point, max: point },
+    assumptions: [],
+    passes: [],
+    reply,
+    needsMoreInfo: true,
+    clarification:
+      `Last structure center: (${cx}, ${cy}, ${cz}). ` +
+      `Use '/tp @s ${cx} ${cy} ${cz}' to teleport to it.`,
   };
 }
 
@@ -217,20 +269,7 @@ function parseHeightDelta(message: string): number | undefined {
   if (!lowered.includes("taller") && !lowered.includes("higher")) {
     return undefined;
   }
-
-  const byMatch = lowered.match(/(?:by|add)\s+(\d+)/);
-  if (byMatch) {
-    const delta = Number.parseInt(byMatch[1], 10);
-    return Number.isFinite(delta) ? Math.max(1, Math.min(8, delta)) : undefined;
-  }
-
-  const fallbackMatch = lowered.match(/\b(\d+)\b/);
-  if (!fallbackMatch) {
-    return undefined;
-  }
-
-  const fallback = Number.parseInt(fallbackMatch[1], 10);
-  return Number.isFinite(fallback) ? Math.max(1, Math.min(8, fallback)) : undefined;
+  return parseDelta(lowered, 1, 8);
 }
 
 function parseFootprintDelta(message: string): number | undefined {
@@ -238,11 +277,14 @@ function parseFootprintDelta(message: string): number | undefined {
   if (!lowered.includes("bigger") && !lowered.includes("larger")) {
     return undefined;
   }
+  return parseDelta(lowered, 1, 4);
+}
 
+function parseDelta(lowered: string, min: number, max: number): number | undefined {
   const byMatch = lowered.match(/(?:by|add)\s+(\d+)/);
   if (byMatch) {
     const delta = Number.parseInt(byMatch[1], 10);
-    return Number.isFinite(delta) ? Math.max(1, Math.min(4, delta)) : undefined;
+    return Number.isFinite(delta) ? Math.max(min, Math.min(max, delta)) : undefined;
   }
 
   const fallbackMatch = lowered.match(/\b(\d+)\b/);
@@ -251,21 +293,32 @@ function parseFootprintDelta(message: string): number | undefined {
   }
 
   const fallback = Number.parseInt(fallbackMatch[1], 10);
-  return Number.isFinite(fallback) ? Math.max(1, Math.min(4, fallback)) : undefined;
+  return Number.isFinite(fallback) ? Math.max(min, Math.min(max, fallback)) : undefined;
 }
+
+const MATERIAL_FOLLOW_UP_ACTION_BLOCKLIST =
+  /\b(build|create|construct|make|place|remove|delete|destroy|clear)\b/;
+
+const MATERIAL_FOLLOW_UP_CONTEXT_WORDS =
+  /\b(it|that|same|instead|swap|change|use|in|with|as|using)\b/;
 
 function isMaterialFollowUpMessage(message: string): boolean {
   const trimmed = message.trim().toLowerCase();
   if (trimmed.length === 0) {
     return false;
   }
-  if (/\b(build|create|construct|remove|delete|destroy)\b/.test(trimmed)) {
+  // Reject clear new-build or removal commands so they fall through to the AI.
+  if (MATERIAL_FOLLOW_UP_ACTION_BLOCKLIST.test(trimmed)) {
     return false;
   }
-  if (!/\b(it|that|same|instead|swap|change|use|in)\b/.test(trimmed)) {
-    return trimmed.split(/\s+/).length === 1;
+  // Accept if the player used a follow-up context word ("use X instead",
+  // "in oak", "with stone", "change it to glass", etc.).
+  if (MATERIAL_FOLLOW_UP_CONTEXT_WORDS.test(trimmed)) {
+    return true;
   }
-  return true;
+  // Accept bare single- or two-word material names ("oak", "oak planks",
+  // "white wool") without any explicit context word.
+  return trimmed.split(/\s+/).length <= 2;
 }
 
 function extractPrimaryBuildBlock(plan: Plan): string | undefined {
@@ -286,21 +339,7 @@ function extractPrimaryBuildBlock(plan: Plan): string | undefined {
   return undefined;
 }
 
-function isHeightAdjustableStructurePlan(plan?: Plan): plan is Plan {
-  if (!plan || plan.needsMoreInfo || plan.passes.length === 0) {
-    return false;
-  }
-  return hasAdditiveStructurePrimitive(plan);
-}
-
-function isMaterialAdjustableStructurePlan(plan?: Plan): plan is Plan {
-  if (!plan || plan.needsMoreInfo || plan.passes.length === 0) {
-    return false;
-  }
-  return hasAdditiveStructurePrimitive(plan);
-}
-
-function isFootprintAdjustableStructurePlan(plan?: Plan): plan is Plan {
+function isAdjustableStructurePlan(plan?: Plan): plan is Plan {
   if (!plan || plan.needsMoreInfo || plan.passes.length === 0) {
     return false;
   }

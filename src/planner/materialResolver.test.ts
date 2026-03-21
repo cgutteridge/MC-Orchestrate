@@ -284,6 +284,242 @@ describe("resolvePlanMaterials", () => {
     });
   });
 
+  it("resolves symbolic toBlock in replace_in_region using context", () => {
+    const plan: Plan = {
+      intent: "renovate_house",
+      targetWorld: "world",
+      targetRegion: {
+        world: "world",
+        min: { x: 0, y: 64, z: 0 },
+        max: { x: 3, y: 68, z: 3 },
+      },
+      assumptions: [],
+      passes: [
+        {
+          name: "replace_walls",
+          goal: "Replace existing wall with new material.",
+          primitives: [
+            {
+              type: "replace_in_region",
+              from: { x: 0, y: 64, z: 0 },
+              to: { x: 3, y: 68, z: 3 },
+              fromBlock: "minecraft:cobblestone",
+              toBlock: "material:wall",
+            },
+          ],
+        },
+      ],
+      reply: "Replacing walls.",
+      needsMoreInfo: false,
+    };
+
+    const resolved = resolvePlanMaterials(plan, {
+      ...request,
+      message: "replace the walls with stone bricks",
+    });
+
+    expect(resolved.needsMoreInfo).toBe(false);
+    expect(resolved.passes[0]?.primitives[0]).toMatchObject({
+      type: "replace_in_region",
+      fromBlock: "minecraft:cobblestone",
+      toBlock: expect.stringMatching(/^minecraft:/),
+    });
+  });
+
+  it("resolves alternate slot prefix formats ($wall, {{wall}}, wall_material, material.wall)", () => {
+    const makePlan = (block: string): Plan => ({
+      intent: "build_house",
+      targetWorld: "world",
+      targetRegion: {
+        world: "world",
+        min: { x: 0, y: 64, z: 0 },
+        max: { x: 1, y: 65, z: 1 },
+      },
+      assumptions: [],
+      passes: [
+        {
+          name: "shell",
+          goal: "Build shell.",
+          primitives: [
+            {
+              type: "fill_cuboid",
+              from: { x: 0, y: 64, z: 0 },
+              to: { x: 1, y: 65, z: 1 },
+              block,
+            },
+          ],
+        },
+      ],
+      reply: "Building it.",
+      needsMoreInfo: false,
+    });
+
+    const formats = ["$wall", "{{wall}}", "wall_material", "material.wall"];
+    for (const fmt of formats) {
+      const resolved = resolvePlanMaterials(makePlan(fmt), request);
+      expect(resolved.needsMoreInfo, `format "${fmt}" should resolve`).toBe(false);
+      expect(
+        resolved.passes[0]?.primitives[0],
+        `format "${fmt}" should produce a concrete block`,
+      ).toMatchObject({ block: expect.stringMatching(/^minecraft:/) });
+    }
+  });
+
+  it("resolves {{ wall }} (with interior spaces) the same as {{wall}}", () => {
+    const plan: Plan = {
+      intent: "build_house",
+      targetWorld: "world",
+      targetRegion: {
+        world: "world",
+        min: { x: 0, y: 64, z: 0 },
+        max: { x: 1, y: 65, z: 1 },
+      },
+      assumptions: [],
+      passes: [
+        {
+          name: "shell",
+          goal: "Build shell.",
+          primitives: [
+            {
+              type: "fill_cuboid",
+              from: { x: 0, y: 64, z: 0 },
+              to: { x: 1, y: 65, z: 1 },
+              block: "{{ wall }}",
+            },
+          ],
+        },
+      ],
+      reply: "Building it.",
+      needsMoreInfo: false,
+    };
+
+    const resolved = resolvePlanMaterials(plan, request);
+
+    expect(resolved.needsMoreInfo).toBe(false);
+    expect(resolved.passes[0]?.primitives[0]).toMatchObject({
+      block: expect.stringMatching(/^minecraft:/),
+    });
+  });
+
+  it("does not inflate woodWeight for stone stair variants in nearby blocks", () => {
+    const plan: Plan = {
+      intent: "build_house",
+      targetWorld: "world",
+      targetRegion: {
+        world: "world",
+        min: { x: 0, y: 64, z: 0 },
+        max: { x: 3, y: 68, z: 3 },
+      },
+      assumptions: [],
+      passes: [
+        {
+          name: "shell",
+          goal: "Build shell.",
+          primitives: [
+            {
+              type: "fill_cuboid",
+              from: { x: 0, y: 64, z: 0 },
+              to: { x: 3, y: 68, z: 3 },
+              block: "material:wall",
+            },
+          ],
+        },
+      ],
+      reply: "Building it.",
+      needsMoreInfo: false,
+    };
+
+    const resolved = resolvePlanMaterials(plan, {
+      ...request,
+      localContext: {
+        ...request.localContext,
+        nearbyBlocks: [
+          { x: 0, y: 64, z: 0, type: "minecraft:stone_brick_stairs" },
+          { x: 1, y: 64, z: 0, type: "minecraft:stone_brick_stairs" },
+          { x: 2, y: 64, z: 0, type: "minecraft:stone_brick_stairs" },
+          { x: 3, y: 64, z: 0, type: "minecraft:stone_brick_stairs" },
+        ],
+      },
+    });
+
+    expect(resolved.needsMoreInfo).toBe(false);
+    const primitive = resolved.passes[0]?.primitives[0];
+    expect(primitive).toMatchObject({ block: expect.stringMatching(/stone/) });
+  });
+
+  it("rejects fluid blocks used as structural build materials", () => {
+    const plan: Plan = {
+      intent: "build_house",
+      targetWorld: "world",
+      targetRegion: {
+        world: "world",
+        min: { x: 0, y: 64, z: 0 },
+        max: { x: 3, y: 68, z: 3 },
+      },
+      assumptions: [],
+      passes: [
+        {
+          name: "walls",
+          goal: "Fill walls with water (invalid).",
+          primitives: [
+            {
+              type: "fill_cuboid",
+              from: { x: 0, y: 64, z: 0 },
+              to: { x: 3, y: 68, z: 3 },
+              block: "minecraft:water",
+            },
+          ],
+        },
+      ],
+      reply: "Building it.",
+      needsMoreInfo: false,
+    };
+
+    const resolved = resolvePlanMaterials(plan, request);
+
+    expect(resolved.needsMoreInfo).toBe(true);
+    expect(resolved.passes).toEqual([]);
+    expect(resolved.clarification).toContain("minecraft:water");
+  });
+
+  it("allows fluid blocks in replace_in_region operational contexts", () => {
+    const plan: Plan = {
+      intent: "fill_pool",
+      targetWorld: "world",
+      targetRegion: {
+        world: "world",
+        min: { x: 0, y: 64, z: 0 },
+        max: { x: 3, y: 64, z: 3 },
+      },
+      assumptions: [],
+      passes: [
+        {
+          name: "fill",
+          goal: "Fill pool with water.",
+          primitives: [
+            {
+              type: "replace_in_region",
+              from: { x: 0, y: 64, z: 0 },
+              to: { x: 3, y: 64, z: 3 },
+              fromBlock: "minecraft:air",
+              toBlock: "minecraft:water",
+            },
+          ],
+        },
+      ],
+      reply: "Filling it.",
+      needsMoreInfo: false,
+    };
+
+    const resolved = resolvePlanMaterials(plan, request);
+
+    expect(resolved.needsMoreInfo).toBe(false);
+    expect(resolved.passes[0]?.primitives[0]).toMatchObject({
+      fromBlock: "minecraft:air",
+      toBlock: "minecraft:water",
+    });
+  });
+
   it("asks for clarification when a symbolic material slot is unknown", () => {
     const plan: Plan = {
       intent: "build_house",

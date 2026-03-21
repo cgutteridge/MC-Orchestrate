@@ -37,4 +37,14 @@ describe("buildPlannerMessages", () => {
     expect(messages[1]?.content).toContain("make me a cottage");
     expect(messages[1]?.content).toContain("actually smaller");
   });
+
+  it("lists fill_cuboid and hollow_cuboid as distinct schema examples", () => {
+    const messages = buildPlannerMessages(request);
+    const system = messages[0]?.content ?? "";
+
+    // Both types must appear as concrete string literals, not a combined pipe value.
+    expect(system).toContain("\"fill_cuboid\"");
+    expect(system).toContain("\"hollow_cuboid\"");
+    expect(system).not.toContain("fill_cuboid | hollow_cuboid");
+  });
 });

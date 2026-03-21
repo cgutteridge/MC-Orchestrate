@@ -229,6 +229,9 @@ export class BridgeServer {
   }
 
   private updateBlocks(): void {
+    // Processes one block per call and reschedules at 1ms intervals.
+    // Minecraft's stdin can't absorb thousands of setblock commands in a single
+    // burst, so rate-limiting to one per tick prevents command queue overflow.
     this.updateBlocksTimer = undefined;
     const next = this.blocksToSet.entries().next();
     if (next.done) {

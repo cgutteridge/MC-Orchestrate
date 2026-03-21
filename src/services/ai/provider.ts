@@ -1,15 +1,12 @@
-import { loadConfig } from "../../config/env.js";
+import type { AppConfig } from "../../config/env.js";
 import { AzureOpenAIChatProvider } from "./azureOpenAIClient.js";
 import type { ChatProvider } from "./types.js";
 
 /**
- * Creates the configured chat provider, or returns `undefined` when AI planning is disabled.
+ * Creates the configured chat provider, or returns `undefined` when Azure
+ * OpenAI credentials are absent from the supplied config.
  */
-export function createChatProvider(
-  debug = false,
-  logPath?: string,
-): ChatProvider | undefined {
-  const config = loadConfig();
+export function createChatProvider(config: AppConfig): ChatProvider | undefined {
   if (!config.azureOpenAI) {
     return undefined;
   }
@@ -19,8 +16,7 @@ export function createChatProvider(
     config.azureOpenAI.apiKey,
     config.azureOpenAI.apiVersion,
     config.azureOpenAI.deployment,
-    debug,
-    logPath ?? config.ai.providerLogPath,
+    config.ai.providerLogPath,
     config.azureOpenAI.policyId,
   );
 }

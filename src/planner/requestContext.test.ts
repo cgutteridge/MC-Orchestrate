@@ -1,16 +1,15 @@
 import { describe, expect, it } from "vitest";
 import type { ChatCommandRequest } from "../types/plugin.js";
+import { normalizeBlockId, parseRequestedBlock } from "./materialPalette.js";
 import {
+  anchorPoint,
   defaultRegion,
   normalizeCuboid,
   normalizeRegion,
-  normalizeBlockId,
-  parseRequestedBlock,
   parseRequestedHeight,
+  structureAnchorPoint,
   structureCenterPoint,
   structureFootprintOrigin,
-  structureAnchorPoint,
-  anchorPoint,
 } from "./requestContext.js";
 
 const request: ChatCommandRequest = {

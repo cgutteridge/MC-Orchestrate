@@ -1,4 +1,3 @@
-import path from "node:path";
 import { ActionLogger } from "./bridge/actionLog.js";
 import { BridgeServer } from "./bridge/bridgeServer.js";
 import { loadConfig } from "./config/env.js";
@@ -22,13 +21,8 @@ async function main(): Promise<void> {
     actionLogger,
   );
 
-  const provider = createChatProvider(false, config.ai.providerLogPath);
-  const orchestrator = new Orchestrator(
-    bridge,
-    path.resolve(process.cwd(), config.minecraft.minecraftDir),
-    provider,
-    plannerLogger,
-  );
+  const provider = createChatProvider(config);
+  const orchestrator = new Orchestrator(bridge, provider, plannerLogger);
 
   await bridge.start();
   await createHttpServer(

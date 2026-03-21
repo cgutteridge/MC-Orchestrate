@@ -26,7 +26,13 @@ export function buildPlannerMessages(request: ChatCommandRequest) {
             block: "minecraft:stone",
           },
           {
-            type: "fill_cuboid | hollow_cuboid",
+            type: "fill_cuboid",
+            from: { x: 0, y: 0, z: 0 },
+            to: { x: 0, y: 0, z: 0 },
+            block: "minecraft:stone",
+          },
+          {
+            type: "hollow_cuboid",
             from: { x: 0, y: 0, z: 0 },
             to: { x: 0, y: 0, z: 0 },
             block: "minecraft:stone",
