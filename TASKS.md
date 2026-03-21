@@ -6,13 +6,13 @@
   - `Now`: active implementation work.
   - `Next`: queued after active work.
   - `Later`: valid backlog items not scheduled yet.
-  - `Done`: completed and verified work only.
+  - `Done`: tracked in `tasks/done.md` as completed and verified work only.
 - Every task in `Now`/`Next`/`Later` should include:
   - Title line
   - `Subtasks` list
   - `Notes` list
 - Completion rule:
-  - Move completed work into `Done`; do not leave completed items mixed into active queues.
+  - Move completed work into `tasks/done.md`; do not leave completed items mixed into active queues.
   - Add completion date (`YYYY-MM-DD`) and evidence (tests, logs, commit id).
   - If only part of a task is complete, keep it in place and note completed slices explicitly.
 - Detail policy:
@@ -27,6 +27,7 @@
 - Phase 3 retrieval/refinement/undo: `tasks/phase-3-retrieval-refinement-undo.md`
 - World mutation path investigation: `tasks/world-mutation-path.md`
 - Open questions and risks: `tasks/open-questions.md`
+- Completed work log: `tasks/done.md`
 
 ## Now
 
@@ -146,35 +147,7 @@ Research-informed execution lane based on `deep-research-report.md`.
 
 ## Done
 
-1. Generic Material Follow-Up Fallback
-   - Subtasks:
-     - Added heuristic follow-up handling for material restyles against the last bot-built structure (`oak`, `use oak instead`, similar material follow-ups).
-     - Kept behavior generic by applying to prior additive structure primitives, not intent-name allowlists.
-     - Added orchestrator fallback coverage when AI planning fails on the follow-up turn.
-   - Notes:
-     - Completed: 2026-03-21
-     - Evidence: `npm test`, `npm run build`
-
-2. Follow-Up Structure Context Hardening
-   - Subtasks:
-     - Prefer extending the last bot-built structure for `taller`/`higher` follow-ups instead of relying on tower keyword heuristics.
-     - Preserve previous footprint and primary material when extending.
-     - Keep non-structure commands from overwriting the stored structure follow-up context.
-   - Notes:
-     - Completed: 2026-03-21
-     - Evidence: `npm test`, `npm run build`, `npm run plugin:build`
-     - Evidence: commit `8b3194d`
-
-3. Material Slot Resolver v1
-   - Subtasks:
-     - Added symbolic material-slot support in resolver (`material:wall`, `material:roof`, `material:floor`, `material:trim`, `material:detail`, `material:wood`, `material:stone`, `material:glass`, `material:wool`).
-     - Added deterministic context-aware slot ranking using nearby block histogram and player material hints.
-     - Expanded supported palette aliases for roof variants (`spruce_stairs`, `stone_brick_stairs`, `cobblestone_stairs`).
-     - Updated planner prompt guidance to allow symbolic slots.
-     - Added regression tests for slot resolution, spruce preference, and unknown-slot clarification.
-   - Notes:
-     - Completed: 2026-03-21
-     - Evidence: `npm test`, `npm run build`
+- Completed work is tracked in `tasks/done.md`.
 
 ## Risks and Unknowns
 

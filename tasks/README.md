@@ -14,9 +14,11 @@ This folder stores detailed backlog specs so `TASKS.md` can stay short and easy 
   - Current world-mutation path audit and migration decision criteria for plugin API execution.
 - `open-questions.md`
   - Research-blocking decisions and operational unknowns to resolve before deeper architecture work.
+- `done.md`
+  - Completed task history with completion dates and verification evidence.
 
 ## Usage
 
 - Keep active priorities in `TASKS.md`.
 - Put execution details, acceptance criteria, and rollback plans in phase docs.
-- When a phase task completes, move it to `TASKS.md` `Done` with date and evidence, then update the relevant phase doc.
+- When a phase task completes, move it to `tasks/done.md` with date and evidence, then update the relevant phase doc.
