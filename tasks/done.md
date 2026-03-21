@@ -23,6 +23,17 @@
      - Completed: 2026-03-21
      - Evidence: `npm test`, `npm run build` — 38 → 53 tests, all green.
 
+11. Phase 1 Task 3 — Deterministic Template Compiler: Bridge (2026-03-21)
+    - Subtasks:
+      - Added `BridgeParams` type and `compileBridgeTemplate` in `templates.ts`.
+      - Walkway: single-block-thick `fill_cuboid` slab. Railings: two `fill_cuboid` fence strips one block above the long edges, only emitted when width ≥ 3.
+      - `parseBridgeRequest` reads look vector (with yaw fallback) to determine the span axis and direction. Default 3-wide, 8-block span with railings.
+      - Triggers on "bridge", "walkway", "catwalk". Complexity blocklist routes spiral/lighthouse/etc. to AI.
+      - 8 template unit tests (determinism, intent, pass count, railing placement for both axes, narrow/no-railing edge cases, budget compliance) + 1 integration test.
+    - Notes:
+      - Completed: 2026-03-21
+      - Evidence: `npm test`, `npm run build` — 91 → 100 tests, all green.
+
 10. Phase 1 Task 3 — Deterministic Template Compilers: Tower + Cottage (2026-03-21)
     - Subtasks:
       - Added `src/planner/templates.ts` with typed `TowerParams` / `CottageParams` records and pure `compileTowerTemplate` / `compileCottageTemplate` functions. Geometry and material slots are fully separate.

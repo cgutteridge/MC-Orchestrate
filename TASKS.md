@@ -38,7 +38,7 @@ Research-informed execution lane based on `deep-research-report.md`.
      - Execute `tasks/phase-1-foundations.md` in this order:
        - ~~Material Knowledge Base + palette resolver~~ (done — see notes)
        - DIG schema/persistence + revision patching
-       - ~~Deterministic compiler for core templates~~ (tower + cottage done; bridge/barn/gazebo pending)
+       - ~~Deterministic compiler for core templates~~ (tower + cottage + bridge done; barn/gazebo pending)
        - ~~Planner contract and semantic safety checks~~ (partially done — see notes)
      - Keep deterministic outputs and bounded token behavior as hard requirements.
      - Wire acceptance tests and feature flags before broad rollout.
@@ -55,12 +55,10 @@ Research-informed execution lane based on `deep-research-report.md`.
        concrete id only when player explicitly named a material.
      - Remaining: full candidate-list injection with indexed selection (planner
        chooses by number); per-slot candidate cap enforcement (≤12 per slot).
-     - Task 3 (Template compilers): `compileTowerTemplate` and
-       `compileCottageTemplate` in `src/planner/templates.ts`. Parsers
-       (`parseTowerRequest`, `parseCottageRequest`) wired into
-       `buildHeuristicPlan` before follow-up dispatch. Complexity blocklist
-       routes spiral/lighthouse/etc. to AI. Bridge, barn, gazebo templates
-       still outstanding.
+     - Task 3 (Template compilers): tower, cottage, bridge done in
+       `src/planner/templates.ts`. Each has typed params, pure compiler, and
+       a conservative parser with complexity blocklist. All wired into
+       `buildHeuristicPlan` before follow-up dispatch. Barn, gazebo outstanding.
      - Task 4 (Planner contract): pass-order semantic check done —
        `validatePlanSemantics` rejects plans where a destructive pass encloses
        an earlier build pass. Degenerate dimension checks and per-intent shape

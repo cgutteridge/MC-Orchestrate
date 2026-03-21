@@ -76,6 +76,26 @@ describe("buildHeuristicPlan — template dispatch", () => {
     expect(JSON.stringify(a)).toBe(JSON.stringify(b));
   });
 
+  it("compiles a bridge request and orients it along the player look direction", () => {
+    const request = {
+      ...baseRequest,
+      message: "build me a bridge here",
+      player: {
+        ...baseRequest.player,
+        lookVector: { x: 1, y: 0, z: 0 }, // looking in +X
+      },
+    };
+
+    const a = buildHeuristicPlan(request);
+    const b = buildHeuristicPlan(request);
+
+    expect(a?.intent).toBe("build_bridge");
+    expect(a?.needsMoreInfo).toBe(false);
+    // Bridge spans along X with railings → 3 passes
+    expect(a?.passes).toHaveLength(3);
+    expect(JSON.stringify(a)).toBe(JSON.stringify(b));
+  });
+
   it("returns undefined for complex template variations so AI handles them", () => {
     const spiral = buildHeuristicPlan({
       ...baseRequest,
@@ -146,15 +166,15 @@ describe("buildHeuristicPlan", () => {
       ...baseRequest,
       message: "build me a spiral staircase",
     });
-    // Requests with no known template trigger fall through.
-    const bridge = buildHeuristicPlan({
+    // Requests with no known template trigger fall through to the AI.
+    const barn = buildHeuristicPlan({
       ...baseRequest,
-      message: "build me a bridge",
+      message: "build me a barn",
     });
 
     expect(tree).toBeUndefined();
     expect(spiral).toBeUndefined();
-    expect(bridge).toBeUndefined();
+    expect(barn).toBeUndefined();
   });
 
   it("asks for clarification when 'taller' has no previous structure context", () => {

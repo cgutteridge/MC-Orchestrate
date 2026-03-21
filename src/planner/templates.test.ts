@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { compileCottageTemplate, compileTowerTemplate } from "./templates.js";
-import type { CottageParams, TowerParams } from "./templates.js";
+import {
+  compileBridgeTemplate,
+  compileCottageTemplate,
+  compileTowerTemplate,
+} from "./templates.js";
+import type { BridgeParams, CottageParams, TowerParams } from "./templates.js";
 
 // ---------------------------------------------------------------------------
 // Tower
@@ -67,6 +71,109 @@ describe("compileTowerTemplate", () => {
 
   it("sets needsMoreInfo to false", () => {
     expect(compileTowerTemplate(base).needsMoreInfo).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Bridge
+// ---------------------------------------------------------------------------
+
+describe("compileBridgeTemplate", () => {
+  const base: BridgeParams = {
+    world: "world",
+    walkwayFrom: { x: 0, y: 64, z: -1 },
+    walkwayTo: { x: 7, y: 64, z: 1 },
+    axis: "x",
+    railings: true,
+    walkBlock: "material:floor",
+    railBlock: "material:detail",
+  };
+
+  it("produces a deterministic plan for the same params", () => {
+    const a = compileBridgeTemplate(base);
+    const b = compileBridgeTemplate(base);
+    expect(JSON.stringify(a)).toBe(JSON.stringify(b));
+  });
+
+  it("sets intent to build_bridge", () => {
+    expect(compileBridgeTemplate(base).intent).toBe("build_bridge");
+  });
+
+  it("emits walkway + 2 railing passes for a 3-wide bridge", () => {
+    const plan = compileBridgeTemplate(base);
+    expect(plan.passes).toHaveLength(3);
+    expect(plan.passes[0]?.name).toBe("walkway");
+    expect(plan.passes[1]?.name).toBe("railing_left");
+    expect(plan.passes[2]?.name).toBe("railing_right");
+  });
+
+  it("places railings one block above the walkway at both z-edges for axis=x", () => {
+    const plan = compileBridgeTemplate(base);
+    // Left railing: z = walkwayFrom.z = -1
+    expect(plan.passes[1]?.primitives[0]).toMatchObject({
+      type: "fill_cuboid",
+      from: { z: -1, y: 65 },
+      to: { z: -1, y: 65 },
+      block: "material:detail",
+    });
+    // Right railing: z = walkwayTo.z = 1
+    expect(plan.passes[2]?.primitives[0]).toMatchObject({
+      type: "fill_cuboid",
+      from: { z: 1, y: 65 },
+      to: { z: 1, y: 65 },
+      block: "material:detail",
+    });
+  });
+
+  it("emits only walkway pass when railings is false", () => {
+    const plan = compileBridgeTemplate({ ...base, railings: false });
+    expect(plan.passes).toHaveLength(1);
+  });
+
+  it("emits only walkway pass for a 1-wide bridge even if railings requested", () => {
+    const narrow: BridgeParams = {
+      ...base,
+      walkwayFrom: { x: 0, y: 64, z: 0 },
+      walkwayTo: { x: 7, y: 64, z: 0 },
+    };
+    const plan = compileBridgeTemplate(narrow);
+    expect(plan.passes).toHaveLength(1);
+  });
+
+  it("stays within safety budget for maximum length", () => {
+    const long: BridgeParams = {
+      ...base,
+      walkwayFrom: { x: 0, y: 64, z: -1 },
+      walkwayTo: { x: 15, y: 64, z: 1 },
+    };
+    const plan = compileBridgeTemplate(long);
+    const dx = plan.targetRegion.max.x - plan.targetRegion.min.x + 1;
+    const dz = plan.targetRegion.max.z - plan.targetRegion.min.z + 1;
+    expect(dx).toBeLessThanOrEqual(16);
+    expect(dz).toBeLessThanOrEqual(16);
+  });
+
+  it("correctly places railings at x-edges for axis=z", () => {
+    const zBridge: BridgeParams = {
+      world: "world",
+      walkwayFrom: { x: -1, y: 64, z: 0 },
+      walkwayTo: { x: 1, y: 64, z: 7 },
+      axis: "z",
+      railings: true,
+      walkBlock: "material:floor",
+      railBlock: "material:detail",
+    };
+    const plan = compileBridgeTemplate(zBridge);
+    // Left railing: x = walkwayFrom.x = -1
+    expect(plan.passes[1]?.primitives[0]).toMatchObject({
+      from: { x: -1, y: 65 },
+      to: { x: -1, y: 65 },
+    });
+    // Right railing: x = walkwayTo.x = 1
+    expect(plan.passes[2]?.primitives[0]).toMatchObject({
+      from: { x: 1, y: 65 },
+      to: { x: 1, y: 65 },
+    });
   });
 });
 

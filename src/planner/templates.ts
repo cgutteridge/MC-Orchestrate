@@ -68,6 +68,118 @@ export function compileTowerTemplate(params: TowerParams): Plan {
 }
 
 // ---------------------------------------------------------------------------
+// Bridge template
+// ---------------------------------------------------------------------------
+
+export type BridgeParams = {
+  /** World the bridge is placed in. */
+  world: string;
+  /**
+   * Min corner of the walkway floor slab.
+   * The parser pre-computes this from the player's position and look direction.
+   */
+  walkwayFrom: Point;
+  /** Max corner of the walkway floor slab. */
+  walkwayTo: Point;
+  /**
+   * Horizontal axis the bridge spans along.
+   * Used to determine which edges receive fence railings.
+   */
+  axis: "x" | "z";
+  /** Whether to add fence railings on both long edges of the bridge. */
+  railings: boolean;
+  /** Block for the walkway floor. Accepts symbolic slots. */
+  walkBlock: string;
+  /** Block for the fence railings. Accepts symbolic slots. */
+  railBlock: string;
+};
+
+/**
+ * Compiles a bridge template into a deterministic plan.
+ *
+ * Pass order:
+ * 1. Walkway — a single-block-thick floor slab.
+ * 2. Railings (optional) — fence posts along both long edges, one block above
+ *    the walkway. Only emitted when `railings` is true and the walkway is at
+ *    least 3 blocks wide (enough room to walk between them).
+ */
+export function compileBridgeTemplate(params: BridgeParams): Plan {
+  const { world, walkwayFrom, walkwayTo, axis, railings, walkBlock, railBlock } = params;
+
+  const passes: Plan["passes"] = [
+    {
+      name: "walkway",
+      goal: "Lay flat bridge walkway.",
+      primitives: [{ type: "fill_cuboid", from: walkwayFrom, to: walkwayTo, block: walkBlock }],
+    },
+  ];
+
+  const walkwayWidth =
+    axis === "x"
+      ? walkwayTo.z - walkwayFrom.z + 1
+      : walkwayTo.x - walkwayFrom.x + 1;
+
+  if (railings && walkwayWidth >= 3) {
+    const railY = walkwayFrom.y + 1;
+    const leftRail: Plan["passes"][number] = {
+      name: "railing_left",
+      goal: "Add left fence railing.",
+      primitives: [
+        axis === "x"
+          ? {
+              type: "fill_cuboid",
+              from: { x: walkwayFrom.x, y: railY, z: walkwayFrom.z },
+              to: { x: walkwayTo.x, y: railY, z: walkwayFrom.z },
+              block: railBlock,
+            }
+          : {
+              type: "fill_cuboid",
+              from: { x: walkwayFrom.x, y: railY, z: walkwayFrom.z },
+              to: { x: walkwayFrom.x, y: railY, z: walkwayTo.z },
+              block: railBlock,
+            },
+      ],
+    };
+    const rightRail: Plan["passes"][number] = {
+      name: "railing_right",
+      goal: "Add right fence railing.",
+      primitives: [
+        axis === "x"
+          ? {
+              type: "fill_cuboid",
+              from: { x: walkwayFrom.x, y: railY, z: walkwayTo.z },
+              to: { x: walkwayTo.x, y: railY, z: walkwayTo.z },
+              block: railBlock,
+            }
+          : {
+              type: "fill_cuboid",
+              from: { x: walkwayTo.x, y: railY, z: walkwayFrom.z },
+              to: { x: walkwayTo.x, y: railY, z: walkwayTo.z },
+              block: railBlock,
+            },
+      ],
+    };
+    passes.push(leftRail, rightRail);
+  }
+
+  const regionMax: Point = {
+    x: walkwayTo.x,
+    y: railings && walkwayWidth >= 3 ? walkwayFrom.y + 1 : walkwayFrom.y,
+    z: walkwayTo.z,
+  };
+
+  return {
+    intent: "build_bridge",
+    targetWorld: world,
+    targetRegion: { world, min: walkwayFrom, max: regionMax },
+    assumptions: [`Deterministic bridge template, ${walkwayWidth} wide.`],
+    passes,
+    reply: `Building a ${walkwayTo[axis === "x" ? "x" : "z"] - walkwayFrom[axis === "x" ? "x" : "z"] + 1}-block bridge.`,
+    needsMoreInfo: false,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Cottage template
 // ---------------------------------------------------------------------------
 

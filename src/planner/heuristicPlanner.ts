@@ -9,8 +9,10 @@ import {
 import type { Plan } from "./schema.js";
 import { PlanSchema } from "./schema.js";
 import {
+  type BridgeParams,
   type CottageParams,
   type TowerParams,
+  compileBridgeTemplate,
   compileCottageTemplate,
   compileTowerTemplate,
 } from "./templates.js";
@@ -56,6 +58,73 @@ function parseTowerRequest(
     width,
     hollow,
     block,
+  };
+}
+
+/**
+ * Attempts to parse a simple bridge request into typed template parameters.
+ * Returns `undefined` when the request is too complex or ambiguous.
+ */
+function parseBridgeRequest(
+  request: ChatCommandRequest,
+): BridgeParams | undefined {
+  const message = request.message.toLowerCase().trim();
+  if (
+    !message.includes("bridge") &&
+    !message.includes("walkway") &&
+    !message.includes("catwalk")
+  ) {
+    return undefined;
+  }
+  if (TEMPLATE_COMPLEXITY_BLOCKLIST.test(message)) {
+    return undefined;
+  }
+
+  const length = Math.max(4, Math.min(16, parseRequestedHeight(request.message) ?? 8));
+  const railings = !/(no\s+rail|no\s+fence)/.test(message);
+  const walkBlock = parseRequestedBlock(request.message) ?? "material:floor";
+  const railBlock = "material:detail";
+  const halfWidth = 1; // default 3 wide: half = 1
+
+  // Determine bridge axis and direction from horizontal look vector.
+  const { x: lx, z: lz } = request.player.lookVector;
+  const magnitude = Math.hypot(lx, lz);
+  let axis: "x" | "z";
+  let sign: number;
+  if (magnitude >= 0.25) {
+    axis = Math.abs(lx) >= Math.abs(lz) ? "x" : "z";
+    sign = axis === "x" ? Math.sign(lx) : Math.sign(lz);
+  } else {
+    const yawRad = ((request.player.yaw + 90) * Math.PI) / 180;
+    const cx = Math.cos(yawRad);
+    const cz = Math.sin(yawRad);
+    axis = Math.abs(cx) >= Math.abs(cz) ? "x" : "z";
+    sign = axis === "x" ? Math.sign(cx) : Math.sign(cz);
+  }
+  sign = sign || 1;
+
+  const anchor = asBlock(request.player.position);
+  let walkwayFrom: ReturnType<typeof asBlock>;
+  let walkwayTo: ReturnType<typeof asBlock>;
+
+  if (axis === "x") {
+    const startX = sign > 0 ? anchor.x : anchor.x - length + 1;
+    walkwayFrom = { x: startX, y: anchor.y, z: anchor.z - halfWidth };
+    walkwayTo = { x: startX + length - 1, y: anchor.y, z: anchor.z + halfWidth };
+  } else {
+    const startZ = sign > 0 ? anchor.z : anchor.z - length + 1;
+    walkwayFrom = { x: anchor.x - halfWidth, y: anchor.y, z: startZ };
+    walkwayTo = { x: anchor.x + halfWidth, y: anchor.y, z: startZ + length - 1 };
+  }
+
+  return {
+    world: request.player.world,
+    walkwayFrom,
+    walkwayTo,
+    axis,
+    railings,
+    walkBlock,
+    railBlock,
   };
 }
 
@@ -113,6 +182,11 @@ export function buildHeuristicPlan(
     const towerParams = parseTowerRequest(request);
     if (towerParams) {
       return PlanSchema.parse(compileTowerTemplate(towerParams));
+    }
+
+    const bridgeParams = parseBridgeRequest(request);
+    if (bridgeParams) {
+      return PlanSchema.parse(compileBridgeTemplate(bridgeParams));
     }
 
     const cottageParams = parseCottageRequest(request);
