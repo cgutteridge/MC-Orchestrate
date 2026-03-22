@@ -99,11 +99,34 @@ export class Orchestrator {
         };
       }
 
-      // The AI produces absolute world coordinates guided by the placement card.
-      // The placement intent field is extracted for logging and last_build_center
-      // anchor resolution. ShiftPlan will be wired in when the AI reliably
-      // returns local coordinates (tracked as a future iteration of task 30).
-      let plan = loopResult.plan;
+      // Resolve the placement intent to a world-space anchor and reposition
+      // the plan's centre to that anchor. The AI's shape (primitive dimensions
+      // and relative layout) is preserved; only the position is replaced.
+      // This is safe because the AI correctly expresses INTENT (verified via
+      // the debug message below) but gets the look-vector rotation wrong when
+      // computing absolute world coordinates itself.
+      const lastBuiltPlan = this.lastBuiltStructurePlanByPlayer.get(request.player.uuid);
+      const lastBuildCenter = lastBuiltPlan ? computePlanCenter(lastBuiltPlan) : undefined;
+      const intentAnchor = resolvePlacement(loopResult.placement, planningRequest, lastBuildCenter);
+      const aiCenter = computePlanCenter(loopResult.plan);
+      const reanchorOffset = {
+        x: intentAnchor.x - aiCenter.x,
+        y: intentAnchor.y - aiCenter.y,
+        z: intentAnchor.z - aiCenter.z,
+      };
+
+      // Broadcast the resolved placement so the player can verify it.
+      try {
+        await this.bridge.executeCommand(
+          {
+            kind: "say",
+            message: `[Bot] Placement: ${describePlacement(loopResult.placement)} → world (${intentAnchor.x},${intentAnchor.y},${intentAnchor.z})`,
+          },
+          { requestId: request.requestId, playerUuid: request.player.uuid, playerName: request.player.name },
+        );
+      } catch { /* non-fatal */ }
+
+      let plan = shiftPlan(loopResult.plan, reanchorOffset);
 
       // -----------------------------------------------------------------------
       // Material resolution and safety/semantic validation
@@ -321,6 +344,33 @@ export class Orchestrator {
       .slice(-10);
     this.recentMessagesByPlayer.set(playerUuid, next);
   }
+}
+
+/**
+ * Formats a placement intent as a short human-readable string for in-game
+ * debug output so the player can verify what the AI decided.
+ *
+ * Example: "player_view → forward:8, left:3, up:5"
+ */
+function describePlacement(p: import("../planner/schema.js").Placement): string {
+  const parts: string[] = [];
+
+  if (p.ref === "player_view") {
+    if (p.forward)  parts.push(`forward:${p.forward}`);
+    if (p.back)     parts.push(`back:${p.back}`);
+    if (p.left)     parts.push(`left:${p.left}`);
+    if (p.right)    parts.push(`right:${p.right}`);
+  } else {
+    if (p.north)    parts.push(`north:${p.north}`);
+    if (p.south)    parts.push(`south:${p.south}`);
+    if (p.east)     parts.push(`east:${p.east}`);
+    if (p.west)     parts.push(`west:${p.west}`);
+  }
+  if (p.up)   parts.push(`up:${p.up}`);
+  if (p.down) parts.push(`down:${p.down}`);
+
+  const offsets = parts.length > 0 ? ` → ${parts.join(", ")}` : " → at origin";
+  return `${p.ref}${offsets}`;
 }
 
 function isBuiltStructurePlan(plan: Plan): boolean {

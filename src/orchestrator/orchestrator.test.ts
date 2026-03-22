@@ -295,9 +295,9 @@ describe("Orchestrator", () => {
       },
     };
     const bridge = new FakeBridge();
-    // Call 1 = Thinking say, call 2 = setBlock (step_1) success,
-    // call 3 = setBlock (step_2) — fails.
-    bridge.failOnCallNumber = 3;
+    // Call 1 = Thinking say, call 2 = Placement debug say,
+    // call 3 = setBlock (step_1) success, call 4 = setBlock (step_2) — fails.
+    bridge.failOnCallNumber = 4;
     const orchestrator = new Orchestrator(bridge as never, fakeWorldReader, provider);
 
     const response = await orchestrator.handleChatCommand({
