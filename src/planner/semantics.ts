@@ -1,3 +1,7 @@
+import {
+  SEMANTICS_PASS_ORDER,
+  semanticsDegenerateStructureMessage,
+} from "./playerRefusalMessages.js";
 import { normalizeCuboid, normalizeRegion } from "./requestContext.js";
 import type { Plan, Point, Primitive } from "./schema.js";
 
@@ -40,7 +44,8 @@ const STRUCTURE_INTENTS = new Set([
  * 1×1×1 = 1 and 1×1×2 = 2 are clearly wrong for any structure intent;
  * 1×5×1 = 5 is a valid tower column and should pass.
  */
-const MIN_STRUCTURE_VOLUME = 4;
+/** Minimum bounding-box volume for structure intents; exported for tests/messages. */
+export const MIN_STRUCTURE_VOLUME = 4;
 
 /**
  * Detects plans where the bounding box is so small that the AI almost certainly
@@ -78,7 +83,7 @@ function detectDegenerateStructure(plan: Plan): string | undefined {
   const volume = dx * dy * dz;
 
   if (volume < MIN_STRUCTURE_VOLUME) {
-    return "That plan would produce a structure too small to be meaningful. Please specify dimensions or try again.";
+    return semanticsDegenerateStructureMessage(volume, MIN_STRUCTURE_VOLUME);
   }
 
   return undefined;
@@ -102,7 +107,7 @@ function detectPassOrderViolation(plan: Plan): string | undefined {
         for (const build of buildRegions) {
           const b = normalizeCuboid(build.from, build.to);
           if (regionContains(dest, b)) {
-            return "That plan would undo its own earlier build steps. Please revise the pass order.";
+            return SEMANTICS_PASS_ORDER;
           }
         }
       } else if (isBuildPrimitive(primitive)) {

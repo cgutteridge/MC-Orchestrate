@@ -111,7 +111,7 @@ describe("validatePlanSemantics", () => {
       },
     ]);
 
-    expect(validatePlanSemantics(plan)).toContain("undo its own");
+    expect(validatePlanSemantics(plan)).toContain("Plan check");
   });
 
   it("rejects a plan where a larger clear encloses an earlier fill", () => {
@@ -141,7 +141,7 @@ describe("validatePlanSemantics", () => {
       },
     ]);
 
-    expect(validatePlanSemantics(plan)).toContain("undo its own");
+    expect(validatePlanSemantics(plan)).toContain("Plan check");
   });
 
   it("rejects a plan where replace-with-air encloses an earlier fill", () => {
@@ -173,7 +173,7 @@ describe("validatePlanSemantics", () => {
       },
     ]);
 
-    expect(validatePlanSemantics(plan)).toContain("undo its own");
+    expect(validatePlanSemantics(plan)).toContain("Plan check");
   });
 
   it("passes a replace-with-non-air in a prior-build region (material swap)", () => {
@@ -252,7 +252,7 @@ describe("validatePlanSemantics — degenerate structure", () => {
       { x: 0, y: 64, z: 0 }, // 1×1×1 — clearly degenerate AI output
     );
 
-    expect(validatePlanSemantics(plan)).toContain("too small");
+    expect(validatePlanSemantics(plan)).toContain("footprint is only");
   });
 
   it("passes a 1-wide tower column because narrow structures are valid", () => {

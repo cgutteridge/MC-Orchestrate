@@ -109,15 +109,6 @@
       "notes": "Detect likely player-made nearby structures. Add avoidance/protection policies during planning and execution. Requires world scan (17) and stable terrain/context (23)."
     },
     {
-      "id": 28,
-      "title": "Clearer rejection messages — explain why, not just that",
-      "status": "todo",
-      "priority": "high",
-      "complexity": "s",
-      "blockedBy": [16],
-      "notes": "When the bot says no (needsMoreInfo, rejected, safety block, parse failure, no provider), the player currently gets a generic or opaque message. Each refusal path should produce a distinct, human-readable explanation: what was understood, why it was rejected, and what the player can do differently. Audit all return paths in orchestrator.ts and runDesignLoop() and ensure each has a specific reply. Safety and semantics rejections should name the violated constraint. Parse failures should say 'I couldn't understand my own response' not 'I hit an error'. Needs baseline run (16) to see which refusal paths actually fire in practice."
-    },
-    {
       "id": 29,
       "title": "Conversation history context for follow-on prompts",
       "status": "todo",

@@ -1,11 +1,19 @@
 import type { ChatCommandRequest } from "../types/plugin.js";
+import {
+  safetyPlanRegionWorldMismatchMessage,
+  safetyPrimitiveVolumeExceededMessage,
+  safetyRegionTooLargeMessage,
+  safetyTooFarFromPlayerMessage,
+  safetyVolumeExceededMessage,
+  safetyWrongWorldMessage,
+} from "./playerRefusalMessages.js";
 import { normalizeCuboid, normalizeRegion } from "./requestContext.js";
 import type { Plan, Primitive } from "./schema.js";
 
-const MAX_BLOCKS_PER_REQUEST = 8192;
-const MAX_REGION_WIDTH = 32;
-const MAX_REGION_HEIGHT = 48;
-const MAX_PLAYER_DISTANCE = 32;
+export const MAX_BLOCKS_PER_REQUEST = 8192;
+export const MAX_REGION_WIDTH = 32;
+export const MAX_REGION_HEIGHT = 48;
+export const MAX_PLAYER_DISTANCE = 32;
 
 /**
  * Enforces the v1 safety envelope for size, distance, and world locality.
@@ -16,8 +24,12 @@ export function validatePlanSafety(
 ): string | undefined {
   const targetRegion = normalizeRegion(plan.targetRegion);
 
-  if (plan.targetWorld !== request.player.world || targetRegion.world !== plan.targetWorld) {
-    return "I only build in your current world.";
+  if (targetRegion.world !== plan.targetWorld) {
+    return safetyPlanRegionWorldMismatchMessage(plan.targetWorld, targetRegion.world);
+  }
+
+  if (plan.targetWorld !== request.player.world) {
+    return safetyWrongWorldMessage(request, plan.targetWorld, targetRegion.world);
   }
 
   const widthX = targetRegion.max.x - targetRegion.min.x + 1;
@@ -28,12 +40,18 @@ export function validatePlanSafety(
     widthY > MAX_REGION_HEIGHT ||
     widthZ > MAX_REGION_WIDTH
   ) {
-    return "That area is too large for one request.";
+    return safetyRegionTooLargeMessage(
+      widthX,
+      widthY,
+      widthZ,
+      MAX_REGION_WIDTH,
+      MAX_REGION_HEIGHT,
+    );
   }
 
   const volume = widthX * widthY * widthZ;
   if (volume > MAX_BLOCKS_PER_REQUEST) {
-    return "That would change too many blocks at once.";
+    return safetyVolumeExceededMessage(volume, MAX_BLOCKS_PER_REQUEST);
   }
 
   // The targetRegion bounding-box check above does not account for cylinder
@@ -42,7 +60,10 @@ export function validatePlanSafety(
   // large cylinders cannot bypass the limit.
   const primitiveBlockCount = estimatePlanBlockCount(plan);
   if (primitiveBlockCount > MAX_BLOCKS_PER_REQUEST) {
-    return "That would change too many blocks at once.";
+    return safetyPrimitiveVolumeExceededMessage(
+      primitiveBlockCount,
+      MAX_BLOCKS_PER_REQUEST,
+    );
   }
 
   const dx = Math.abs(
@@ -54,7 +75,7 @@ export function validatePlanSafety(
       Math.round(request.player.position.z),
   );
   if (dx > MAX_PLAYER_DISTANCE || dz > MAX_PLAYER_DISTANCE) {
-    return "That target is too far from you.";
+    return safetyTooFarFromPlayerMessage(dx, dz, MAX_PLAYER_DISTANCE);
   }
 
   return undefined;

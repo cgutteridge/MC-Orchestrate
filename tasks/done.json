@@ -99,8 +99,17 @@
       "complexity": "s",
       "blockedBy": [],
       "notes": "Completed 2026-03-22. Added buildPlacementCard() that pre-computes in-front/behind/left/right/cardinal reference coordinates from player position and horizontal look vector and injects them into every turn-1 user message. System prompt updated with PLACEMENT AND OFFSETS section mapping directional phrases to those coordinates. 3 new tests, 87 → 90 total."
-    }
-    ,{
+    },
+    {
+      "id": 28,
+      "title": "Clearer rejection messages — explain why, not just that",
+      "status": "done",
+      "priority": "high",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Completed 2026-03-22. playerRefusalMessages.ts: design loop (assistant_failed_twice vs max_turns), empty-plan orchestrator reply, unexpected errors. safety.ts + semantics.ts use named constraint copy (limits, world, distance, pass order, degenerate footprint). Orchestrator: no-provider, bridge step failure, catch. aiPlanner: set abortedAfterRepeatedAssistantErrors on all double-failure breaks (fixed missing-json + invalid view_request). repairLoosePlanCandidate uses CLARIFICATION_ACTION_MISMATCH. Tests: 111 → 115."
+    },
+    {
       "id": 30,
       "title": "Placement intent — AI returns semantic anchor+offset, code does the geometry",
       "status": "done",

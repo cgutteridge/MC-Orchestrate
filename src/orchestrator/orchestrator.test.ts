@@ -89,7 +89,7 @@ describe("Orchestrator", () => {
     const response = await orchestrator.handleChatCommand(request);
 
     expect(response.status).toBe("needs_more_info");
-    expect(response.reply).toContain("AI service is not configured");
+    expect(response.reply).toContain("No AI builder is configured");
     // No bridge commands except none (the Thinking... say fires but FakeBridge
     // records all commands — it should be empty here since no provider fires it).
     expect(bridge.commands).toEqual([]);
@@ -162,7 +162,7 @@ describe("Orchestrator", () => {
     const response = await orchestrator.handleChatCommand(request);
 
     expect(response.status).toBe("needs_more_info");
-    expect(response.reply).toContain("more concrete");
+    expect(response.reply).toContain("couldn't turn that into placeable blocks");
     const fillCommands = bridge.commands.filter((c) => c.kind === "fill");
     expect(fillCommands).toEqual([]);
   });
@@ -255,7 +255,7 @@ describe("Orchestrator", () => {
     const response = await orchestrator.handleChatCommand(request);
 
     expect(response.status).toBe("rejected");
-    expect(response.reply).toContain("undo");
+    expect(response.reply).toContain("Plan check");
     const fillCommands = bridge.commands.filter((c) => c.kind === "fill");
     expect(fillCommands).toEqual([]);
   });
@@ -307,10 +307,11 @@ describe("Orchestrator", () => {
     });
 
     expect(response.status).toBe("error");
-    expect(response.reply).toContain("Step 2 of 2 failed");
+    expect(response.reply).toContain("Execution stopped");
+    expect(response.reply).toContain("step 2 of 2");
     const sayCommands = bridge.commands.filter((c) => c.kind === "say");
     const errorSay = sayCommands.find(
-      (c) => c.kind === "say" && c.message.includes("Step 2 of 2 failed"),
+      (c) => c.kind === "say" && c.message.includes("Execution stopped"),
     );
     expect(errorSay).toBeDefined();
   });

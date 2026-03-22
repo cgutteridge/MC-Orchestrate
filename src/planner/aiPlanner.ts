@@ -26,6 +26,10 @@ import {
   type Region,
 } from "./schema.js";
 import type { WorldReader } from "../world/worldReader.js";
+import {
+  CLARIFICATION_ACTION_MISMATCH,
+  designLoopFailureMessage,
+} from "./playerRefusalMessages.js";
 
 /** Maximum number of AI loop iterations before giving up. */
 const MAX_LOOP_TURNS = 5;
@@ -77,6 +81,8 @@ export async function runDesignLoop(
 ): Promise<DesignLoopResult> {
   const messages: ChatMessage[] = buildInitialMessages(request, lastPlan);
   let consecutiveParseFailures = 0;
+  /** Set when two assistant turns in a row could not yield a usable structured response. */
+  let abortedAfterRepeatedAssistantErrors = false;
 
   for (let turn = 0; turn < MAX_LOOP_TURNS; turn++) {
     const rawResponse = await provider.chat(messages, { temperature: 0.2 });
@@ -98,6 +104,7 @@ export async function runDesignLoop(
         payload: { turn, response: rawResponse },
       });
       if (consecutiveParseFailures >= 2) {
+        abortedAfterRepeatedAssistantErrors = true;
         break;
       }
       messages.push(
@@ -127,6 +134,7 @@ export async function runDesignLoop(
         payload: { turn, jsonText },
       });
       if (consecutiveParseFailures >= 2) {
+        abortedAfterRepeatedAssistantErrors = true;
         break;
       }
       messages.push(
@@ -158,6 +166,7 @@ export async function runDesignLoop(
       if (!viewResult.success) {
         consecutiveParseFailures++;
         if (consecutiveParseFailures >= 2) {
+          abortedAfterRepeatedAssistantErrors = true;
           break;
         }
         messages.push(
@@ -225,6 +234,7 @@ export async function runDesignLoop(
         payload: { turn, error: planResult.error.message },
       });
       if (consecutiveParseFailures >= 2) {
+        abortedAfterRepeatedAssistantErrors = true;
         break;
       }
       messages.push(
@@ -249,10 +259,16 @@ export async function runDesignLoop(
     return { outcome: "plan", plan: planResult.data, placement };
   }
 
+  if (abortedAfterRepeatedAssistantErrors) {
+    return {
+      outcome: "needs_more_info",
+      clarification: designLoopFailureMessage("assistant_failed_twice", request),
+    };
+  }
+
   return {
     outcome: "needs_more_info",
-    clarification:
-      "I wasn't able to produce a complete plan. Could you give me more detail about what you'd like built?",
+    clarification: designLoopFailureMessage("max_turns", request),
   };
 }
 
@@ -453,8 +469,7 @@ export function repairLoosePlanCandidate(
 
   if (!needsMoreInfo && shouldClarifyByAction(candidatePasses, request)) {
     needsMoreInfo = true;
-    clarification =
-      "I need a clearer action. Tell me whether you want to build, remove, or modify something.";
+    clarification = CLARIFICATION_ACTION_MISMATCH;
   }
 
   const targetWorld = needsMoreInfo

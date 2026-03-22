@@ -49,7 +49,7 @@ describe("validatePlanSafety", () => {
     const result = validatePlanSafety(request, plan);
 
     // assert
-    expect(result).toContain("current world");
+    expect(result).toContain("standing in");
   });
 
   it("rejects regions wider than 32 blocks", () => {
@@ -108,7 +108,7 @@ describe("validatePlanSafety", () => {
 
     const result = validatePlanSafety(request, plan);
 
-    expect(result).toContain("too many blocks");
+    expect(result).toContain("8192");
   });
 
   it("normalizes reversed target regions before checking size and distance", () => {

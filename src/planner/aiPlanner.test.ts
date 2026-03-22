@@ -440,7 +440,7 @@ describe("runDesignLoop", () => {
     }
     expect(result.plan.needsMoreInfo).toBe(true);
     expect(result.plan.passes).toEqual([]);
-    expect(result.plan.clarification).toContain("clearer action");
+    expect(result.plan.clarification).toContain("wrong kind of operation");
   });
 
   // ---------------------------------------------------------------------------
@@ -461,6 +461,9 @@ describe("runDesignLoop", () => {
 
     // assert
     expect(result.outcome).toBe("needs_more_info");
+    if (result.outcome === "needs_more_info") {
+      expect(result.clarification).toContain("couldn't lock in a valid build plan");
+    }
   });
 
   it("aborts after two consecutive parse failures", async () => {
@@ -524,6 +527,9 @@ describe("runDesignLoop", () => {
 
     const result = await runDesignLoop(alwaysBad, request, fakeWorldReader, undefined);
     expect(result.outcome).toBe("needs_more_info");
+    if (result.outcome === "needs_more_info") {
+      expect(result.clarification).toContain("couldn't lock in a valid build plan");
+    }
   });
 
   // ---------------------------------------------------------------------------

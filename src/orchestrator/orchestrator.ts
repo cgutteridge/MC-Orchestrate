@@ -15,6 +15,10 @@ import {
 } from "../planner/dig.js";
 import { WorldReader } from "../world/worldReader.js";
 import type { ChatMessage } from "../services/ai/types.js";
+import {
+  orchestratorEmptyPlanMessage,
+  orchestratorUnexpectedErrorMessage,
+} from "../planner/playerRefusalMessages.js";
 
 /**
  * Coordinates chat requests, AI design loop planning, safety checks, and
@@ -54,7 +58,9 @@ export class Orchestrator {
     if (!this.provider) {
       return {
         status: "needs_more_info",
-        reply: "AI service is not configured. Set the Azure OpenAI environment variables to enable building.",
+        reply:
+          "No AI builder is configured on this orchestrator (missing chat provider / Azure OpenAI settings). " +
+          "An admin needs to set the provider environment variables before I can design or place blocks.",
         requestId: request.requestId,
         intent: "unknown",
       };
@@ -159,7 +165,7 @@ export class Orchestrator {
           reply:
             plan.clarification ??
             (plan.passes.length === 0
-              ? "I need a more concrete building plan for that request."
+              ? orchestratorEmptyPlanMessage(planningRequest)
               : plan.reply),
           requestId: request.requestId,
           intent: plan.intent,
@@ -180,7 +186,8 @@ export class Orchestrator {
         } catch (error) {
           const detail =
             error instanceof Error ? error.message : String(error);
-          const reply = `Step ${index + 1} of ${commands.length} failed: ${detail}`;
+          const reply = `Execution stopped: step ${index + 1} of ${commands.length} failed (${detail}). ` +
+            `Earlier steps may already have changed the world — say what you see and we can fix or undo manually.`;
 
           try {
             await this.bridge.executeCommand(
@@ -245,9 +252,11 @@ export class Orchestrator {
         executedActions: commands.length,
       };
     } catch (error) {
+      const detail =
+        error instanceof Error ? error.message : String(error);
       return {
         status: "error",
-        reply: `I hit an error: ${error instanceof Error ? error.message : String(error)}`,
+        reply: orchestratorUnexpectedErrorMessage(detail),
         requestId: request.requestId,
         intent: "unknown",
       };

@@ -51,6 +51,10 @@ The orchestrator runs `runDesignLoop()` for every chat request. The loop runs up
 
 The AI returns `placement` (`ref` + offsets). `resolvePlacement()` maps that to a world anchor; the orchestrator recenters the AI plan with `shiftPlan()` so absolute coords from the model need not be trusted. Vertical baseline: **`player_view` / `player_absolute`** use `up:0` at **player head** (`round(feet Y) + 1`); **`focus`** uses **top of target block** (`block Y + 1`); **`last_build`** uses the **last plan centre Y**.
 
+### Player-facing refusals
+
+`src/planner/playerRefusalMessages.ts` centralises copy for design-loop aborts, empty plans, orchestrator errors, safety limits, and semantic plan checks. Prefer editing that module (and the small call sites in `safety.ts` / `semantics.ts` / `orchestrator.ts`) rather than ad-hoc strings.
+
 ## Plugin Payload
 
 The plugin sends a 15×8×15 block scan centered on the player with air filtered out (cap 300 blocks). It also sends `initialScanRegion` bounding box so the AI knows what world data it received without requesting a disk read.
