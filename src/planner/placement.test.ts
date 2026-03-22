@@ -35,62 +35,62 @@ const defaultPlacement: Placement = {
 // ---------------------------------------------------------------------------
 
 describe("resolvePlacement — player_view", () => {
-  it("no offsets returns player XZ at ground Y", () => {
+  it("no offsets returns player XZ at head Y (feet+1)", () => {
     const req = makeRequest({ x: 0, y: 64, z: 0 }, { x: 0, y: 0, z: 1 });
     const result = resolvePlacement(defaultPlacement, req);
-    expect(result).toEqual({ x: 0, y: 64, z: 0 });
+    expect(result).toEqual({ x: 0, y: 65, z: 0 });
   });
 
   it("forward:8 facing south (+z) → z increases by 8", () => {
     const req = makeRequest({ x: 0, y: 64, z: 0 }, { x: 0, y: 0, z: 1 });
     const result = resolvePlacement({ ...defaultPlacement, forward: 8 }, req);
-    expect(result).toEqual({ x: 0, y: 64, z: 8 });
+    expect(result).toEqual({ x: 0, y: 65, z: 8 });
   });
 
   it("forward:8 facing east (+x) → x increases by 8", () => {
     const req = makeRequest({ x: 0, y: 64, z: 0 }, { x: 1, y: 0, z: 0 });
     const result = resolvePlacement({ ...defaultPlacement, forward: 8 }, req);
-    expect(result).toEqual({ x: 8, y: 64, z: 0 });
+    expect(result).toEqual({ x: 8, y: 65, z: 0 });
   });
 
   it("left:8 facing south → east (+x) by 8", () => {
     // Facing south (+z): left = east (+x).
     const req = makeRequest({ x: 0, y: 64, z: 0 }, { x: 0, y: 0, z: 1 });
     const result = resolvePlacement({ ...defaultPlacement, left: 8 }, req);
-    expect(result).toEqual({ x: 8, y: 64, z: 0 });
+    expect(result).toEqual({ x: 8, y: 65, z: 0 });
   });
 
   it("right:8 facing south → west (−x) by 8", () => {
     // Facing south (+z): right = west (−x).
     const req = makeRequest({ x: 0, y: 64, z: 0 }, { x: 0, y: 0, z: 1 });
     const result = resolvePlacement({ ...defaultPlacement, right: 8 }, req);
-    expect(result).toEqual({ x: -8, y: 64, z: 0 });
+    expect(result).toEqual({ x: -8, y: 65, z: 0 });
   });
 
   it("left:8 facing east → north (−z) by 8", () => {
     // Facing east (+x): left = north (−z).
     const req = makeRequest({ x: 0, y: 64, z: 0 }, { x: 1, y: 0, z: 0 });
     const result = resolvePlacement({ ...defaultPlacement, left: 8 }, req);
-    expect(result).toEqual({ x: 0, y: 64, z: -8 });
+    expect(result).toEqual({ x: 0, y: 65, z: -8 });
   });
 
-  it("up:5 adds 5 to ground Y", () => {
+  it("up:5 adds 5 above head Y", () => {
     const req = makeRequest({ x: 0, y: 64, z: 0 }, { x: 0, y: 0, z: 1 });
     const result = resolvePlacement({ ...defaultPlacement, up: 5 }, req);
-    expect(result).toEqual({ x: 0, y: 69, z: 0 });
+    expect(result).toEqual({ x: 0, y: 70, z: 0 });
   });
 
-  it("down:3 subtracts 3 from ground Y", () => {
+  it("down:3 subtracts 3 from head Y", () => {
     const req = makeRequest({ x: 0, y: 64, z: 0 }, { x: 0, y: 0, z: 1 });
     const result = resolvePlacement({ ...defaultPlacement, down: 3 }, req);
-    expect(result).toEqual({ x: 0, y: 61, z: 0 });
+    expect(result).toEqual({ x: 0, y: 62, z: 0 });
   });
 
   it("combines forward, left, and up correctly", () => {
-    // Facing south (nhx=0, nhz=1): forward:5 → z+5; left:3 → x+3; up:4 → y+4.
+    // Facing south (nhx=0, nhz=1): forward:5 → z+5; left:3 → x+3; up:4 → head+4.
     const req = makeRequest({ x: 0, y: 64, z: 0 }, { x: 0, y: 0, z: 1 });
     const result = resolvePlacement({ ...defaultPlacement, forward: 5, left: 3, up: 4 }, req);
-    expect(result).toEqual({ x: 3, y: 68, z: 5 });
+    expect(result).toEqual({ x: 3, y: 69, z: 5 });
   });
 });
 
@@ -102,25 +102,25 @@ describe("resolvePlacement — player_absolute", () => {
   it("north:10 → z decreases by 10", () => {
     const req = makeRequest({ x: 0, y: 64, z: 0 }, { x: 0, y: 0, z: 1 });
     const result = resolvePlacement({ ...defaultPlacement, ref: "player_absolute", north: 10 }, req);
-    expect(result).toEqual({ x: 0, y: 64, z: -10 });
+    expect(result).toEqual({ x: 0, y: 65, z: -10 });
   });
 
   it("east:8, north:8 → NE diagonal", () => {
     const req = makeRequest({ x: 0, y: 64, z: 0 }, { x: 0, y: 0, z: 1 });
     const result = resolvePlacement({ ...defaultPlacement, ref: "player_absolute", north: 8, east: 8 }, req);
-    expect(result).toEqual({ x: 8, y: 64, z: -8 });
+    expect(result).toEqual({ x: 8, y: 65, z: -8 });
   });
 
   it("west:5 → x decreases by 5", () => {
     const req = makeRequest({ x: 0, y: 64, z: 0 }, { x: 0, y: 0, z: 1 });
     const result = resolvePlacement({ ...defaultPlacement, ref: "player_absolute", west: 5 }, req);
-    expect(result).toEqual({ x: -5, y: 64, z: 0 });
+    expect(result).toEqual({ x: -5, y: 65, z: 0 });
   });
 
   it("down:3 for a pit", () => {
     const req = makeRequest({ x: 0, y: 64, z: 0 }, { x: 0, y: 0, z: 1 });
     const result = resolvePlacement({ ...defaultPlacement, ref: "player_absolute", down: 3 }, req);
-    expect(result).toEqual({ x: 0, y: 61, z: 0 });
+    expect(result).toEqual({ x: 0, y: 62, z: 0 });
   });
 });
 
@@ -129,7 +129,7 @@ describe("resolvePlacement — player_absolute", () => {
 // ---------------------------------------------------------------------------
 
 describe("resolvePlacement — focus", () => {
-  it("no offsets anchors at targetBlock XZ, ground Y", () => {
+  it("no offsets anchors at targetBlock XZ, top-of-block Y", () => {
     const req = makeRequest(
       { x: 0, y: 64, z: 0 },
       { x: 0, y: 0, z: 1 },
@@ -149,10 +149,10 @@ describe("resolvePlacement — focus", () => {
     expect(result).toEqual({ x: 5, y: 74, z: 10 });
   });
 
-  it("falls back to player XZ when no targetBlock", () => {
+  it("falls back to player XZ and head Y when no targetBlock", () => {
     const req = makeRequest({ x: 0, y: 64, z: 0 }, { x: 0, y: 0, z: 1 });
     const result = resolvePlacement({ ...defaultPlacement, ref: "focus" }, req);
-    expect(result).toEqual({ x: 0, y: 64, z: 0 });
+    expect(result).toEqual({ x: 0, y: 65, z: 0 });
   });
 });
 
@@ -165,13 +165,13 @@ describe("resolvePlacement — last_build", () => {
     const req = makeRequest({ x: 0, y: 64, z: 0 }, { x: 0, y: 0, z: 1 });
     const lastCenter = { x: 10, y: 68, z: 20 };
     const result = resolvePlacement({ ...defaultPlacement, ref: "last_build" }, req, lastCenter);
-    expect(result).toEqual({ x: 10, y: 64, z: 20 });
+    expect(result).toEqual({ x: 10, y: 68, z: 20 });
   });
 
-  it("falls back to player XZ when no last build", () => {
+  it("falls back to player XZ and head Y when no last build", () => {
     const req = makeRequest({ x: 5, y: 64, z: 5 }, { x: 0, y: 0, z: 1 });
     const result = resolvePlacement({ ...defaultPlacement, ref: "last_build" }, req);
-    expect(result).toEqual({ x: 5, y: 64, z: 5 });
+    expect(result).toEqual({ x: 5, y: 65, z: 5 });
   });
 });
 

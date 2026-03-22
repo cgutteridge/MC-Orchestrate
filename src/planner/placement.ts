@@ -19,10 +19,19 @@ import type { Plan, Placement, Point, Primitive, BuildPass } from "./schema.js";
  *
  * ## Y axis
  *
- * Y is always independent of horizontal offsets. The base Y is the ground
- * level at the resolved XZ, approximated as `player.position.y` (the player
- * stands on solid ground). `up: 0` = ground level, `up: N` = N blocks above,
- * `down: N` = N blocks below (pits).
+ * Y is always independent of horizontal offsets. The vertical zero reference
+ * depends on `placement.ref`:
+ *
+ * - **`player_view` / `player_absolute`**: `up: 0` is **player head height**
+ *   (`round(player.position.y) + 1`). The player is two blocks tall; feet are
+ *   at `y`, the head/eye band is at `y+1`, so aerial builds do not clip the
+ *   body. `up: N` adds N blocks above that. `down: N` subtracts N (pits,
+ *   basements).
+ * - **`focus`**: `up: 0` is the **top surface** of the looked-at block
+ *   (`round(targetBlock.y) + 1`). Without a target block, falls back to head
+ *   height.
+ * - **`last_build`**: `up: 0` is the **last structure centre Y** from the
+ *   prior plan. If unknown, falls back to head height.
  *
  * ## Player-view rotation
  *
@@ -42,9 +51,7 @@ export function resolvePlacement(
 ): Point {
   const pos = request.player.position;
 
-  // Ground level approximation: the player stands on solid ground at their
-  // current Y coordinate.
-  const groundY = Math.round(pos.y);
+  const headY = Math.round(pos.y) + 1;
 
   // ── Horizontal look direction (pitch ignored) ─────────────────────────
   const lx = request.player.lookVector.x;
@@ -93,7 +100,25 @@ export function resolvePlacement(
   }
 
   // ── Resolve Y (independent of horizontal) ────────────────────────────
-  const resolvedY = groundY + placement.up - placement.down;
+  const tb = request.localContext.targetBlock;
+  let verticalBaseY: number;
+  switch (placement.ref) {
+    case "player_view":
+    case "player_absolute":
+      verticalBaseY = headY;
+      break;
+    case "focus":
+      verticalBaseY = tb ? Math.round(tb.y) + 1 : headY;
+      break;
+    case "last_build":
+      verticalBaseY =
+        lastBuildCenter !== undefined ? Math.round(lastBuildCenter.y) : headY;
+      break;
+    default:
+      verticalBaseY = headY;
+  }
+
+  const resolvedY = verticalBaseY + placement.up - placement.down;
 
   return { x: baseX, y: resolvedY, z: baseZ };
 }

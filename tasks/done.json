@@ -107,7 +107,7 @@
       "priority": "high",
       "complexity": "m",
       "blockedBy": [],
-      "notes": "Completed 2026-03-22. 111 tests. PlacementRefSchema: player_view (forward/back/left/right) | player_absolute (N/S/E/W) | focus (target block + N/S/E/W) | last_build. Y independent: up (above ground, default 0) and down (below ground for pits). resolvePlacement() + shiftPlan() in placement.ts. Prompt updated with ref examples. AI still outputs absolute coords guided by placement card; shiftPlan wired in a future pass once AI reliably returns local coords."
+      "notes": "Completed 2026-03-22; follow-up: vertical basis 2026-03-22. PlacementRefSchema: player_view | player_absolute | focus | last_build. resolvePlacement(): player_* use up:0 at head (feet+1); focus uses top of target block (y+1); last_build uses prior plan centre Y. Orchestrator reanchors plan from AI placement intent + shiftPlan. Prompt + placement card document head baseline. Agent tests use ref/left not legacy anchor field."
     }
   ]
 }

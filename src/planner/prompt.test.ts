@@ -159,6 +159,7 @@ describe("buildInitialMessages", () => {
     expect(system).toContain("above me");
     expect(system).toContain("to my left");
     expect(system).toContain("a pit under me");
+    expect(system).toContain("feet Y + 1");
   });
 
   it("user message contains a pre-computed placement reference card", () => {

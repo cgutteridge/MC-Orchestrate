@@ -91,6 +91,7 @@ function buildPlacementCard(request: ChatCommandRequest): string {
   return [
     "PLACEMENT REFERENCE — use these pre-computed coordinates as your anchor origin.",
     `  Player feet:         x=${px} y=${py} z=${pz}  ← never build on the player's body blocks (y=${py} and y=${py + 1})`,
+    `  Player head (code up:0 for player_view / player_absolute): y=${py + 1}`,
     `  5 blocks in front:  ${front(5)}`,
     `  10 blocks in front: ${front(10)}`,
     `  20 blocks in front: ${front(20)}`,
@@ -102,10 +103,10 @@ function buildPlacementCard(request: ChatCommandRequest): string {
     `    south (+z): x=${px} z=${pz}+D`,
     `    east  (+x): x=${px}+D z=${pz}`,
     `    west  (−x): x=${px}-D z=${pz}`,
-    `  5 blocks above:    y=${py + 5}`,
-    `  10 blocks above:   y=${py + 10}`,
-    `  5 blocks below:    y=${py - 5}`,
-    "  Scale vertically as needed. 'above me' with no distance defaults to y+10.",
+    `  5 blocks above head:  y=${py + 1 + 5}`,
+    `  10 blocks above head: y=${py + 1 + 10}`,
+    `  5 blocks below head:  y=${py + 1 - 5}`,
+    "  Scale vertically as needed. 'above me' with no distance → placement up≈10 (ten blocks above head).",
   ].join("\n");
 }
 
@@ -206,10 +207,11 @@ const SYSTEM_PROMPT = [
   "  focus:           north, south, east, west    (all integers, default 0)",
   "  last_build:      north, south, east, west    (all integers, default 0)",
   "",
-  "Y is always independent of horizontal offsets:",
-  "  up:0 (default) = ground level at resolved XZ",
-  "  up:N = N blocks above ground. Aerial builds need up:2 minimum.",
-  "  down:N = N blocks below ground (pits, pools, underground).",
+  "Y is always independent of horizontal offsets. Vertical zero depends on placement.ref:",
+  "  player_view / player_absolute: up:0 = player HEAD height (feet Y + 1). up:N = N blocks above head. down:N = N blocks below that head baseline (pits).",
+  "  focus: up:0 = top of looked-at block (block Y + 1). Without a target block, same as head height.",
+  "  last_build: up:0 = last structure centre Y (fallback: head height).",
+  "  Aerial builds typically need up:2+ so the footprint clears nearby terrain.",
   "",
   "Examples:",
   "  'in front of me'       → placement:{ref:player_view, forward:8}",
