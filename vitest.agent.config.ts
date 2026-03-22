@@ -13,6 +13,9 @@ import { defineConfig } from "vitest/config";
  */
 export default defineConfig({
   test: {
+    env: {
+      MCORCH_LAYER_MAP_ONLY: "false",
+    },
     environment: "node",
     include: ["tests/agent/**/*.test.ts"],
     // AI calls can take 10–30 s; allow generous per-test timeout.

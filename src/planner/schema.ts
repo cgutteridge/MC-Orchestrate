@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { validateLayerMapShape } from "./layerMap.js";
+import { isLayerMapOnlyBuildMode } from "./planMode.js";
 
 export const IntentSchema = z
   .string()
@@ -90,6 +91,24 @@ export const PassSchema = z
   .superRefine((data, ctx) => {
     const hasLayer = data.layerMap !== undefined;
     const hasPrimitives = data.primitives.length > 0;
+    if (isLayerMapOnlyBuildMode()) {
+      if (!hasLayer) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message:
+            "Each pass must include layerMap (primitive passes are disabled). Set MCORCH_LAYER_MAP_ONLY=false to allow fill_cuboid / cylinder / etc.",
+        });
+        return;
+      }
+      if (hasPrimitives) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message:
+            "Do not include primitives when using layerMap-only mode; use an empty primitives array.",
+        });
+      }
+      return;
+    }
     if (hasLayer === hasPrimitives) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,

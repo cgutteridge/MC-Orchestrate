@@ -5,9 +5,9 @@
  *
  * Requires AZURE_OPENAI_* (or whatever createChatProvider needs) in the environment.
  *
- * When the model returns JSON with `passes[].primitives`, prints an extra
- * `layers` + `palette` view via {@link formatPrimitivesAsLayerMapJson} for
- * the first pass so you can compare against a native `layerMap` plan.
+ * When the model returns JSON with `passes[0].layerMap`, prints that object
+ * as formatted JSON. If only `primitives` are present (legacy / tests with
+ * MCORCH_LAYER_MAP_ONLY=false), prints {@link formatPrimitivesAsLayerMapJson}.
  */
 import { loadConfig } from "../src/config/env.js";
 import { formatPrimitivesAsLayerMapJson } from "../src/planner/primitivesToLayerMap.js";
@@ -105,8 +105,21 @@ async function main(): Promise<void> {
   if (!isRecord(firstPass)) {
     return;
   }
+
+  const layerMap = firstPass.layerMap;
+  if (isRecord(layerMap) && Array.isArray(layerMap.layers)) {
+    process.stdout.write(
+      "\n--- Layer map JSON (first pass, for debugging) ---\n",
+    );
+    process.stdout.write(JSON.stringify(layerMap, null, 2) + "\n");
+    return;
+  }
+
   const primitives = firstPass.primitives;
   if (!Array.isArray(primitives) || primitives.length === 0) {
+    process.stdout.write(
+      "\n--- No layerMap or primitives on first pass (nothing to preview) ---\n",
+    );
     return;
   }
 

@@ -32,6 +32,7 @@ import {
   designLoopFailureMessage,
 } from "./playerRefusalMessages.js";
 import { deriveLayerMapLocalBounds } from "./layerMap.js";
+import { isLayerMapOnlyBuildMode } from "./planMode.js";
 
 /** Default when {@link DesignLoopOptions.maxTurns} is omitted (orchestrator passes config). */
 export const DEFAULT_DESIGN_LOOP_MAX_TURNS = 10;
@@ -593,12 +594,18 @@ export function repairLoosePlanCandidate(
   const candidatePasses = Array.isArray(candidate.passes)
     ? candidate.passes
         .map((pass) => repairPass(pass, request))
-        .filter(
-          (pass) =>
+        .filter((pass) => {
+          const hasLayer =
+            isRecord(pass.layerMap) &&
+            Array.isArray((pass.layerMap as { layers: unknown }).layers);
+          if (isLayerMapOnlyBuildMode()) {
+            return hasLayer;
+          }
+          return (
             (Array.isArray(pass.primitives) && pass.primitives.length > 0) ||
-            (isRecord(pass.layerMap) &&
-              Array.isArray((pass.layerMap as { layers: unknown }).layers)),
-        )
+            hasLayer
+          );
+        })
     : [];
 
   let clarification =
@@ -680,6 +687,15 @@ function repairPass(
           ? layerRaw.palette
           : {}) as Record<string, string>,
       },
+    };
+  }
+
+  if (isLayerMapOnlyBuildMode()) {
+    return {
+      name: typeof record.name === "string" ? record.name : "build_pass",
+      goal:
+        typeof record.goal === "string" ? record.goal : "Apply layer map build.",
+      primitives: [],
     };
   }
 

@@ -20,8 +20,8 @@ export const DEFAULT_PROMPT_HINTS: readonly PromptHint[] = [
   {
     keywords: ["moat", "trench", "ditch"],
     hint:
-      "Moats and trenches: do not use one giant horizontal fill of water across the whole footprint — that reads as a flat pool. " +
-      "Use a ring of separate primitives (or a layer map) so the outer water/air trench and the inner keep/courtyard are visibly separate regions.",
+      "Moats and trenches: do not use one giant horizontal slab of water across the whole footprint — that reads as a flat pool. " +
+      "Use a ring pattern in the layer map so the outer water/air trench and the inner keep/courtyard are visibly separate regions.",
   },
   {
     keywords: ["battlement", "crenellat", "merlon", "parapet"],

@@ -43,13 +43,14 @@ describe("buildInitialMessages", () => {
     expect(messages[1]?.content).toContain("actually smaller");
   });
 
-  it("lists fill_cuboid and hollow_cuboid as distinct schema examples", () => {
+  it("lists layerMap (not primitive ops) in the plan schema guide", () => {
     const messages = buildInitialMessages(request);
     const system = messages[0]?.content ?? "";
 
-    expect(system).toContain("\"fill_cuboid\"");
-    expect(system).toContain("\"hollow_cuboid\"");
-    expect(system).not.toContain("fill_cuboid | hollow_cuboid");
+    expect(system).toContain("\"layerMap\"");
+    expect(system).toContain("\"layers\"");
+    expect(system).toContain("LAYER MAPS ONLY");
+    expect(system).not.toContain("\"fill_cuboid\"");
   });
 
   it("instructs the model to prefer symbolic slots over free-form block names", () => {
