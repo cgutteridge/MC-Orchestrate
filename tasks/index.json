@@ -16,7 +16,7 @@
       "priority": "medium",
       "complexity": "m",
       "blockedBy": [],
-      "notes": "Progress/status messaging, per-step failure surfacing, cancellation semantics. Coordinate with refinement-loop and undo design. Recommended after task 16 (Azure baseline) so messaging targets real failure modes — not a hard code dependency."
+      "notes": "Progress/status messaging, per-step failure surfacing, cancellation semantics. Coordinate with refinement-loop and undo design. Azure baseline replay (task 16) is in place for regression; wire UX to real failure modes from live runs."
     },
     {
       "id": 20,
