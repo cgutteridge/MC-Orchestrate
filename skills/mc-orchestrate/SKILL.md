@@ -13,6 +13,7 @@ Use this skill for coding and debugging work in `/Users/cjg/Projects/MC-Orchestr
 - Treat the stack as: Spigot plugin -> HTTP orchestrator -> AI design loop -> bridge -> Minecraft server.
 - The heuristic planner and templates are deleted. The AI owns all build decisions.
 - If no AI provider is configured the orchestrator returns `needs_more_info` immediately.
+- By default the AI must emit **`layerMap`** passes (`primitives: []`); primitive ops (`fill_cuboid`, etc.) are disabled unless `MCORCH_LAYER_MAP_ONLY=false` (Vitest sets this for unit tests). See `src/planner/planMode.ts`.
 - Prefer fixing concrete behavioral defects over broad refactors.
 - Keep `tasks/index.json` (via the task-index-manager skill) aligned with newly confirmed issues.
 - If you are certain a repo-specific failure mode, workflow, or guardrail is missing from this skill, update this skill in the same change rather than leaving the knowledge only in chat.
