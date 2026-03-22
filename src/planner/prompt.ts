@@ -82,8 +82,11 @@ function buildPlacementCard(request: ChatCommandRequest): string {
   const nhz = hLen > 0.01 ? hz / hLen : 1;
 
   const front = (d: number) => `(${Math.round(px + nhx * d)}, ${py}, ${Math.round(pz + nhz * d)})`;
-  const left  = (d: number) => `(${Math.round(px - nhz * d)}, ${py}, ${Math.round(pz + nhx * d)})`;
-  const right = (d: number) => `(${Math.round(px + nhz * d)}, ${py}, ${Math.round(pz - nhx * d)})`;
+  // Left = 90° counterclockwise turn in XZ from the player's perspective:
+  // rotate (nhx, nhz) left → (nhz, -nhx)
+  const left  = (d: number) => `(${Math.round(px + nhz * d)}, ${py}, ${Math.round(pz - nhx * d)})`;
+  // Right = 90° clockwise turn: rotate (nhx, nhz) right → (-nhz, nhx)
+  const right = (d: number) => `(${Math.round(px - nhz * d)}, ${py}, ${Math.round(pz + nhx * d)})`;
 
   return [
     "PLACEMENT REFERENCE — use these pre-computed coordinates as your anchor origin.",
@@ -99,7 +102,10 @@ function buildPlacementCard(request: ChatCommandRequest): string {
     `    south (+z): x=${px} z=${pz}+D`,
     `    east  (+x): x=${px}+D z=${pz}`,
     `    west  (−x): x=${px}-D z=${pz}`,
-    "  Vertical: above = y+D, below = y−D",
+    `  5 blocks above:    y=${py + 5}`,
+    `  10 blocks above:   y=${py + 10}`,
+    `  5 blocks below:    y=${py - 5}`,
+    "  Scale vertically as needed. 'above me' with no distance defaults to y+10.",
   ].join("\n");
 }
 

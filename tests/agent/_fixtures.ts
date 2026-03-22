@@ -5,7 +5,7 @@
 import { loadConfig } from "../../src/config/env.js";
 import { createChatProvider } from "../../src/services/ai/provider.js";
 import type { ChatProvider } from "../../src/services/ai/types.js";
-import type { ChatCommandRequest } from "../../src/types/plugin.js";
+import type { ChatCommandRequest, BlockSample } from "../../src/types/plugin.js";
 import type { Plan } from "../../src/planner/schema.js";
 import { WorldReader } from "../../src/world/worldReader.js";
 
@@ -103,8 +103,13 @@ const BASE_POSITION = { x: 0, y: 64, z: 0 };
  * is looking — the most important spatial input and the one most likely to
  * cause a confusing failure if left implicit.
  *
+ * The fixture automatically provides:
+ *   - Ground blocks (grass) at y-1 beneath the player
+ *   - A targetBlock 5 blocks ahead on the ground surface, derived from the
+ *     facing direction, so the AI has an anchor point to work with
+ *
  * Pass `overrides` only for fields that genuinely differ from the baseline
- * (e.g. a specific `targetBlock` or `recentMessages`).
+ * (e.g. a specific `targetBlock`, custom `nearbyBlocks`, or `recentMessages`).
  */
 export function makeRequest(
   message: string,
@@ -113,8 +118,31 @@ export function makeRequest(
     position?: { x: number; y: number; z: number };
   } = {},
 ): ChatCommandRequest {
-  const { position = BASE_POSITION, ...rest } = overrides;
+  const { position = BASE_POSITION, localContext, ...rest } = overrides;
   const { yaw, lookVector } = FACING[facing];
+
+  // Derive horizontal look direction (ignore y-component).
+  const hx = lookVector.x;
+  const hz = lookVector.z;
+  const hLen = Math.sqrt(hx * hx + hz * hz);
+  const nhx = hLen > 0.01 ? hx / hLen : 0;
+  const nhz = hLen > 0.01 ? hz / hLen : 1;
+
+  // Ground level is one block below player feet.
+  const groundY = position.y - 1;
+
+  // A minimal ground surface so the AI knows the player is standing on solid
+  // terrain rather than floating in void. No targetBlock by default — if the
+  // test involves a specific looked-at block, pass it via localContext override.
+  // Including a default targetBlock would cause the AI to anchor there and
+  // ignore directional phrases like "north" or "to my left".
+  const groundBlocks: BlockSample[] = [
+    { x: position.x,     y: groundY, z: position.z,     type: "minecraft:grass_block" },
+    { x: position.x + 1, y: groundY, z: position.z,     type: "minecraft:grass_block" },
+    { x: position.x - 1, y: groundY, z: position.z,     type: "minecraft:grass_block" },
+    { x: position.x,     y: groundY, z: position.z + 1, type: "minecraft:grass_block" },
+    { x: position.x,     y: groundY, z: position.z - 1, type: "minecraft:grass_block" },
+  ];
 
   return {
     requestId: `agent-test-${Date.now()}`,
@@ -130,9 +158,10 @@ export function makeRequest(
     },
     recentMessages: [],
     localContext: {
-      nearbyBlocks: [],
+      nearbyBlocks: groundBlocks,
       nearbyEntities: [],
       nearbyPlayers: [],
+      ...localContext,
     },
     serverContext: {
       timestamp: new Date().toISOString(),

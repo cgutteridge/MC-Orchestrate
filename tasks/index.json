@@ -118,6 +118,15 @@
       "notes": "When the bot says no (needsMoreInfo, rejected, safety block, parse failure, no provider), the player currently gets a generic or opaque message. Each refusal path should produce a distinct, human-readable explanation: what was understood, why it was rejected, and what the player can do differently. Audit all return paths in orchestrator.ts and runDesignLoop() and ensure each has a specific reply. Safety and semantics rejections should name the violated constraint. Parse failures should say 'I couldn't understand my own response' not 'I hit an error'. Needs baseline run (16) to see which refusal paths actually fire in practice."
     },
     {
+      "id": 30,
+      "title": "Placement intent — AI returns semantic anchor+offset, code does the geometry",
+      "status": "todo",
+      "priority": "high",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "Replace the current approach (AI outputs absolute world coordinates) with a semantic placement intent that the code resolves. AI returns { anchor: 'player_feet'|'player_look_target'|'last_build_center', forward, right, up, north, south, east, west } and all primitive coordinates are LOCAL to (0,0,0). Code resolves anchor to world-space, applies offsets using correct look-vector math, then shifts all primitives before execution. This removes coordinate math from the AI entirely. VERTICAL BASIS: for 'up' offsets, the zero reference is player.position.y + 1 (top of head, since player is 2 blocks tall at feet and feet+1). So up:0 = head level, up:1 = one clear block above head, up:5 = five blocks above head. This ensures above-me builds never clip the player body. Files: schema.ts (PlacementSchema), compilePlan.ts (apply offset transform), prompt.ts (remove placement card, add placement intent vocabulary), orchestrator.ts (pass request context to compile step). Also update agent tests to assert placement.anchor and placement.forward rather than coordinate ranges."
+    },
+    {
       "id": 29,
       "title": "Conversation history context for follow-on prompts",
       "status": "todo",

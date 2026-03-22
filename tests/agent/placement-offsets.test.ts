@@ -114,7 +114,9 @@ describe.skipIf(!provider)("Agent: placement offset resolution", () => {
 
     const coords = allPrimitiveCoords(result.plan);
     expect(coords.length).toBeGreaterThan(0);
-    expect(someCoord(coords, (c) => c.y > 66)).toBe(true);
+    // Player feet = y=64. "Above me" must be strictly higher than ground level.
+    // The placement card now supplies y+5 and y+10 as reference points.
+    expect(someCoord(coords, (c) => c.y > 64)).toBe(true);
   });
 
   // ---------------------------------------------------------------------------

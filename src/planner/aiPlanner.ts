@@ -107,7 +107,31 @@ export async function runDesignLoop(
 
     consecutiveParseFailures = 0;
 
-    const looseParsed = parseJsonStrict<Record<string, unknown>>(jsonText);
+    let looseParsed: Record<string, unknown>;
+    try {
+      looseParsed = parseJsonStrict<Record<string, unknown>>(jsonText);
+    } catch {
+      // The extracted JSON text was syntactically invalid (e.g. truncated or
+      // escape-sequence error). Treat it the same as a missing JSON block.
+      consecutiveParseFailures++;
+      await plannerLogger?.log({
+        timestamp: new Date().toISOString(),
+        requestId: request.requestId,
+        stage: "json_parse_error",
+        payload: { turn, jsonText },
+      });
+      if (consecutiveParseFailures >= 2) {
+        break;
+      }
+      messages.push(
+        { role: "assistant", content: rawResponse },
+        {
+          role: "user",
+          content: "Your JSON was malformed and could not be parsed. Return only a single valid JSON object with no trailing commas, unescaped quotes, or truncation.",
+        },
+      );
+      continue;
+    }
 
     await plannerLogger?.log({
       timestamp: new Date().toISOString(),

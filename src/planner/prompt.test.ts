@@ -165,7 +165,9 @@ describe("buildInitialMessages", () => {
   });
 
   it("placement card left/right are perpendicular to look direction", () => {
-    // Player looking east (+x), lookVector=(1,0,0)
+    // Player looking east (+x), lookVector=(1,0,0), nhx=1, nhz=0.
+    // left  = (px + nhz*5, py, pz - nhx*5) = (0+0, 64, 0-5) = (0, 64, -5) → north ✓
+    // right = (px - nhz*5, py, pz + nhx*5) = (0-0, 64, 0+5) = (0, 64,  5) → south ✓
     const req: ChatCommandRequest = {
       ...request,
       player: {
@@ -177,12 +179,12 @@ describe("buildInitialMessages", () => {
     const messages = buildInitialMessages(req);
     const userContent = messages[1]?.content ?? "";
 
-    // 5 blocks in front = (5, 64, 0)
+    // 5 blocks in front (east) = (5, 64, 0)
     expect(userContent).toContain("(5, 64, 0)");
-    // 5 blocks left (perpendicular: nhx=1,nhz=0 → left = -nhz=0, nhx=1 → (0,64,5))
-    expect(userContent).toContain("(0, 64, 5)");
-    // 5 blocks right → (0, 64, -5)
+    // 5 blocks left (north, facing east) = (0, 64, -5)
     expect(userContent).toContain("(0, 64, -5)");
+    // 5 blocks right (south, facing east) = (0, 64, 5)
+    expect(userContent).toContain("(0, 64, 5)");
   });
 
   it("system prompt explains how to resolve directional phrases", () => {
