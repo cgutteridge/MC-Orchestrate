@@ -19,15 +19,6 @@
       "notes": "Run real Azure path with representative prompts; collect and replay provider traces; record fixtures for regression."
     },
     {
-      "id": 17,
-      "title": "World Scan — prismarine-chunk 1.21.x Compatibility",
-      "status": "todo",
-      "priority": "high",
-      "complexity": "m",
-      "blockedBy": [],
-      "notes": "Test readRegionBlocks against local spigot-1.21.1.jar world files. If incompatible evaluate direct NBT parsing or plugin-side scan endpoint. Until verified, view requests outside initial payload return graceful scan-unavailable."
-    },
-    {
       "id": 18,
       "title": "Execution UX and Job Control",
       "status": "todo",
@@ -78,8 +69,8 @@
       "status": "todo",
       "priority": "medium",
       "complexity": "xl",
-      "blockedBy": [17, 19],
-      "notes": "TerrainContextCard generator, terrain-adaptive compile transforms, placement mode expansion, primitive hardening. Terrain context now feeds into initial world scan for AI loop. Needs world scan working (17) and benchmark harness to validate quality gains (19). ON START: read tasks/phase-2-terrain-blending.md (specDocs.phase2) and expand its subtasks into individual index.json entries before beginning implementation."
+      "blockedBy": [19],
+      "notes": "TerrainContextCard generator, terrain-adaptive compile transforms, placement mode expansion, primitive hardening. Terrain context now feeds into initial world scan for AI loop. Needs benchmark harness to validate quality gains (19). ON START: read tasks/phase-2-terrain-blending.md (specDocs.phase2) and expand its subtasks into individual index.json entries before beginning implementation."
     },
     {
       "id": 24,
@@ -105,17 +96,8 @@
       "status": "todo",
       "priority": "medium",
       "complexity": "l",
-      "blockedBy": [17, 23],
-      "notes": "Detect likely player-made nearby structures. Add avoidance/protection policies during planning and execution. Requires world scan (17) and stable terrain/context (23)."
-    },
-    {
-      "id": 29,
-      "title": "Conversation history context for follow-on prompts",
-      "status": "todo",
-      "priority": "high",
-      "complexity": "m",
-      "blockedBy": [],
-      "notes": "The orchestrator already maintains recentMessagesByPlayer (last 10 messages) and passes them to the AI as recentMessages. The gap is that the AI prompt does not strongly instruct the model to treat these as a running conversation and resolve follow-on intent from them. Also, the last built plan is passed as lastBuiltStructure but the AI may not reliably use it. Improvements: (1) prompt should explicitly say treat recentMessages as your conversation history — resolve ambiguous follow-ups like taller, move it, use oak, that one against this context; (2) consider summarising the last built plan in a human-readable line rather than raw JSON so it is easier for the AI to reference; (3) add an integration test that sends a follow-up prompt and verifies the AI references prior context in its plan. Optional: run task 16 baseline after changes to measure follow-up quality — not required to start implementation."
+      "blockedBy": [23],
+      "notes": "Detect likely player-made nearby structures. Add avoidance/protection policies during planning and execution. Requires stable terrain/context (23)."
     }
   ]
 }

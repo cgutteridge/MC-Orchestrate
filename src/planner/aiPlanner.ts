@@ -188,16 +188,29 @@ export async function runDesignLoop(
         payload: { turn, region },
       });
 
-      const blocks = await fulfillViewRequest(region, request, worldReader);
+      const viewFulfillment = await fulfillViewRequest(region, request, worldReader);
 
       await plannerLogger?.log({
         timestamp: new Date().toISOString(),
         requestId: request.requestId,
         stage: "view_fulfilled",
-        payload: { turn, region, blockCount: blocks?.length ?? 0 },
+        payload: {
+          turn,
+          region,
+          blockCount:
+            viewFulfillment.kind === "disk_unavailable" ? 0 : viewFulfillment.blocks.length,
+          scanUnavailable: viewFulfillment.kind === "disk_unavailable",
+        },
       });
 
-      appendViewRequestFulfillment(messages, jsonText, selfNotes, region, blocks);
+      if (viewFulfillment.kind === "disk_unavailable") {
+        appendViewRequestFulfillment(messages, jsonText, selfNotes, region, undefined, {
+          scanUnavailable: true,
+          reason: viewFulfillment.reason,
+        });
+      } else {
+        appendViewRequestFulfillment(messages, jsonText, selfNotes, region, viewFulfillment.blocks);
+      }
       continue;
     }
 
@@ -358,6 +371,11 @@ export async function runVerifyPass(
 // View request fulfillment
 // ---------------------------------------------------------------------------
 
+type ViewRequestFulfillment =
+  | { kind: "initial_slice"; blocks: BlockSample[] }
+  | { kind: "disk_ok"; blocks: BlockSample[] }
+  | { kind: "disk_unavailable"; reason: string };
+
 /**
  * Resolves block data for an AI view_request. Prefers the initial plugin
  * payload (zero I/O) when the requested region falls within `initialScanRegion`,
@@ -367,7 +385,7 @@ async function fulfillViewRequest(
   region: Region,
   request: ChatCommandRequest,
   worldReader: WorldReader,
-): Promise<BlockSample[] | undefined> {
+): Promise<ViewRequestFulfillment> {
   const scan = request.initialScanRegion;
   if (
     scan &&
@@ -378,18 +396,25 @@ async function fulfillViewRequest(
     region.max.y <= scan.maxY &&
     region.max.z <= scan.maxZ
   ) {
-    return request.localContext.nearbyBlocks.filter(
-      (b) =>
-        b.x >= region.min.x &&
-        b.x <= region.max.x &&
-        b.y >= region.min.y &&
-        b.y <= region.max.y &&
-        b.z >= region.min.z &&
-        b.z <= region.max.z,
-    );
+    return {
+      kind: "initial_slice",
+      blocks: request.localContext.nearbyBlocks.filter(
+        (b) =>
+          b.x >= region.min.x &&
+          b.x <= region.max.x &&
+          b.y >= region.min.y &&
+          b.y <= region.max.y &&
+          b.z >= region.min.z &&
+          b.z <= region.max.z,
+      ),
+    };
   }
 
-  return worldReader.readRegionBlocks(region, request.player.world);
+  const outcome = await worldReader.readRegionBlocksOutcome(region, request.player.world);
+  if (!outcome.ok) {
+    return { kind: "disk_unavailable", reason: outcome.reason };
+  }
+  return { kind: "disk_ok", blocks: outcome.blocks };
 }
 
 /**

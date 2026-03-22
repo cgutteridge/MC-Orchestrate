@@ -39,12 +39,16 @@ const request: ChatCommandRequest = {
   },
 };
 
-/** A WorldReader that always returns undefined (no disk access in tests). */
+/** A WorldReader that always reports disk scan unavailable (no disk access in tests). */
 const fakeWorldReader: WorldReader = {
   readLevelMetadata: async () => undefined,
   readPlayerMetadata: async () => undefined,
   listRegionFiles: async () => [],
   readRegionBlocks: async () => undefined,
+  readRegionBlocksOutcome: async () => ({
+    ok: false,
+    reason: "World region directory is missing or not readable.",
+  }),
 } as unknown as WorldReader;
 
 /**
@@ -122,6 +126,64 @@ describe("runDesignLoop", () => {
       radius: 3,
       height: 5,
     });
+  });
+
+  it("includes prior chat lines in the initial user message for follow-up resolution", async () => {
+    const followUpRequest: ChatCommandRequest = {
+      ...request,
+      message: "make it taller",
+      recentMessages: ["build a small stone tower here"],
+    };
+
+    const provider: ChatProvider = {
+      name: "test",
+      async chat(messages) {
+        const user = messages.find((m) => m.role === "user")?.content ?? "";
+        if (!user.includes("CONVERSATION HISTORY")) {
+          throw new Error("Expected conversation history block");
+        }
+        if (!user.includes("build a small stone tower here")) {
+          throw new Error("Expected prior message in prompt");
+        }
+        if (!user.includes("make it taller")) {
+          throw new Error("Expected current message in payload");
+        }
+        return buildStep({
+          intent: "build_tower",
+          targetWorld: "world",
+          targetRegion: {
+            world: "world",
+            min: { x: -52, y: 113, z: -19 },
+            max: { x: -50, y: 125, z: -17 },
+          },
+          assumptions: [],
+          passes: [
+            {
+              name: "tower",
+              goal: "Extend the stone tower upward per the player's follow-up request.",
+              primitives: [
+                {
+                  type: "fill_cuboid",
+                  from: { x: -52, y: 113, z: -19 },
+                  to: { x: -50, y: 125, z: -17 },
+                  block: "minecraft:stone",
+                },
+              ],
+            },
+          ],
+          reply: "Made it taller.",
+          needsMoreInfo: false,
+        });
+      },
+    };
+
+    const result = await runDesignLoop(provider, followUpRequest, fakeWorldReader, undefined);
+    expect(result.outcome).toBe("plan");
+    if (result.outcome !== "plan") {
+      return;
+    }
+    expect(result.plan.intent).toBe("build_tower");
+    expect(result.plan.passes[0]?.goal).toContain("follow-up");
   });
 
   it("repairs underspecified primitive output and returns a plan", async () => {
@@ -612,6 +674,70 @@ describe("runDesignLoop", () => {
     const result = await runDesignLoop(provider, requestWithScan, fakeWorldReader, undefined);
 
     // assert
+    expect(result.outcome).toBe("plan");
+    if (result.outcome !== "plan") {
+      return;
+    }
+    expect(result.plan.intent).toBe("build_tower");
+    expect(turn).toBe(2);
+  });
+
+  it("surfaces scan-unavailable when view_request needs disk outside the initial payload", async () => {
+    const requestNoScan: ChatCommandRequest = {
+      ...request,
+      initialScanRegion: undefined,
+    };
+
+    let turn = 0;
+    const provider: ChatProvider = {
+      name: "test",
+      async chat(messages) {
+        turn++;
+        if (turn === 1) {
+          return JSON.stringify({
+            action: "view_request",
+            region: {
+              world: "world",
+              min: { x: 0, y: 60, z: 0 },
+              max: { x: 5, y: 70, z: 5 },
+            },
+            selfNotes: "Need terrain.",
+          });
+        }
+        const lastUser = messages.filter((m) => m.role === "user").at(-1)?.content ?? "";
+        if (!lastUser.includes("On-disk world scan is unavailable")) {
+          throw new Error("Expected scan-unavailable in view fulfillment");
+        }
+        return buildStep({
+          intent: "build_tower",
+          targetWorld: "world",
+          targetRegion: {
+            world: "world",
+            min: { x: -52, y: 113, z: -19 },
+            max: { x: -50, y: 120, z: -17 },
+          },
+          assumptions: [],
+          passes: [
+            {
+              name: "tower",
+              goal: "Build a stone tower.",
+              primitives: [
+                {
+                  type: "fill_cuboid",
+                  from: { x: -52, y: 113, z: -19 },
+                  to: { x: -50, y: 120, z: -17 },
+                  block: "minecraft:stone",
+                },
+              ],
+            },
+          ],
+          reply: "Built.",
+          needsMoreInfo: false,
+        });
+      },
+    };
+
+    const result = await runDesignLoop(provider, requestNoScan, fakeWorldReader, undefined);
     expect(result.outcome).toBe("plan");
     if (result.outcome !== "plan") {
       return;

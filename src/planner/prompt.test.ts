@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
+import type { ChatMessage } from "../services/ai/types.js";
 import type { ChatCommandRequest } from "../types/plugin.js";
-import { buildInitialMessages } from "./prompt.js";
+import { appendViewRequestFulfillment, buildInitialMessages, summarizeLastBuiltPlan } from "./prompt.js";
+import type { Region } from "./schema.js";
 
 const request: ChatCommandRequest = {
   requestId: "req-1",
@@ -127,15 +129,63 @@ describe("buildInitialMessages", () => {
     const messages = buildInitialMessages(request, lastPlan as never);
     const userContent = messages[1]?.content ?? "";
 
-    expect(userContent).toContain("build_tower");
+    expect(userContent).toContain("LAST BUILD SUMMARY");
+    expect(userContent).toContain("intent=build_tower");
+    expect(userContent).toContain("lastBuiltStructureSummary");
     expect(userContent).toContain("lastBuiltStructure");
   });
 
-  it("sets lastBuiltStructure to null when no previous plan is provided", () => {
+  it("includes a conversation history block when recentMessages is non-empty", () => {
+    const messages = buildInitialMessages({
+      ...request,
+      message: "make it taller",
+      recentMessages: ["build a stone cottage"],
+    });
+    const userContent = messages[1]?.content ?? "";
+    expect(userContent).toContain("CONVERSATION HISTORY");
+    expect(userContent).toContain("build a stone cottage");
+    expect(userContent).toContain("make it taller");
+  });
+
+  it("summarizeLastBuiltPlan describes intent, footprint, and pass goals", () => {
+    const line = summarizeLastBuiltPlan({
+      intent: "build_wall",
+      targetWorld: "world",
+      targetRegion: {
+        world: "world",
+        min: { x: 0, y: 64, z: 0 },
+        max: { x: 9, y: 70, z: 0 },
+      },
+      assumptions: [],
+      passes: [
+        {
+          name: "walls",
+          goal: "Raise the east wall using stone bricks.",
+          primitives: [
+            {
+              type: "fill_cuboid",
+              from: { x: 0, y: 64, z: 0 },
+              to: { x: 9, y: 70, z: 0 },
+              block: "minecraft:stone_bricks",
+            },
+          ],
+        },
+      ],
+      reply: "Done.",
+      needsMoreInfo: false,
+    });
+    expect(line).toContain("intent=build_wall");
+    expect(line).toContain("size=10×7×1");
+    expect(line).toContain("passes=[walls]");
+    expect(line).toContain("walls:");
+  });
+
+  it("sets lastBuiltStructure and lastBuiltStructureSummary to null when no previous plan is provided", () => {
     const messages = buildInitialMessages(request);
     const userContent = messages[1]?.content ?? "";
 
     expect(userContent).toContain("\"lastBuiltStructure\": null");
+    expect(userContent).toContain("\"lastBuiltStructureSummary\": null");
   });
 
   it("system prompt contains placement ref enum and offset vocabulary", () => {
@@ -149,6 +199,14 @@ describe("buildInitialMessages", () => {
     expect(system).toContain("forward");
     expect(system).toContain("up");
     expect(system).toContain("north");
+  });
+
+  it("system prompt instructs the model to treat recentMessages as conversation context", () => {
+    const messages = buildInitialMessages(request);
+    const system = messages[0]?.content ?? "";
+
+    expect(system).toContain("CONVERSATION AND FOLLOW-UPS");
+    expect(system).toContain("lastBuiltStructureSummary");
   });
 
   it("system prompt maps common directional phrases to placement fields", () => {
@@ -177,5 +235,31 @@ describe("buildInitialMessages", () => {
 
     expect(userContent).toContain("initialScanRegion");
     expect(userContent).toContain("-7");
+  });
+});
+
+describe("appendViewRequestFulfillment", () => {
+  const region: Region = {
+    world: "world",
+    min: { x: 0, y: 60, z: 0 },
+    max: { x: 1, y: 61, z: 1 },
+  };
+
+  it("explains scan-unavailable when on-disk read cannot be used", () => {
+    const messages: ChatMessage[] = [];
+    appendViewRequestFulfillment(
+      messages,
+      '{"action":"view_request"}',
+      "notes",
+      region,
+      undefined,
+      {
+        scanUnavailable: true,
+        reason: "World region directory is missing or not readable.",
+      },
+    );
+    const user = messages.find((m) => m.role === "user")?.content ?? "";
+    expect(user).toContain("On-disk world scan is unavailable");
+    expect(user).toContain("World region directory is missing");
   });
 });

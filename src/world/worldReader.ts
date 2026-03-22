@@ -1,4 +1,4 @@
-import { readFile, readdir } from "node:fs/promises";
+import { readFile, readdir, stat } from "node:fs/promises";
 import { inflateSync, gunzipSync } from "node:zlib";
 import path from "node:path";
 import { parse } from "prismarine-nbt";
@@ -6,6 +6,15 @@ import type { Region } from "../planner/schema.js";
 import type { BlockSample } from "../types/plugin.js";
 
 type NbtSummary = Record<string, unknown>;
+
+/**
+ * Result of reading block samples from on-disk region files. When `ok` is
+ * false the caller should treat the scan as unavailable (not as an empty
+ * region).
+ */
+export type RegionBlocksOutcome =
+  | { ok: true; blocks: BlockSample[] }
+  | { ok: false; reason: string };
 
 /** Maximum number of blocks returned by a single region scan. */
 const MAX_SCAN_BLOCKS = 4096;
@@ -72,13 +81,30 @@ export class WorldReader {
     region: Region,
     worldName = "world",
   ): Promise<BlockSample[] | undefined> {
+    const outcome = await this.readRegionBlocksOutcome(region, worldName);
+    return outcome.ok ? outcome.blocks : undefined;
+  }
+
+  /**
+   * Reads non-air blocks from `.mca` files and distinguishes an empty-but-valid
+   * scan from a failed scan (missing world, unreadable chunks, unsupported
+   * compression). Prefer this for `view_request` fulfillment when the region
+   * is outside the initial plugin payload.
+   */
+  async readRegionBlocksOutcome(
+    region: Region,
+    worldName = "world",
+  ): Promise<RegionBlocksOutcome> {
     try {
       return await readBlocksFromRegion(
         path.join(this.minecraftDir, worldName, "region"),
         region,
       );
     } catch {
-      return undefined;
+      return {
+        ok: false,
+        reason: "Unexpected error while reading region files.",
+      };
     }
   }
 }
@@ -89,13 +115,28 @@ export class WorldReader {
 
 /**
  * Returns all non-air BlockSamples within `region` by reading the relevant
- * `.mca` region files. Throws on unrecoverable errors; the public API wraps
- * in try/catch.
+ * `.mca` region files. Distinguishes a successful empty read from a failed
+ * read (missing directory, or chunk data present but not parseable).
  */
 async function readBlocksFromRegion(
   regionDir: string,
   region: Region,
-): Promise<BlockSample[]> {
+): Promise<RegionBlocksOutcome> {
+  try {
+    const st = await stat(regionDir);
+    if (!st.isDirectory()) {
+      return {
+        ok: false,
+        reason: "World region path exists but is not a directory.",
+      };
+    }
+  } catch {
+    return {
+      ok: false,
+      reason: "World region directory is missing or not readable.",
+    };
+  }
+
   const { min, max } = region;
 
   // Determine which 16-block-wide chunk columns intersect the region.
@@ -120,6 +161,8 @@ async function readBlocksFromRegion(
   }
 
   const results: BlockSample[] = [];
+  let anyChunkOk = false;
+  let anyChunkFailed = false;
 
   for (const [filename, chunks] of regionChunks) {
     if (results.length >= MAX_SCAN_BLOCKS) {
@@ -138,27 +181,41 @@ async function readBlocksFromRegion(
       if (results.length >= MAX_SCAN_BLOCKS) {
         break;
       }
-      const chunkBlocks = await extractChunkBlocks(regionData, cx, cz, region);
-      if (chunkBlocks) {
-        results.push(...chunkBlocks);
+      const { status, blocks } = await extractChunkBlocks(regionData, cx, cz, region);
+      if (status === "ok") {
+        anyChunkOk = true;
+        results.push(...blocks);
+      } else if (status === "failed") {
+        anyChunkFailed = true;
       }
     }
   }
 
-  return results.slice(0, MAX_SCAN_BLOCKS);
+  if (anyChunkOk) {
+    return { ok: true, blocks: results.slice(0, MAX_SCAN_BLOCKS) };
+  }
+  if (anyChunkFailed) {
+    return {
+      ok: false,
+      reason:
+        "At least one chunk in this region could not be read (unsupported compression, corrupt data, or incompatible format). On-disk scan is unavailable for this region.",
+    };
+  }
+  return { ok: true, blocks: [] };
 }
+
+type ChunkExtractStatus = "ungenerated" | "ok" | "failed";
 
 /**
  * Reads one chunk column from a loaded region buffer and returns its
- * non-air BlockSamples within the given region bounds. Returns `undefined`
- * when the chunk is ungenerated or cannot be parsed.
+ * non-air BlockSamples within the given region bounds.
  */
 async function extractChunkBlocks(
   regionData: Buffer,
   cx: number,
   cz: number,
   region: Region,
-): Promise<BlockSample[] | undefined> {
+): Promise<{ status: ChunkExtractStatus; blocks: BlockSample[] }> {
   try {
     // Anvil header: 1024 entries of 4 bytes each.
     // Entry layout: 3-byte sector offset (big-endian) + 1-byte sector count.
@@ -167,7 +224,7 @@ async function extractChunkBlocks(
     const headerOffset = (localCx + localCz * 32) * 4;
 
     if (headerOffset + 4 > regionData.length) {
-      return undefined;
+      return { status: "failed", blocks: [] };
     }
 
     const sectorOffset =
@@ -177,12 +234,12 @@ async function extractChunkBlocks(
 
     if (sectorOffset === 0) {
       // Chunk has not been generated.
-      return undefined;
+      return { status: "ungenerated", blocks: [] };
     }
 
     const dataStart = sectorOffset * 4096;
     if (dataStart + 5 > regionData.length) {
-      return undefined;
+      return { status: "failed", blocks: [] };
     }
 
     // Chunk data: 4-byte length (big-endian) + 1-byte compression type.
@@ -201,13 +258,14 @@ async function extractChunkBlocks(
     } else if (compressionType === 3) {
       rawNbt = Buffer.from(compressedData);
     } else {
-      // Unsupported compression format (e.g. LZ4 = type 4) — skip this chunk.
-      return undefined;
+      // Unsupported compression format (e.g. LZ4 = type 4).
+      return { status: "failed", blocks: [] };
     }
 
-    return await parseChunkNbtAndExtract(rawNbt, cx, cz, region);
+    const blocks = await parseChunkNbtAndExtract(rawNbt, cx, cz, region);
+    return { status: "ok", blocks };
   } catch {
-    return undefined;
+    return { status: "failed", blocks: [] };
   }
 }
 

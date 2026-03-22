@@ -65,6 +65,10 @@ const fakeWorldReader: WorldReader = {
   readPlayerMetadata: async () => undefined,
   listRegionFiles: async () => [],
   readRegionBlocks: async () => undefined,
+  readRegionBlocksOutcome: async () => ({
+    ok: false,
+    reason: "World region directory is missing or not readable.",
+  }),
 } as unknown as WorldReader;
 
 // ---------------------------------------------------------------------------

@@ -35,9 +35,9 @@ Use this skill for coding and debugging work in `/Users/cjg/Projects/MC-Orchestr
 
 The orchestrator runs `runDesignLoop()` for every chat request. The loop runs up to 5 turns:
 
-1. Sends initial context to the AI (player position, look vector, target block, 15×8×15 world scan, last built plan, conversation history).
+1. Sends initial context to the AI (player position, look vector, target block, 15×8×15 world scan, optional **CONVERSATION HISTORY** + **LAST BUILD SUMMARY** lines, JSON including `lastBuiltStructureSummary` and full `lastBuiltStructure`).
 2. AI returns either `{ action: "view_request", region, selfNotes }` or a build plan (wrapped or bare).
-3. For `view_request`: orchestrator fulfils the scan (from initial plugin payload slice or `WorldReader.readRegionBlocks`) and appends the result as the next user message.
+3. For `view_request`: orchestrator fulfils the scan (from initial plugin payload slice or `WorldReader.readRegionBlocksOutcome` / `readRegionBlocks`) and appends the result as the next user message. If the region is outside the initial payload and on-disk read cannot be trusted, the user message explains **scan unavailable** (not “empty region”).
 4. For `build` / bare Plan: orchestrator repairs the plan (`repairLoosePlanCandidate`), validates it via `PlanSchema`, then returns it.
 5. After execution, the orchestrator can optionally run `runVerifyPass()` to give the AI a polish pass.
 
@@ -51,17 +51,13 @@ The orchestrator runs `runDesignLoop()` for every chat request. The loop runs up
 
 The AI returns `placement` (`ref` + offsets). `resolvePlacement()` maps that to a world anchor; the orchestrator recenters the AI plan with `shiftPlan()` so absolute coords from the model need not be trusted. Vertical baseline: **`player_view` / `player_absolute`** use `up:0` at **player head** (`round(feet Y) + 1`); **`focus`** uses **top of target block** (`block Y + 1`); **`last_build`** uses the **last plan centre Y**.
 
-### Player-facing refusals
-
-`src/planner/playerRefusalMessages.ts` centralises copy for design-loop aborts, empty plans, orchestrator errors, safety limits, and semantic plan checks. Prefer editing that module (and the small call sites in `safety.ts` / `semantics.ts` / `orchestrator.ts`) rather than ad-hoc strings.
-
 ## Plugin Payload
 
 The plugin sends a 15×8×15 block scan centered on the player with air filtered out (cap 300 blocks). It also sends `initialScanRegion` bounding box so the AI knows what world data it received without requesting a disk read.
 
 ## World Reader
 
-`WorldReader.readRegionBlocks(region)` parses Minecraft `.mca` Anvil region files using `prismarine-nbt` and returns `BlockSample[]`. Returns `undefined` on any error — never throws. Designed for Minecraft 1.18+ chunk NBT format; tested with 1.21.1.
+`WorldReader.readRegionBlocks(region)` parses Minecraft `.mca` Anvil region files using `prismarine-nbt` and returns `BlockSample[]` or `undefined`. Use `readRegionBlocksOutcome` when you must distinguish an empty valid scan from a failed scan (missing `world/region`, unsupported chunk compression, or parse failure). Designed for Minecraft 1.18+ palette chunk NBT; optional smoke test in `tests/world/worldReader.test.ts` when `minecraft-server/world/region` exists locally.
 
 For post-build verification, the orchestrator prefers `bridge.getPlacedBlocks()` (in-memory, zero I/O) over disk reads.
 

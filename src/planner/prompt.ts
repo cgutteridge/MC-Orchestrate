@@ -54,6 +54,59 @@ function buildNearbyContextSummary(request: ChatCommandRequest): string | undefi
   return `Nearby materials: ${top}.`;
 }
 
+/**
+ * Summarizes the last executed plan as a single readable line for prompts and
+ * follow-up context so the model does not have to infer intent from raw JSON.
+ *
+ * @param plan The validated plan from the previous successful build.
+ * @returns A compact line describing intent, footprint, and pass goals.
+ */
+export function summarizeLastBuiltPlan(plan: Plan): string {
+  const { min, max } = plan.targetRegion;
+  const dx = max.x - min.x + 1;
+  const dy = max.y - min.y + 1;
+  const dz = max.z - min.z + 1;
+  const passTitles = plan.passes.map((p) => p.name).join(", ");
+  const goalPreview = plan.passes
+    .slice(0, 2)
+    .map((p) => {
+      const g = p.goal.trim();
+      const short = g.length > 100 ? `${g.slice(0, 100)}…` : g;
+      return `${p.name}: ${short}`;
+    })
+    .join(" | ");
+
+  const parts: string[] = [
+    `intent=${plan.intent}`,
+    `world=${plan.targetWorld}`,
+    `target box min(${min.x},${min.y},${min.z}) max(${max.x},${max.y},${max.z}) size=${dx}×${dy}×${dz}`,
+  ];
+  if (plan.passes.length > 0) {
+    parts.push(`passes=[${passTitles}]`);
+    if (goalPreview) {
+      parts.push(`goals: ${goalPreview}`);
+    }
+  } else {
+    parts.push("passes=(none)");
+  }
+  return parts.join(" — ");
+}
+
+/**
+ * Formats prior player lines for the user prompt when `recentMessages` is non-empty.
+ */
+function formatConversationHistoryForPrompt(request: ChatCommandRequest): string | undefined {
+  const { recentMessages } = request;
+  if (recentMessages.length === 0) {
+    return undefined;
+  }
+  const lines = recentMessages.map((line, i) => `${i + 1}. ${line}`);
+  return [
+    "CONVERSATION HISTORY (oldest first; excludes this turn's JSON field \"message\" — that is the latest line only):",
+    ...lines,
+  ].join("\n");
+}
+
 // ---------------------------------------------------------------------------
 // Placement card — pre-computed reference points so the AI never has to do
 // trig from raw yaw/lookVector values.
@@ -226,11 +279,17 @@ const SYSTEM_PROMPT = [
   "DEFAULT when no location specified: placement:{ref:player_view, forward:8}.",
   "Never place structures at or on the player's body.",
   "",
-  "=== CONTEXT AWARENESS ===",
+  "=== CONVERSATION AND FOLLOW-UPS ===",
   "",
-  "recentMessages contains the player's last bot prompts in chronological order.",
-  "Use them to understand follow-up requests (taller, bigger, different material, etc.).",
-  "lastBuiltStructure is the plan from the last successful build — use it for follow-up context.",
+  "The user message is built from several parts; the JSON block at the end includes:",
+  "  - message — this turn's chat line only.",
+  "  - recentMessages — earlier chat lines from this session, oldest first, excluding `message`.",
+  "  - lastBuiltStructureSummary — one-line recap of the last successful build (when present).",
+  "  - lastBuiltStructure — full prior plan JSON (optional detail; prefer the summary + follow-up logic).",
+  "Treat recentMessages plus message as one running conversation. Resolve vague follow-ups by binding them to earlier lines and/or the last build:",
+  "  e.g. taller, wider, use oak, move it, to the left, same thing but, that tower, add windows — use placement ref last_build when modifying the previous structure.",
+  "If the current message is very short, assume it refers to the immediately preceding topic in recentMessages or the LAST BUILD SUMMARY section.",
+  "",
   "initialScanRegion tells you the bounding box of the block data you already have.",
   "If you need to see outside that box, use view_request.",
   "",
@@ -273,6 +332,19 @@ export function buildInitialMessages(request: ChatCommandRequest, lastPlan?: Pla
     parts.push(nearbySummary);
   }
 
+  const historyBlock = formatConversationHistoryForPrompt(request);
+  if (historyBlock) {
+    parts.push(historyBlock);
+  }
+
+  const lastSummary = lastPlan ? summarizeLastBuiltPlan(lastPlan) : null;
+
+  if (lastSummary) {
+    parts.push(
+      `LAST BUILD SUMMARY (use for follow-ups; placement ref last_build anchors to this structure):\n${lastSummary}`,
+    );
+  }
+
   parts.push(JSON.stringify(
     {
       requestId: request.requestId,
@@ -282,6 +354,7 @@ export function buildInitialMessages(request: ChatCommandRequest, lastPlan?: Pla
       localContext: request.localContext,
       serverContext: request.serverContext,
       initialScanRegion: request.initialScanRegion,
+      lastBuiltStructureSummary: lastSummary,
       lastBuiltStructure: lastPlan ?? null,
     },
     null,
@@ -303,7 +376,11 @@ export function buildInitialMessages(request: ChatCommandRequest, lastPlan?: Pla
  * @param assistantJson The raw JSON string the AI returned for the view_request.
  * @param selfNotes The selfNotes from the AI's view_request.
  * @param region The region that was scanned.
- * @param blocks The scanned BlockSamples, or undefined if the scan failed.
+ * @param blocks The scanned BlockSamples, or undefined when the scan did not
+ *   yield usable block data.
+ * @param options When `scanUnavailable` is true, `blocks` is ignored and the
+ *   user message explains that an on-disk read was not available (do not treat
+ *   this as an empty region).
  */
 export function appendViewRequestFulfillment(
   messages: ChatMessage[],
@@ -311,11 +388,19 @@ export function appendViewRequestFulfillment(
   selfNotes: string,
   region: Region,
   blocks: BlockSample[] | undefined,
+  options?: { scanUnavailable?: boolean; reason?: string },
 ): void {
   messages.push({ role: "assistant", content: assistantJson });
 
-  const scanResult =
-    blocks && blocks.length > 0
+  const scanResult = options?.scanUnavailable
+    ? [
+        "On-disk world scan is unavailable for this region.",
+        options.reason?.trim() ? `Detail: ${options.reason.trim()}` : "",
+        "Proceed without assuming you saw blocks outside the initial plugin payload.",
+      ]
+        .filter(Boolean)
+        .join(" ")
+    : blocks && blocks.length > 0
       ? `${blocks.length} non-air blocks found:\n${JSON.stringify(blocks)}`
       : "No non-air blocks found in this region (it may be ungenerated or all air).";
 
