@@ -19,10 +19,11 @@ export function validatePlanSemantics(plan: Plan): string | undefined {
   }
 
   const layerPassCount = plan.passes.filter((p) => p.layerMap).length;
-  if (layerPassCount > 1) {
+  if (layerPassCount > 2) {
     return (
-      "This plan has multiple layer-map passes; only one layer map per plan is supported " +
-      "(all layers share one origin at targetRegion.min)."
+      "This plan has more than two layer-map passes. Use one pass for the complete structure " +
+      "(a single layerMap for the whole build) and at most one optional second pass for refinement " +
+      "(do not split the build across many passes)."
     );
   }
 

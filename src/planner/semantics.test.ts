@@ -298,4 +298,42 @@ describe("validatePlanSemantics — degenerate structure", () => {
 
     expect(validatePlanSemantics(plan)).toBeUndefined();
   });
+
+  const tinyLayerMap = {
+    layers: ["S"],
+    palette: { S: "minecraft:stone", " ": "minecraft:air" },
+  };
+
+  it("allows two layer-map passes (full build plus optional refinement)", () => {
+    const plan = makePlan([
+      {
+        name: "main",
+        goal: "Complete structure.",
+        primitives: [],
+        layerMap: tinyLayerMap,
+      },
+      {
+        name: "refine",
+        goal: "Polish.",
+        primitives: [],
+        layerMap: {
+          layers: ["S"],
+          palette: { S: "minecraft:stone_bricks", " ": "minecraft:air" },
+        },
+      },
+    ]);
+
+    expect(validatePlanSemantics(plan)).toBeUndefined();
+  });
+
+  it("rejects more than two layer-map passes", () => {
+    const pass = {
+      name: "p",
+      goal: "g",
+      primitives: [] as Plan["passes"][number]["primitives"],
+      layerMap: tinyLayerMap,
+    };
+    const plan = makePlan([pass, pass, pass]);
+    expect(validatePlanSemantics(plan)).toContain("more than two");
+  });
 });
