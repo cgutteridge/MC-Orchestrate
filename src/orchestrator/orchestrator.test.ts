@@ -46,7 +46,7 @@ class FakeBridge {
   public failOnCallNumber?: number;
   private callCount = 0;
 
-  async executeCommand(command: BridgeCommand): Promise<void> {
+  async executeCommand(command: BridgeCommand, _context?: unknown): Promise<void> {
     this.callCount += 1;
     if (this.failOnCallNumber === this.callCount) {
       throw new Error("bridge write failed");
@@ -299,9 +299,8 @@ describe("Orchestrator", () => {
       },
     };
     const bridge = new FakeBridge();
-    // Call 1 = Thinking say, call 2 = Placement debug say,
-    // call 3 = setBlock (step_1) success, call 4 = setBlock (step_2) — fails.
-    bridge.failOnCallNumber = 4;
+    // 1 Thinking, 2 Placement, 3 Building… (N ops), 4 setBlock 1, 5 setBlock 2 fails.
+    bridge.failOnCallNumber = 5;
     const orchestrator = new Orchestrator(bridge as never, fakeWorldReader, provider);
 
     const response = await orchestrator.handleChatCommand({
@@ -313,11 +312,93 @@ describe("Orchestrator", () => {
     expect(response.status).toBe("error");
     expect(response.reply).toContain("Execution stopped");
     expect(response.reply).toContain("step 2 of 2");
+    // Coordinates are shifted by placement resolution; assert shape of the summary.
+    expect(response.reply).toMatch(/set_block at \(-?\d+, -?\d+, -?\d+\)/);
+    expect(response.executedActions).toBe(1);
+    expect(response.failedCommandSummary).toMatch(/set_block at \(-?\d+, -?\d+, -?\d+\)/);
     const sayCommands = bridge.commands.filter((c) => c.kind === "say");
     const errorSay = sayCommands.find(
       (c) => c.kind === "say" && c.message.includes("Execution stopped"),
     );
     expect(errorSay).toBeDefined();
+  });
+
+  it("announces bridge operation count before execution", async () => {
+    const provider: ChatProvider = {
+      name: "test",
+      async chat() {
+        return buildStep({
+          intent: "build_house",
+          targetWorld: "world",
+          targetRegion: {
+            world: "world",
+            min: { x: 1, y: 64, z: 1 },
+            max: { x: 2, y: 64, z: 1 },
+          },
+          assumptions: [],
+          passes: [
+            {
+              name: "wall",
+              goal: "Tiny wall.",
+              primitives: [
+                { type: "set_block", x: 1, y: 64, z: 1, block: "minecraft:stone" },
+                { type: "set_block", x: 2, y: 64, z: 1, block: "minecraft:stone" },
+              ],
+            },
+          ],
+          reply: "Done building.",
+          needsMoreInfo: false,
+        });
+      },
+    };
+    const { orchestrator, bridge } = makeOrchestrator(provider);
+    await orchestrator.handleChatCommand(request);
+
+    const buildingSay = bridge.commands.find(
+      (c) =>
+        c.kind === "say" &&
+        c.message.includes("Building") &&
+        c.message.includes("2 operations"),
+    );
+    expect(buildingSay).toBeDefined();
+  });
+
+  it("returns cancelled when the abort signal is already set", async () => {
+    const provider: ChatProvider = {
+      name: "test",
+      async chat() {
+        return buildStep({
+          intent: "build_house",
+          targetWorld: "world",
+          targetRegion: {
+            world: "world",
+            min: { x: 0, y: 64, z: 0 },
+            max: { x: 1, y: 64, z: 0 },
+          },
+          assumptions: [],
+          passes: [
+            {
+              name: "a",
+              goal: "Block.",
+              primitives: [
+                { type: "set_block", x: 0, y: 64, z: 0, block: "minecraft:stone" },
+              ],
+            },
+          ],
+          reply: "Done.",
+          needsMoreInfo: false,
+        });
+      },
+    };
+    const { orchestrator } = makeOrchestrator(provider);
+    const ac = new AbortController();
+    ac.abort();
+
+    const response = await orchestrator.handleChatCommand(request, { signal: ac.signal });
+
+    expect(response.status).toBe("error");
+    expect(response.reply).toContain("cancelled");
+    expect(response.cancelled).toBe(true);
   });
 
   it("keeps the last built structure context across non-structure commands", async () => {

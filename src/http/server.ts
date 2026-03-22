@@ -93,8 +93,19 @@ async function handleChatCommand(
   try {
     const body = await readJsonBody(req);
     const request = RequestSchema.parse(body);
-    const response = await orchestrator.handleChatCommand(request);
-    respondJson(res, 200, response);
+    const ac = new AbortController();
+    const onClose = () => {
+      ac.abort();
+    };
+    req.once("close", onClose);
+    try {
+      const response = await orchestrator.handleChatCommand(request, {
+        signal: ac.signal,
+      });
+      respondJson(res, 200, response);
+    } finally {
+      req.off("close", onClose);
+    }
   } catch (error) {
     respondJson(res, 400, {
       error: error instanceof Error ? error.message : String(error),

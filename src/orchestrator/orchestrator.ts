@@ -1,4 +1,6 @@
+import { describeBridgeCommand } from "../bridge/describeCommand.js";
 import { BridgeServer } from "../bridge/bridgeServer.js";
+import type { BridgeCommand } from "../bridge/types.js";
 import type { ChatProvider } from "../services/ai/types.js";
 import type { ChatCommandRequest, ChatCommandResponse } from "../types/plugin.js";
 import { runDesignLoop, runVerifyPass } from "../planner/aiPlanner.js";
@@ -19,6 +21,47 @@ import {
   orchestratorEmptyPlanMessage,
   orchestratorUnexpectedErrorMessage,
 } from "../planner/playerRefusalMessages.js";
+
+/** Minimum bridge operations before mid-run percentage announcements. */
+const PROGRESS_ANNOUNCE_MIN_OPS = 20;
+
+/**
+ * When {@link PROGRESS_ANNOUNCE_MIN_OPS} is met, returns 25 / 50 / 75 when
+ * `completed` matches the first step count for that percentage (inclusive).
+ */
+function progressPercentMilestone(
+  completed: number,
+  total: number,
+): 25 | 50 | 75 | undefined {
+  if (total < PROGRESS_ANNOUNCE_MIN_OPS) {
+    return undefined;
+  }
+  const milestones: (25 | 50 | 75)[] = [25, 50, 75];
+  for (const m of milestones) {
+    const threshold = Math.ceil((total * m) / 100);
+    if (completed === threshold) {
+      return m;
+    }
+  }
+  return undefined;
+}
+
+type BridgeExecutionResult =
+  | { ok: true }
+  | {
+      ok: false;
+      reason: "cancelled";
+      completed: number;
+      total: number;
+    }
+  | {
+      ok: false;
+      reason: "bridge_error";
+      failedIndex: number;
+      detail: string;
+      completedBeforeFailure: number;
+      total: number;
+    };
 
 /**
  * Coordinates chat requests, AI design loop planning, safety checks, and
@@ -50,10 +93,27 @@ export class Orchestrator {
    * the request was received. Then runs the multi-turn AI design loop,
    * validates and executes the resulting plan, and optionally performs a
    * post-build verify + polish pass when the AI requests one.
+   *
+   * @param request Validated plugin payload for this chat turn.
+   * @param options Optional `AbortSignal` (e.g. when the HTTP client disconnects)
+   *   to cooperatively cancel planning and bridge execution between steps.
    */
   async handleChatCommand(
     request: ChatCommandRequest,
+    options?: { signal?: AbortSignal },
   ): Promise<ChatCommandResponse> {
+    const signal = options?.signal;
+
+    if (signal?.aborted) {
+      return {
+        status: "error",
+        reply: "Request was cancelled.",
+        requestId: request.requestId,
+        intent: "unknown",
+        cancelled: true,
+      };
+    }
+
     // No AI provider configured — fail fast with a clear message.
     if (!this.provider) {
       return {
@@ -94,7 +154,18 @@ export class Orchestrator {
         previousPlan,
         this.plannerLogger,
         this.bridge.getPlacedBlocks(),
+        { signal },
       );
+
+      if (loopResult.outcome === "cancelled") {
+        return {
+          status: "error",
+          reply: "Request was cancelled.",
+          requestId: request.requestId,
+          intent: "unknown",
+          cancelled: true,
+        };
+      }
 
       if (loopResult.outcome === "needs_more_info") {
         return {
@@ -176,19 +247,20 @@ export class Orchestrator {
       // Execute the plan
       // -----------------------------------------------------------------------
       const commands = compilePlanToBridgeCommands(plan);
-      for (const [index, command] of commands.entries()) {
-        try {
-          await this.bridge.executeCommand(command, {
-            requestId: request.requestId,
-            playerUuid: request.player.uuid,
-            playerName: request.player.name,
-          });
-        } catch (error) {
-          const detail =
-            error instanceof Error ? error.message : String(error);
-          const reply = `Execution stopped: step ${index + 1} of ${commands.length} failed (${detail}). ` +
-            `Earlier steps may already have changed the world — say what you see and we can fix or undo manually.`;
+      const execution = await this.executeBridgeCommands(
+        commands,
+        request,
+        signal,
+        true,
+      );
 
+      if (!execution.ok) {
+        if (execution.reason === "cancelled") {
+          const reply =
+            execution.completed === 0
+              ? "Build cancelled before any blocks were placed."
+              : `Build cancelled after ${execution.completed} of ${execution.total} operations. ` +
+                "The world may be partially changed.";
           try {
             await this.bridge.executeCommand(
               {
@@ -202,16 +274,50 @@ export class Orchestrator {
               },
             );
           } catch {
-            // Preserve the original failure when notification also fails.
+            /* non-fatal */
           }
-
           return {
             status: "error",
             reply,
             requestId: request.requestId,
             intent: plan.intent,
+            executedActions: execution.completed,
+            cancelled: true,
           };
         }
+
+        const failedCommand = commands[execution.failedIndex]!;
+        const summary = describeBridgeCommand(failedCommand);
+        const detail =
+          execution.detail;
+        const reply =
+          `Execution stopped: step ${execution.failedIndex + 1} of ${execution.total} failed (${summary}): ${detail}. ` +
+          `Earlier steps may already have changed the world — say what you see and we can fix or undo manually.`;
+
+        try {
+          await this.bridge.executeCommand(
+            {
+              kind: "say",
+              message: `[Bot] ${request.player.name}: ${reply}`,
+            },
+            {
+              requestId: request.requestId,
+              playerUuid: request.player.uuid,
+              playerName: request.player.name,
+            },
+          );
+        } catch {
+          // Preserve the original failure when notification also fails.
+        }
+
+        return {
+          status: "error",
+          reply,
+          requestId: request.requestId,
+          intent: plan.intent,
+          executedActions: execution.completedBeforeFailure,
+          failedCommandSummary: summary,
+        };
       }
 
       // -----------------------------------------------------------------------
@@ -222,7 +328,7 @@ export class Orchestrator {
       // production; for now we reconstruct from the plan. The loop messages are
       // tracked so the verify pass has full context.
       const loopPlan = plan;
-      await this.tryVerifyAndPolish(planningRequest, loopPlan);
+      await this.tryVerifyAndPolish(planningRequest, loopPlan, signal);
 
       // -----------------------------------------------------------------------
       // Announce completion and persist state
@@ -276,10 +382,15 @@ export class Orchestrator {
   /**
    * Attempts a post-build verify + polish pass. Runs silently — errors are
    * swallowed so they do not break the primary execution response.
+   *
+   * @param request Original player request.
+   * @param builtPlan Plan that was just executed.
+   * @param signal When aborted, verify and polish steps are skipped.
    */
   private async tryVerifyAndPolish(
     request: ChatCommandRequest,
     builtPlan: Plan,
+    signal: AbortSignal | undefined,
   ): Promise<void> {
     if (!this.provider) {
       return;
@@ -307,6 +418,7 @@ export class Orchestrator {
         this.worldReader,
         this.plannerLogger,
         this.bridge.getPlacedBlocks(),
+        { signal },
       );
 
       if (!polishPlan) {
@@ -322,16 +434,105 @@ export class Orchestrator {
       }
 
       const polishCommands = compilePlanToBridgeCommands(polishResolved);
-      for (const command of polishCommands) {
+      const polishExec = await this.executeBridgeCommands(
+        polishCommands,
+        request,
+        signal,
+        false,
+      );
+      if (!polishExec.ok) {
+        return;
+      }
+    } catch {
+      // Polish pass errors are non-fatal.
+    }
+  }
+
+  /**
+   * Runs bridge commands with optional in-game progress (`say`) for the main
+   * build. Cooperative cancellation is checked before each command.
+   *
+   * @param commands Compiled bridge operations for one plan.
+   * @param request Player context for logging and `say` lines.
+   * @param signal Optional abort from the HTTP layer.
+   * @param emitProgress When true, announces total op count and 25/50/75%
+   *   milestones for large builds.
+   * @returns Success, bridge failure with step index, or cancellation.
+   */
+  private async executeBridgeCommands(
+    commands: BridgeCommand[],
+    request: ChatCommandRequest,
+    signal: AbortSignal | undefined,
+    emitProgress: boolean,
+  ): Promise<BridgeExecutionResult> {
+    const total = commands.length;
+
+    if (emitProgress && total > 0) {
+      try {
+        await this.bridge.executeCommand(
+          {
+            kind: "say",
+            message: `[Bot] Building… (${total} operation${total === 1 ? "" : "s"}).`,
+          },
+          {
+            requestId: request.requestId,
+            playerUuid: request.player.uuid,
+            playerName: request.player.name,
+          },
+        );
+      } catch {
+        /* non-fatal */
+      }
+    }
+
+    for (let index = 0; index < total; index++) {
+      if (signal?.aborted) {
+        return { ok: false, reason: "cancelled", completed: index, total };
+      }
+
+      const command = commands[index]!;
+
+      try {
         await this.bridge.executeCommand(command, {
           requestId: request.requestId,
           playerUuid: request.player.uuid,
           playerName: request.player.name,
         });
+      } catch (error) {
+        const detail =
+          error instanceof Error ? error.message : String(error);
+        return {
+          ok: false,
+          reason: "bridge_error",
+          failedIndex: index,
+          detail,
+          completedBeforeFailure: index,
+          total,
+        };
       }
-    } catch {
-      // Polish pass errors are non-fatal.
+
+      const completed = index + 1;
+      const pct = progressPercentMilestone(completed, total);
+      if (emitProgress && pct !== undefined) {
+        try {
+          await this.bridge.executeCommand(
+            {
+              kind: "say",
+              message: `[Bot] Building… ${pct}% (${completed}/${total}).`,
+            },
+            {
+              requestId: request.requestId,
+              playerUuid: request.player.uuid,
+              playerName: request.player.name,
+            },
+          );
+        } catch {
+          /* non-fatal */
+        }
+      }
     }
+
+    return { ok: true };
   }
 
   private withConversationHistory(request: ChatCommandRequest): ChatCommandRequest {

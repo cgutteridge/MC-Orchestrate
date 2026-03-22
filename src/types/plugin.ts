@@ -73,5 +73,14 @@ export type ChatCommandResponse = {
   reply: string;
   requestId: string;
   intent: string;
+  /**
+   * Successful runs: total bridge operations executed for the primary plan.
+   * Error runs: bridge operations completed before failure or cancellation
+   * (partial progress).
+   */
   executedActions?: number;
+  /** Present when execution failed on a specific bridge operation. */
+  failedCommandSummary?: string;
+  /** True when the HTTP client disconnected and execution was aborted. */
+  cancelled?: boolean;
 };

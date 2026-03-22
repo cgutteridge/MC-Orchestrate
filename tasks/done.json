@@ -2,6 +2,15 @@
   "_comment": "AGENT: completed tasks archive. Read via task-index-manager skill. Do not add active tasks here.",
   "tasks": [
     {
+      "id": 18,
+      "title": "Execution UX and Job Control",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "Completed 2026-03-22. In-game Building… (N operations) + 25/50/75% milestones when N≥20; describeBridgeCommand for failure lines; ChatCommandResponse failedCommandSummary + executedActions on partial failure + cancelled; handleChatCommand({ signal }) + HTTP req close → AbortController; runDesignLoop/runVerifyPass accept signal; executeBridgeCommands with progress + cooperative cancel between bridge ops; polish pass uses same executor (no progress says)."
+    },
+    {
       "id": 16,
       "title": "Azure Planner Path Baseline Validation",
       "status": "done",

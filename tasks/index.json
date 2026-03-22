@@ -10,15 +10,6 @@
   },
   "tasks": [
     {
-      "id": 18,
-      "title": "Execution UX and Job Control",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "m",
-      "blockedBy": [],
-      "notes": "Progress/status messaging, per-step failure surfacing, cancellation semantics. Coordinate with refinement-loop and undo design. Azure baseline replay (task 16) is in place for regression; wire UX to real failure modes from live runs."
-    },
-    {
       "id": 20,
       "title": "Bug: parseRequestedBlock silently ignores ids after the first",
       "status": "todo",

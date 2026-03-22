@@ -44,10 +44,19 @@ const MAX_LOOP_TURNS = 5;
  * When `outcome` is `"plan"`, `placement` carries the semantic anchor+offset
  * the AI specified. The orchestrator resolves this to a world-space point and
  * shifts all primitive coordinates before validation and execution.
+ *
+ * `cancelled` is returned when {@link DesignLoopOptions.signal} aborts before a
+ * valid plan is produced.
  */
 export type DesignLoopResult =
   | { outcome: "plan"; plan: Plan; placement: Placement }
-  | { outcome: "needs_more_info"; clarification: string };
+  | { outcome: "needs_more_info"; clarification: string }
+  | { outcome: "cancelled" };
+
+/** Optional controls for {@link runDesignLoop} (e.g. HTTP client disconnect). */
+export type DesignLoopOptions = {
+  signal?: AbortSignal;
+};
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -70,6 +79,7 @@ export type DesignLoopResult =
  * @param lastPlan The last successfully built plan for this player (follow-up context).
  * @param plannerLogger Optional structured logger for each loop stage.
  * @param placedBlocks Optional map of blocks placed by the bridge this session.
+ * @param options Optional abort signal (e.g. when the HTTP client disconnects).
  */
 export async function runDesignLoop(
   provider: ChatProvider,
@@ -78,6 +88,7 @@ export async function runDesignLoop(
   lastPlan: Plan | undefined,
   plannerLogger?: PlannerLogger,
   placedBlocks?: ReadonlyMap<string, string>,
+  options?: DesignLoopOptions,
 ): Promise<DesignLoopResult> {
   const messages: ChatMessage[] = buildInitialMessages(request, lastPlan);
   let consecutiveParseFailures = 0;
@@ -85,6 +96,10 @@ export async function runDesignLoop(
   let abortedAfterRepeatedAssistantErrors = false;
 
   for (let turn = 0; turn < MAX_LOOP_TURNS; turn++) {
+    if (options?.signal?.aborted) {
+      return { outcome: "cancelled" };
+    }
+
     const rawResponse = await provider.chat(messages, { temperature: 0.2 });
 
     await plannerLogger?.log({
@@ -187,6 +202,10 @@ export async function runDesignLoop(
         stage: "view_request",
         payload: { turn, region },
       });
+
+      if (options?.signal?.aborted) {
+        return { outcome: "cancelled" };
+      }
 
       const viewFulfillment = await fulfillViewRequest(region, request, worldReader);
 
@@ -299,6 +318,7 @@ export async function runDesignLoop(
  * @param worldReader For disk-based reads when the region extends beyond placed blocks.
  * @param plannerLogger Optional structured logger.
  * @param placedBlocks In-memory blocks placed by the bridge this session.
+ * @param options Optional abort signal (e.g. when the HTTP client disconnects).
  */
 export async function runVerifyPass(
   provider: ChatProvider,
@@ -309,7 +329,12 @@ export async function runVerifyPass(
   worldReader: WorldReader,
   plannerLogger?: PlannerLogger,
   placedBlocks?: ReadonlyMap<string, string>,
+  options?: DesignLoopOptions,
 ): Promise<Plan | undefined> {
+  if (options?.signal?.aborted) {
+    return undefined;
+  }
+
   const verifyBlocks = await resolveVerifyBlocks(
     verifyRegion,
     placedBlocks,
@@ -322,6 +347,10 @@ export async function runVerifyPass(
 
   const messages = [...priorMessages];
   appendVerifyFulfillment(messages, priorJson, verifyRegion, verifyBlocks);
+
+  if (options?.signal?.aborted) {
+    return undefined;
+  }
 
   const rawResponse = await provider.chat(messages, { temperature: 0.2 });
 
