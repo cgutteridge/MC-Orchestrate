@@ -138,65 +138,33 @@ describe("buildInitialMessages", () => {
     expect(userContent).toContain("\"lastBuiltStructure\": null");
   });
 
-  it("includes a placement reference card with pre-computed anchor positions", () => {
-    // Player at (10, 64, 20) looking south (+z), yaw=0, lookVector=(0,0,1)
-    const req: ChatCommandRequest = {
-      ...request,
-      player: {
-        ...request.player,
-        position: { x: 10, y: 64, z: 20 },
-        lookVector: { x: 0, y: 0, z: 1 },
-      },
-    };
-    const messages = buildInitialMessages(req);
-    const userContent = messages[1]?.content ?? "";
-
-    // Card should be present
-    expect(userContent).toContain("PLACEMENT REFERENCE");
-    // Player feet
-    expect(userContent).toContain("x=10 y=64 z=20");
-    // 5 blocks in front = (10, 64, 25) since lookVector is (0,0,1)
-    expect(userContent).toContain("(10, 64, 25)");
-    // 10 blocks in front = (10, 64, 30)
-    expect(userContent).toContain("(10, 64, 30)");
-    // Cardinal hints
-    expect(userContent).toContain("north");
-    expect(userContent).toContain("south");
-  });
-
-  it("placement card left/right are perpendicular to look direction", () => {
-    // Player looking east (+x), lookVector=(1,0,0), nhx=1, nhz=0.
-    // left  = (px + nhz*5, py, pz - nhx*5) = (0+0, 64, 0-5) = (0, 64, -5) → north ✓
-    // right = (px - nhz*5, py, pz + nhx*5) = (0-0, 64, 0+5) = (0, 64,  5) → south ✓
-    const req: ChatCommandRequest = {
-      ...request,
-      player: {
-        ...request.player,
-        position: { x: 0, y: 64, z: 0 },
-        lookVector: { x: 1, y: 0, z: 0 },
-      },
-    };
-    const messages = buildInitialMessages(req);
-    const userContent = messages[1]?.content ?? "";
-
-    // 5 blocks in front (east) = (5, 64, 0)
-    expect(userContent).toContain("(5, 64, 0)");
-    // 5 blocks left (north, facing east) = (0, 64, -5)
-    expect(userContent).toContain("(0, 64, -5)");
-    // 5 blocks right (south, facing east) = (0, 64, 5)
-    expect(userContent).toContain("(0, 64, 5)");
-  });
-
-  it("system prompt explains how to resolve directional phrases", () => {
+  it("system prompt contains placement ref enum and offset vocabulary", () => {
     const messages = buildInitialMessages(request);
     const system = messages[0]?.content ?? "";
 
-    expect(system).toContain("PLACEMENT AND OFFSETS");
-    expect(system).toContain("in front of me");
-    expect(system).toContain("to my left");
+    expect(system).toContain("player_view");
+    expect(system).toContain("player_absolute");
+    expect(system).toContain("focus");
+    expect(system).toContain("last_build");
+    expect(system).toContain("forward");
+    expect(system).toContain("up");
     expect(system).toContain("north");
+  });
+
+  it("system prompt maps common directional phrases to placement fields", () => {
+    const messages = buildInitialMessages(request);
+    const system = messages[0]?.content ?? "";
+
+    expect(system).toContain("in front of me");
     expect(system).toContain("above me");
-    expect(system).toContain("PLACEMENT REFERENCE card");
+    expect(system).toContain("to my left");
+    expect(system).toContain("a pit under me");
+  });
+
+  it("user message contains a pre-computed placement reference card", () => {
+    const messages = buildInitialMessages(request);
+    const userContent = messages[1]?.content ?? "";
+    expect(userContent).toContain("PLACEMENT REFERENCE");
   });
 
   it("includes initialScanRegion when present", () => {

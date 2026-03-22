@@ -5,6 +5,7 @@ import { runDesignLoop, runVerifyPass } from "../planner/aiPlanner.js";
 import { compilePlanToBridgeCommands } from "../planner/compilePlan.js";
 import type { PlannerLogger } from "../planner/planLogger.js";
 import { resolvePlanMaterials } from "../planner/materialResolver.js";
+import { resolvePlacement, shiftPlan, computePlanCenter } from "../planner/placement.js";
 import { validatePlanSafety } from "../planner/safety.js";
 import { validatePlanSemantics } from "../planner/semantics.js";
 import type { Plan } from "../planner/schema.js";
@@ -98,6 +99,10 @@ export class Orchestrator {
         };
       }
 
+      // The AI produces absolute world coordinates guided by the placement card.
+      // The placement intent field is extracted for logging and last_build_center
+      // anchor resolution. ShiftPlan will be wired in when the AI reliably
+      // returns local coordinates (tracked as a future iteration of task 30).
       let plan = loopResult.plan;
 
       // -----------------------------------------------------------------------

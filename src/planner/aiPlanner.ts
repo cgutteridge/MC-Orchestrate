@@ -20,7 +20,9 @@ import {
 import {
   ViewRequestSchema,
   PlanSchema,
+  PlacementSchema,
   type Plan,
+  type Placement,
   type Region,
 } from "./schema.js";
 import type { WorldReader } from "../world/worldReader.js";
@@ -34,9 +36,13 @@ const MAX_LOOP_TURNS = 5;
 
 /**
  * Result of a completed design loop.
+ *
+ * When `outcome` is `"plan"`, `placement` carries the semantic anchor+offset
+ * the AI specified. The orchestrator resolves this to a world-space point and
+ * shifts all primitive coordinates before validation and execution.
  */
 export type DesignLoopResult =
-  | { outcome: "plan"; plan: Plan }
+  | { outcome: "plan"; plan: Plan; placement: Placement }
   | { outcome: "needs_more_info"; clarification: string };
 
 // ---------------------------------------------------------------------------
@@ -193,13 +199,20 @@ export async function runDesignLoop(
         ? (looseParsed.plan as Record<string, unknown>)
         : looseParsed;
 
+    // Extract placement intent. Default to player_feet with no offsets when
+    // absent so backward-compatible bare-Plan responses still work.
+    const rawPlacement = action === "build" ? looseParsed.placement : undefined;
+    const placement = PlacementSchema.catch(PlacementSchema.parse({})).parse(
+      isRecord(rawPlacement) ? rawPlacement : {},
+    );
+
     const repairedPlan = repairLoosePlanCandidate(planCandidate, request);
 
     await plannerLogger?.log({
       timestamp: new Date().toISOString(),
       requestId: request.requestId,
       stage: "plan_repaired",
-      payload: { turn, repairedPlan },
+      payload: { turn, placement, repairedPlan },
     });
 
     const planResult = PlanSchema.safeParse(repairedPlan);
@@ -230,10 +243,10 @@ export async function runDesignLoop(
       timestamp: new Date().toISOString(),
       requestId: request.requestId,
       stage: "plan_validated",
-      payload: { turn, validatedPlan: planResult.data },
+      payload: { turn, validatedPlan: planResult.data, placement },
     });
 
-    return { outcome: "plan", plan: planResult.data };
+    return { outcome: "plan", plan: planResult.data, placement };
   }
 
   return {

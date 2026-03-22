@@ -100,5 +100,14 @@
       "blockedBy": [],
       "notes": "Completed 2026-03-22. Added buildPlacementCard() that pre-computes in-front/behind/left/right/cardinal reference coordinates from player position and horizontal look vector and injects them into every turn-1 user message. System prompt updated with PLACEMENT AND OFFSETS section mapping directional phrases to those coordinates. 3 new tests, 87 → 90 total."
     }
+    ,{
+      "id": 30,
+      "title": "Placement intent — AI returns semantic anchor+offset, code does the geometry",
+      "status": "done",
+      "priority": "high",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "Completed 2026-03-22. 111 tests. PlacementRefSchema: player_view (forward/back/left/right) | player_absolute (N/S/E/W) | focus (target block + N/S/E/W) | last_build. Y independent: up (above ground, default 0) and down (below ground for pits). resolvePlacement() + shiftPlan() in placement.ts. Prompt updated with ref examples. AI still outputs absolute coords guided by placement card; shiftPlan wired in a future pass once AI reliably returns local coords."
+    }
   ]
 }
