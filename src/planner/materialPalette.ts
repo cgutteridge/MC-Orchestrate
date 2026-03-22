@@ -22,6 +22,8 @@ const MATERIAL_ALIASES: Record<string, string> = {
   "minecraft:glass": "minecraft:glass",
   water: "minecraft:water",
   "minecraft:water": "minecraft:water",
+  lava: "minecraft:lava",
+  "minecraft:lava": "minecraft:lava",
   air: "minecraft:air",
   "minecraft:air": "minecraft:air",
   dirt: "minecraft:dirt",
@@ -102,12 +104,29 @@ const SUPPORTED_MATERIAL_HINTS = [
   "stone bricks",
 ].join(", ");
 
-const SUPPORTED_BLOCK_IDS = new Set(Object.values(MATERIAL_ALIASES));
+/**
+ * Returns true when `id` matches a Java resource-location shape suitable for
+ * block ids (`namespace:path`). Does not consult the live server registry —
+ * invalid but well-formed ids are accepted and may fail at execution time.
+ * Block states (`foo[axis=x]`) are rejected.
+ */
+export function isValidMinecraftBlockId(id: string): boolean {
+  const s = id.toLowerCase().trim();
+  if (s.length < 3 || s.length > 256) {
+    return false;
+  }
+  if (s.includes("[") || s.includes("]")) {
+    return false;
+  }
+  return /^[a-z0-9._-]+:[a-z0-9/._-]+$/.test(s);
+}
 
 /**
  * Blocks that are non-solid or fluid and must not be used as structural
- * building materials (walls, floors, roofs, trim). They remain valid for
- * operational uses such as `clear_region` (air) or pool fills (water).
+ * building materials (walls, floors, roofs, trim). `minecraft:water` /
+ * `minecraft:lava` may still be used in volumetric `fill_cuboid` / `cylinder`
+ * when the material resolver allows fluid fills (moats, pools). They remain valid for
+ * `replace_in_region` and `clear_region` operational uses.
  */
 const NON_STRUCTURAL_BLOCKS = new Set([
   "minecraft:air",
@@ -176,7 +195,12 @@ export function parseRequestedBlock(message: string): string | undefined {
     // are not currently supported.
     for (const explicit of explicitIds) {
       const normalized = normalizeMaterialKey(explicit);
-      return MATERIAL_ALIASES[normalized] ?? explicit;
+      const resolved =
+        MATERIAL_ALIASES[normalized] ??
+        (isValidMinecraftBlockId(normalized) ? normalized : undefined);
+      if (resolved) {
+        return resolved;
+      }
     }
   }
 
@@ -195,14 +219,19 @@ export function parseRequestedBlock(message: string): string | undefined {
  */
 export function normalizeBlockId(block: string): string {
   const normalized = normalizeMaterialKey(block);
-  return MATERIAL_ALIASES[normalized] ?? normalized;
+  if (MATERIAL_ALIASES[normalized]) {
+    return MATERIAL_ALIASES[normalized];
+  }
+  if (isValidMinecraftBlockId(normalized)) {
+    return normalized;
+  }
+  return normalized;
 }
 
 export {
   GRAVITY_BLOCKS,
   MATERIAL_ALIASES,
   NON_STRUCTURAL_BLOCKS,
-  SUPPORTED_BLOCK_IDS,
   SUPPORTED_MATERIAL_HINTS,
 };
 

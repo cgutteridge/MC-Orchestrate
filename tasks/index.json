@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state.",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 31,
+  "nextTaskId": 32,
   "specDocs": {
     "phase1": "tasks/phase-1-foundations.md",
     "phase2": "tasks/phase-2-terrain-blending.md",

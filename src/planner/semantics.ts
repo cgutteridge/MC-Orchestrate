@@ -18,6 +18,14 @@ export function validatePlanSemantics(plan: Plan): string | undefined {
     return orderViolation;
   }
 
+  const layerPassCount = plan.passes.filter((p) => p.layerMap).length;
+  if (layerPassCount > 1) {
+    return (
+      "This plan has multiple layer-map passes; only one layer map per plan is supported " +
+      "(all layers share one origin at targetRegion.min)."
+    );
+  }
+
   const degenerateViolation = detectDegenerateStructure(plan);
   if (degenerateViolation) {
     return degenerateViolation;
@@ -64,13 +72,15 @@ function detectDegenerateStructure(plan: Plan): string | undefined {
   }
 
   // set_block-only plans are deliberate point placements, not structures.
-  const hasFillPrimitive = plan.passes.some((pass) =>
-    pass.primitives.some(
-      (p) =>
-        p.type === "fill_cuboid" ||
-        p.type === "hollow_cuboid" ||
-        p.type === "cylinder",
-    ),
+  const hasFillPrimitive = plan.passes.some(
+    (pass) =>
+      pass.layerMap !== undefined ||
+      pass.primitives.some(
+        (p) =>
+          p.type === "fill_cuboid" ||
+          p.type === "hollow_cuboid" ||
+          p.type === "cylinder",
+      ),
   );
   if (!hasFillPrimitive) {
     return undefined;

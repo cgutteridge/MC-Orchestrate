@@ -147,6 +147,12 @@ export function shiftPlan(plan: Plan, offset: Point): Plan {
 }
 
 function shiftPass(pass: BuildPass, offset: Point): BuildPass {
+  if (pass.layerMap) {
+    return {
+      ...pass,
+      primitives: [],
+    };
+  }
   return {
     ...pass,
     primitives: pass.primitives.map((p) => shiftPrimitive(p, offset)),

@@ -3,6 +3,7 @@ import { BridgeServer } from "./bridge/bridgeServer.js";
 import { loadConfig } from "./config/env.js";
 import { createHttpServer } from "./http/server.js";
 import { Orchestrator } from "./orchestrator/orchestrator.js";
+import { DesignLoopLogger } from "./planner/designLoopLogger.js";
 import { PlannerLogger } from "./planner/planLogger.js";
 import { createChatProvider } from "./services/ai/provider.js";
 import { WorldReader } from "./world/worldReader.js";
@@ -11,6 +12,7 @@ async function main(): Promise<void> {
   const config = loadConfig();
   const actionLogger = new ActionLogger(config.minecraft.actionLogPath);
   const plannerLogger = new PlannerLogger(config.ai.plannerLogPath);
+  const designLoopLogger = new DesignLoopLogger(config.ai.designLoopLogPath);
   const bridge = new BridgeServer(
     {
       host: config.minecraft.tcpHost,
@@ -24,7 +26,14 @@ async function main(): Promise<void> {
 
   const worldReader = new WorldReader(config.minecraft.minecraftDir);
   const provider = createChatProvider(config);
-  const orchestrator = new Orchestrator(bridge, worldReader, provider, plannerLogger);
+  const orchestrator = new Orchestrator(
+    bridge,
+    worldReader,
+    provider,
+    plannerLogger,
+    config.ai.designLoopMaxTurns,
+    designLoopLogger,
+  );
 
   await bridge.start();
   await createHttpServer(

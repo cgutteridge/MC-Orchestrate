@@ -4,8 +4,8 @@ import {
   GRAVITY_BLOCKS,
   MATERIAL_ALIASES,
   NON_STRUCTURAL_BLOCKS,
-  SUPPORTED_BLOCK_IDS,
   SUPPORTED_MATERIAL_HINTS,
+  isValidMinecraftBlockId,
   parseRequestedBlock,
 } from "./materialPalette.js";
 
@@ -88,6 +88,38 @@ type MaterialResolutionContext = {
   prefersStone: boolean;
 };
 
+/** Default block used when {@link ResolvePlanMaterialsOptions.fallbackInvalidBlocksToStone} substitutes invalid ids. */
+export const MATERIAL_FALLBACK_BLOCK = "minecraft:stone" as const;
+
+/** Reply text on the plan when material resolution fails and no fallback is applied. */
+export const MATERIAL_RESOLUTION_FAILURE_REPLY =
+  "I need clearer material choices before I can build that.";
+
+export type ResolvePlanMaterialsOptions = {
+  /**
+   * When true, any block id the model provided that would normally trigger a
+   * material clarification is replaced with {@link MATERIAL_FALLBACK_BLOCK}
+   * instead of failing. Used after the player already received one material
+   * pushback, or for verify-pass polish plans.
+   */
+  fallbackInvalidBlocksToStone?: boolean;
+};
+
+/**
+ * Returns true when `plan` is the material-clarification outcome from
+ * {@link resolvePlanMaterials} (no fallback), so the orchestrator can offer
+ * stone substitution on the next player turn.
+ *
+ * @param plan A plan possibly produced by material resolution.
+ */
+export function isMaterialResolutionFailure(plan: Plan): boolean {
+  return (
+    plan.needsMoreInfo === true &&
+    plan.passes.length === 0 &&
+    plan.reply === MATERIAL_RESOLUTION_FAILURE_REPLY
+  );
+}
+
 /**
  * Resolves all symbolic material slots and generic aliases in a plan's
  * primitives to concrete `minecraft:` block ids, using the player's nearby
@@ -95,21 +127,41 @@ type MaterialResolutionContext = {
  *
  * When any block cannot be resolved safely the entire plan is replaced with a
  * `needsMoreInfo` clarification so the player is never silently given a bad
- * build.
+ * build — unless {@link ResolvePlanMaterialsOptions.fallbackInvalidBlocksToStone}
+ * is set, in which case invalid codes become {@link MATERIAL_FALLBACK_BLOCK}.
  */
 export function resolvePlanMaterials(
   plan: Plan,
   request: ChatCommandRequest,
+  options?: ResolvePlanMaterialsOptions,
 ): Plan {
+  const fallback = options?.fallbackInvalidBlocksToStone === true;
   const unresolved = new Set<string>();
   const context = buildMaterialResolutionContext(request);
 
-  const passes = plan.passes.map((pass) => ({
-    ...pass,
-    primitives: pass.primitives.map((primitive) =>
-      resolvePrimitiveMaterials(primitive, unresolved, context),
-    ),
-  }));
+  const passes = plan.passes.map((pass) => {
+    if (pass.layerMap) {
+      return {
+        ...pass,
+        primitives: [],
+        layerMap: {
+          ...pass.layerMap,
+          palette: resolveLayerPalette(
+            pass.layerMap.palette,
+            unresolved,
+            context,
+            fallback,
+          ),
+        },
+      };
+    }
+    return {
+      ...pass,
+      primitives: pass.primitives.map((primitive) =>
+        resolvePrimitiveMaterials(primitive, unresolved, context, fallback),
+      ),
+    };
+  });
 
   if (unresolved.size > 0) {
     const materials = Array.from(unresolved).sort().join(", ");
@@ -118,10 +170,11 @@ export function resolvePlanMaterials(
       intent: "unknown",
       passes: [],
       needsMoreInfo: true,
-      reply: "I need clearer material choices before I can build that.",
+      reply: MATERIAL_RESOLUTION_FAILURE_REPLY,
       clarification:
         `I couldn't safely map these materials: ${materials}. ` +
-        `Try a specific block such as ${SUPPORTED_MATERIAL_HINTS}.`,
+        `Use a valid block id like \`minecraft:stone\` or \`minecraft:deepslate\` (namespace:path). ` +
+        `Examples of common blocks: ${SUPPORTED_MATERIAL_HINTS}.`,
       targetWorld: request.player.world,
     });
   }
@@ -132,35 +185,77 @@ export function resolvePlanMaterials(
   });
 }
 
+function resolveLayerPalette(
+  palette: Record<string, string>,
+  unresolved: Set<string>,
+  context: MaterialResolutionContext,
+  fallback: boolean,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [ch, block] of Object.entries(palette)) {
+    out[ch] = resolveBlockId(block, unresolved, context, false, undefined, fallback);
+  }
+  return out;
+}
+
 function resolvePrimitiveMaterials(
   primitive: Primitive,
   unresolved: Set<string>,
   context: MaterialResolutionContext,
+  fallback: boolean,
 ): Primitive {
   switch (primitive.type) {
     case "set_block":
       return {
         ...primitive,
-        block: resolveBlockId(primitive.block, unresolved, context, true),
+        block: resolveBlockId(primitive.block, unresolved, context, true, undefined, fallback),
       };
     case "fill_cuboid":
     case "hollow_cuboid":
       return {
         ...primitive,
-        block: resolveBlockId(primitive.block, unresolved, context, true),
+        block: resolveBlockId(
+          primitive.block,
+          unresolved,
+          context,
+          true,
+          primitive.type,
+          fallback,
+        ),
       };
     case "cylinder":
       return {
         ...primitive,
-        block: resolveBlockId(primitive.block, unresolved, context, true),
+        block: resolveBlockId(
+          primitive.block,
+          unresolved,
+          context,
+          true,
+          primitive.type,
+          fallback,
+        ),
       };
     case "replace_in_region":
       // fromBlock and toBlock may be operational values (minecraft:air to clear,
       // minecraft:water to fill) — structural constraint does not apply.
       return {
         ...primitive,
-        fromBlock: resolveBlockId(primitive.fromBlock, unresolved, context, false),
-        toBlock: resolveBlockId(primitive.toBlock, unresolved, context, false),
+        fromBlock: resolveBlockId(
+          primitive.fromBlock,
+          unresolved,
+          context,
+          false,
+          undefined,
+          fallback,
+        ),
+        toBlock: resolveBlockId(
+          primitive.toBlock,
+          unresolved,
+          context,
+          false,
+          undefined,
+          fallback,
+        ),
       };
     case "clear_region":
       return primitive;
@@ -172,6 +267,8 @@ function resolveBlockId(
   unresolved: Set<string>,
   context: MaterialResolutionContext,
   structural: boolean,
+  primitiveType: Primitive["type"] | undefined,
+  fallback: boolean,
 ): string {
   const normalized = block.toLowerCase().trim();
   const slot = parseMaterialSlot(normalized);
@@ -180,17 +277,37 @@ function resolveBlockId(
     if (resolved) {
       return resolved;
     }
+    if (fallback) {
+      return MATERIAL_FALLBACK_BLOCK;
+    }
     unresolved.add(block);
     return block;
   }
 
-  const mapped = MATERIAL_ALIASES[normalized] ?? (SUPPORTED_BLOCK_IDS.has(normalized) ? normalized : undefined);
+  const slotSyntaxKey = getSymbolicSlotKeyIfInvalid(normalized);
+  if (slotSyntaxKey !== undefined) {
+    if (fallback) {
+      return MATERIAL_FALLBACK_BLOCK;
+    }
+    unresolved.add(block);
+    return block;
+  }
+
+  const mapped =
+    MATERIAL_ALIASES[normalized] ??
+    (isValidMinecraftBlockId(normalized) ? normalized : undefined);
   if (!mapped) {
+    if (fallback) {
+      return MATERIAL_FALLBACK_BLOCK;
+    }
     unresolved.add(block);
     return block;
   }
 
-  if (structural && isUnsafeForStructure(mapped)) {
+  if (structural && isUnsafeForStructure(mapped, primitiveType)) {
+    if (fallback) {
+      return MATERIAL_FALLBACK_BLOCK;
+    }
     unresolved.add(block);
     return block;
   }
@@ -202,8 +319,21 @@ function resolveBlockId(
  * Returns `true` when a block is unsuitable for use in structural build
  * primitives — either because it is non-solid/fluid or because it is
  * gravity-affected and will fall without support.
+ *
+ * Fluids (`minecraft:water`, `minecraft:lava`) are allowed for volumetric
+ * {@link Primitive} types `fill_cuboid` and `cylinder` (moats, pools) but not
+ * for shells (`hollow_cuboid`, `set_block`).
  */
-function isUnsafeForStructure(block: string): boolean {
+function isUnsafeForStructure(
+  block: string,
+  primitiveType?: Primitive["type"],
+): boolean {
+  if (
+    (block === "minecraft:water" || block === "minecraft:lava") &&
+    (primitiveType === "fill_cuboid" || primitiveType === "cylinder")
+  ) {
+    return false;
+  }
   return NON_STRUCTURAL_BLOCKS.has(block) || GRAVITY_BLOCKS.has(block);
 }
 
@@ -217,7 +347,7 @@ function buildMaterialResolutionContext(
   for (const block of request.localContext.nearbyBlocks) {
     const normalized = block.type.toLowerCase().trim();
     const mapped = MATERIAL_ALIASES[normalized] ?? normalized;
-    if (!SUPPORTED_BLOCK_IDS.has(mapped)) {
+    if (!isValidMinecraftBlockId(mapped)) {
       continue;
     }
     nearbyCounts.set(mapped, (nearbyCounts.get(mapped) ?? 0) + 1);
@@ -241,6 +371,36 @@ function buildMaterialResolutionContext(
     prefersStone:
       /\b(stone|cobble|brick|masonry)\b/.test(requestTextLower) || stoneWeight > woodWeight,
   };
+}
+
+/**
+ * When the string looks like a symbolic slot (`material:…`, `{{…}}`, etc.) but
+ * the slot name is not in {@link MATERIAL_SLOT_ALIASES}, returns the raw key;
+ * otherwise `undefined`. Reserved so `material:chimney` does not become a
+ * valid block id via `minecraft:`-style validation.
+ */
+function getSymbolicSlotKeyIfInvalid(normalized: string): string | undefined {
+  if (normalized.startsWith("material:") || normalized.startsWith("material.")) {
+    const key = normalized.slice(9);
+    return MATERIAL_SLOT_ALIASES[key] === undefined ? key : undefined;
+  }
+  if (normalized.startsWith("slot:") || normalized.startsWith("slot.")) {
+    const key = normalized.slice(5);
+    return MATERIAL_SLOT_ALIASES[key] === undefined ? key : undefined;
+  }
+  if (normalized.startsWith("$")) {
+    const key = normalized.slice(1);
+    return MATERIAL_SLOT_ALIASES[key] === undefined ? key : undefined;
+  }
+  if (normalized.startsWith("{{") && normalized.endsWith("}}")) {
+    const key = normalized.slice(2, -2).trim();
+    return MATERIAL_SLOT_ALIASES[key] === undefined ? key : undefined;
+  }
+  if (normalized.endsWith("_material")) {
+    const key = normalized.slice(0, -9);
+    return MATERIAL_SLOT_ALIASES[key] === undefined ? key : undefined;
+  }
+  return undefined;
 }
 
 function parseMaterialSlot(value: string): MaterialSlot | undefined {

@@ -50,6 +50,12 @@ function bridgeCommandWeight(cmd: BridgeCommand): number {
 function collectPrimitiveBlockIds(plan: Plan): Set<string> {
   const ids = new Set<string>();
   for (const pass of plan.passes) {
+    if (pass.layerMap) {
+      for (const v of Object.values(pass.layerMap.palette)) {
+        ids.add(v);
+      }
+      continue;
+    }
     for (const p of pass.primitives) {
       if ("block" in p && typeof p.block === "string") {
         ids.add(p.block);
@@ -91,7 +97,10 @@ export function scorePlan(
     metrics: {
       schemaValid: true,
       estimatedBridgeOperations,
-      primitiveCount: p.passes.reduce((n, pass) => n + pass.primitives.length, 0),
+      primitiveCount: p.passes.reduce(
+        (n, pass) => n + (pass.layerMap ? 1 : pass.primitives.length),
+        0,
+      ),
       passCount: p.passes.length,
       targetRegionVolume: regionVolume(p.targetRegion),
       paletteDiversity: collectPrimitiveBlockIds(p).size,

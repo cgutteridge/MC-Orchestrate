@@ -5,8 +5,12 @@ import type { ChatProvider } from "../services/ai/types.js";
 import type { ChatCommandRequest, ChatCommandResponse } from "../types/plugin.js";
 import { runDesignLoop, runVerifyPass } from "../planner/aiPlanner.js";
 import { compilePlanToBridgeCommands } from "../planner/compilePlan.js";
+import type { DesignLoopLogger } from "../planner/designLoopLogger.js";
 import type { PlannerLogger } from "../planner/planLogger.js";
-import { resolvePlanMaterials } from "../planner/materialResolver.js";
+import {
+  isMaterialResolutionFailure,
+  resolvePlanMaterials,
+} from "../planner/materialResolver.js";
 import { resolvePlacement, shiftPlan, computePlanCenter } from "../planner/placement.js";
 import { validatePlanSafety } from "../planner/safety.js";
 import { validatePlanSemantics } from "../planner/semantics.js";
@@ -78,12 +82,23 @@ export class Orchestrator {
    * the verify pass so it can inspect the full AI context.
    */
   private readonly lastLoopMessagesByPlayer = new Map<string, ChatMessage[]>();
+  /**
+   * After one material-resolution pushback (`needs_more_info`), the next plan
+   * for this player uses stone for any remaining invalid block codes instead of
+   * asking again.
+   */
+  private readonly pendingMaterialStoneFallbackByPlayer = new Map<
+    string,
+    boolean
+  >();
 
   constructor(
     private readonly bridge: BridgeServer,
     private readonly worldReader: WorldReader,
     private readonly provider?: ChatProvider,
     private readonly plannerLogger?: PlannerLogger,
+    private readonly designLoopMaxTurns: number = 10,
+    private readonly designLoopLogger?: DesignLoopLogger,
   ) {}
 
   /**
@@ -154,7 +169,11 @@ export class Orchestrator {
         previousPlan,
         this.plannerLogger,
         this.bridge.getPlacedBlocks(),
-        { signal },
+        {
+          signal,
+          maxTurns: this.designLoopMaxTurns,
+          designLoopLogger: this.designLoopLogger,
+        },
       );
 
       if (loopResult.outcome === "cancelled") {
@@ -168,6 +187,8 @@ export class Orchestrator {
       }
 
       if (loopResult.outcome === "needs_more_info") {
+        // Do not carry material-retry state across unrelated AI pushbacks.
+        this.pendingMaterialStoneFallbackByPlayer.delete(request.player.uuid);
         return {
           status: "needs_more_info",
           reply: loopResult.clarification,
@@ -208,7 +229,18 @@ export class Orchestrator {
       // -----------------------------------------------------------------------
       // Material resolution and safety/semantic validation
       // -----------------------------------------------------------------------
-      plan = resolvePlanMaterials(plan, planningRequest);
+      const useMaterialStoneFallback =
+        this.pendingMaterialStoneFallbackByPlayer.get(request.player.uuid) ===
+        true;
+      plan = resolvePlanMaterials(plan, planningRequest, {
+        fallbackInvalidBlocksToStone: useMaterialStoneFallback,
+      });
+      if (useMaterialStoneFallback) {
+        this.pendingMaterialStoneFallbackByPlayer.delete(request.player.uuid);
+      }
+      if (!plan.needsMoreInfo && plan.passes.length > 0) {
+        this.pendingMaterialStoneFallbackByPlayer.delete(request.player.uuid);
+      }
 
       const unsafeReason = validatePlanSafety(planningRequest, plan);
       if (unsafeReason) {
@@ -231,6 +263,9 @@ export class Orchestrator {
       }
 
       if (plan.needsMoreInfo || plan.passes.length === 0) {
+        if (isMaterialResolutionFailure(plan)) {
+          this.pendingMaterialStoneFallbackByPlayer.set(request.player.uuid, true);
+        }
         return {
           status: "needs_more_info",
           reply:
@@ -425,7 +460,9 @@ export class Orchestrator {
         return;
       }
 
-      const polishResolved = resolvePlanMaterials(polishPlan, request);
+      const polishResolved = resolvePlanMaterials(polishPlan, request, {
+        fallbackInvalidBlocksToStone: true,
+      });
       if (validatePlanSafety(request, polishResolved) || validatePlanSemantics(polishResolved)) {
         return;
       }

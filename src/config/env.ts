@@ -29,6 +29,16 @@ const Schema = z.object({
   MCORCH_ACTION_LOG: optionalNonEmpty,
   MCORCH_AI_LOG: optionalNonEmpty,
   MCORCH_AI_PROVIDER_LOG: optionalNonEmpty,
+  MCORCH_DESIGN_LOOP_LOG: optionalNonEmpty,
+  MCORCH_DESIGN_LOOP_MAX_TURNS: z.preprocess(
+    (value) =>
+      value === undefined ||
+      value === "" ||
+      (typeof value === "string" && value.trim() === "")
+        ? undefined
+        : value,
+    z.coerce.number().int().min(1).max(50).optional(),
+  ),
 });
 
 export type AppConfig = {
@@ -52,6 +62,8 @@ export type AppConfig = {
   ai: {
     plannerLogPath: string;
     providerLogPath: string;
+    designLoopLogPath: string;
+    designLoopMaxTurns: number;
   };
 };
 
@@ -91,6 +103,8 @@ export function loadConfig(): AppConfig {
       plannerLogPath: parsed.MCORCH_AI_LOG ?? "logs/ai-planner.jsonl",
       providerLogPath:
         parsed.MCORCH_AI_PROVIDER_LOG ?? "logs/ai-provider.log",
+      designLoopLogPath: parsed.MCORCH_DESIGN_LOOP_LOG ?? "logs/design-loop.log",
+      designLoopMaxTurns: parsed.MCORCH_DESIGN_LOOP_MAX_TURNS ?? 10,
     },
   };
 }

@@ -2,6 +2,15 @@
   "_comment": "AGENT: completed tasks archive. Read via task-index-manager skill. Do not add active tasks here.",
   "tasks": [
     {
+      "id": 31,
+      "title": "Keyword-triggered prompt hints (skills-file style)",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Completed 2026-03-22. src/planner/promptHints.ts: PromptHint, DEFAULT_PROMPT_HINTS, collectPromptHints, formatPromptHintsSection, keyword matching on message+recentMessages; buildInitialMessages appends section; moat/trench guidance moved from base SYSTEM_PROMPT into default hints; tests in promptHints.test.ts."
+    },
+    {
       "id": 18,
       "title": "Execution UX and Job Control",
       "status": "done",

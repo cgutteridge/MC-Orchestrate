@@ -8,6 +8,7 @@ import {
   safetyWrongWorldMessage,
 } from "./playerRefusalMessages.js";
 import { normalizeCuboid, normalizeRegion } from "./requestContext.js";
+import { estimateLayerMapBlockCount } from "./layerMap.js";
 import type { Plan, Primitive } from "./schema.js";
 
 export const MAX_BLOCKS_PER_REQUEST = 8192;
@@ -89,8 +90,12 @@ export function validatePlanSafety(
 function estimatePlanBlockCount(plan: Plan): number {
   let total = 0;
   for (const pass of plan.passes) {
-    for (const primitive of pass.primitives) {
-      total += estimatePrimitiveBlockCount(primitive);
+    if (pass.layerMap) {
+      total += estimateLayerMapBlockCount(pass.layerMap);
+    } else {
+      for (const primitive of pass.primitives) {
+        total += estimatePrimitiveBlockCount(primitive);
+      }
     }
   }
   return total;

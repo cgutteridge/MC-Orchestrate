@@ -1,4 +1,5 @@
 import type { BridgeBatchBlock, BridgeCommand } from "../bridge/types.js";
+import { compileLayerMapToBridgeCommands } from "./layerMap.js";
 import { normalizeCuboid } from "./requestContext.js";
 import type { BuildPass, Plan, Point, Primitive } from "./schema.js";
 
@@ -6,10 +7,13 @@ import type { BuildPass, Plan, Point, Primitive } from "./schema.js";
  * Compiles a validated multi-pass plan into concrete bridge commands.
  */
 export function compilePlanToBridgeCommands(plan: Plan): BridgeCommand[] {
-  return plan.passes.flatMap((pass) => compilePass(pass));
+  return plan.passes.flatMap((pass) => compilePass(pass, plan));
 }
 
-function compilePass(pass: BuildPass): BridgeCommand[] {
+function compilePass(pass: BuildPass, plan: Plan): BridgeCommand[] {
+  if (pass.layerMap) {
+    return compileLayerMapToBridgeCommands(pass.layerMap, plan.targetRegion.min);
+  }
   return pass.primitives.flatMap((primitive) => compilePrimitive(primitive));
 }
 

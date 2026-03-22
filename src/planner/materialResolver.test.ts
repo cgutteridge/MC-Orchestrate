@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { ChatCommandRequest } from "../types/plugin.js";
-import { resolvePlanMaterials } from "./materialResolver.js";
+import {
+  isMaterialResolutionFailure,
+  MATERIAL_FALLBACK_BLOCK,
+  MATERIAL_RESOLUTION_FAILURE_REPLY,
+  resolvePlanMaterials,
+} from "./materialResolver.js";
 import type { Plan } from "./schema.js";
 
 const request: ChatCommandRequest = {
@@ -127,13 +132,13 @@ describe("resolvePlanMaterials", () => {
       passes: [
         {
           name: "shell",
-          goal: "Build with mystery block.",
+          goal: "Build with invalid id shape (not namespace:path).",
           primitives: [
             {
               type: "fill_cuboid",
               from: { x: 0, y: 64, z: 0 },
               to: { x: 1, y: 65, z: 1 },
-              block: "minecraft:sheep_fluff",
+              block: "not_a_valid_resource_location",
             },
           ],
         },
@@ -146,7 +151,119 @@ describe("resolvePlanMaterials", () => {
 
     expect(resolved.needsMoreInfo).toBe(true);
     expect(resolved.passes).toEqual([]);
-    expect(resolved.clarification).toContain("minecraft:sheep_fluff");
+    expect(resolved.clarification).toContain("not_a_valid_resource_location");
+  });
+
+  it("substitutes stone for invalid block codes when fallbackInvalidBlocksToStone is true", () => {
+    const plan: Plan = {
+      intent: "build_house",
+      targetWorld: "world",
+      targetRegion: {
+        world: "world",
+        min: { x: 0, y: 64, z: 0 },
+        max: { x: 1, y: 65, z: 1 },
+      },
+      assumptions: [],
+      passes: [
+        {
+          name: "shell",
+          goal: "Invalid id.",
+          primitives: [
+            {
+              type: "fill_cuboid",
+              from: { x: 0, y: 64, z: 0 },
+              to: { x: 1, y: 65, z: 1 },
+              block: "not_a_valid_resource_location",
+            },
+          ],
+        },
+      ],
+      reply: "Building it.",
+      needsMoreInfo: false,
+    };
+
+    const resolved = resolvePlanMaterials(plan, request, {
+      fallbackInvalidBlocksToStone: true,
+    });
+
+    expect(resolved.needsMoreInfo).toBe(false);
+    expect(resolved.passes[0]?.primitives[0]).toMatchObject({
+      block: MATERIAL_FALLBACK_BLOCK,
+    });
+  });
+
+  it("substitutes stone for structurally unsafe blocks when fallback is enabled", () => {
+    const plan: Plan = {
+      intent: "build_house",
+      targetWorld: "world",
+      targetRegion: {
+        world: "world",
+        min: { x: 0, y: 64, z: 0 },
+        max: { x: 1, y: 65, z: 1 },
+      },
+      assumptions: [],
+      passes: [
+        {
+          name: "shell",
+          goal: "Water as wall.",
+          primitives: [
+            {
+              type: "hollow_cuboid",
+              from: { x: 0, y: 64, z: 0 },
+              to: { x: 1, y: 65, z: 1 },
+              block: "minecraft:water",
+            },
+          ],
+        },
+      ],
+      reply: "Building it.",
+      needsMoreInfo: false,
+    };
+
+    const resolved = resolvePlanMaterials(plan, request, {
+      fallbackInvalidBlocksToStone: true,
+    });
+
+    expect(resolved.needsMoreInfo).toBe(false);
+    expect(resolved.passes[0]?.primitives[0]).toMatchObject({
+      block: MATERIAL_FALLBACK_BLOCK,
+    });
+  });
+
+  it("accepts well-formed minecraft: block ids outside the alias list", () => {
+    const plan: Plan = {
+      intent: "build_house",
+      targetWorld: "world",
+      targetRegion: {
+        world: "world",
+        min: { x: 0, y: 64, z: 0 },
+        max: { x: 1, y: 65, z: 1 },
+      },
+      assumptions: [],
+      passes: [
+        {
+          name: "shell",
+          goal: "Use deepslate.",
+          primitives: [
+            {
+              type: "fill_cuboid",
+              from: { x: 0, y: 64, z: 0 },
+              to: { x: 1, y: 65, z: 1 },
+              block: "minecraft:deepslate",
+            },
+          ],
+        },
+      ],
+      reply: "Building it.",
+      needsMoreInfo: false,
+    };
+
+    const resolved = resolvePlanMaterials(plan, request);
+
+    expect(resolved.needsMoreInfo).toBe(false);
+    expect(resolved.passes[0]?.primitives[0]).toMatchObject({
+      block: "minecraft:deepslate",
+    });
   });
 
   it("preserves current tree removal materials", () => {
@@ -447,7 +564,57 @@ describe("resolvePlanMaterials", () => {
     expect(primitive).toMatchObject({ block: expect.stringMatching(/stone/) });
   });
 
-  it("rejects fluid blocks used as structural build materials", () => {
+  it("allows water and lava in fill_cuboid and cylinder as volumetric fills", () => {
+    const plan: Plan = {
+      intent: "moat",
+      targetWorld: "world",
+      targetRegion: {
+        world: "world",
+        min: { x: 0, y: 64, z: 0 },
+        max: { x: 3, y: 64, z: 3 },
+      },
+      assumptions: [],
+      passes: [
+        {
+          name: "water",
+          goal: "Fill moat.",
+          primitives: [
+            {
+              type: "fill_cuboid",
+              from: { x: 0, y: 64, z: 0 },
+              to: { x: 3, y: 64, z: 3 },
+              block: "minecraft:water",
+            },
+            {
+              type: "cylinder",
+              center: { x: 1, y: 64, z: 1 },
+              radius: 2,
+              height: 1,
+              block: "minecraft:lava",
+              hollow: false,
+              axis: "y",
+            },
+          ],
+        },
+      ],
+      reply: "Building it.",
+      needsMoreInfo: false,
+    };
+
+    const resolved = resolvePlanMaterials(plan, request);
+
+    expect(resolved.needsMoreInfo).toBe(false);
+    expect(resolved.passes[0]?.primitives[0]).toMatchObject({
+      type: "fill_cuboid",
+      block: "minecraft:water",
+    });
+    expect(resolved.passes[0]?.primitives[1]).toMatchObject({
+      type: "cylinder",
+      block: "minecraft:lava",
+    });
+  });
+
+  it("rejects fluid blocks in hollow_cuboid shells", () => {
     const plan: Plan = {
       intent: "build_house",
       targetWorld: "world",
@@ -460,10 +627,10 @@ describe("resolvePlanMaterials", () => {
       passes: [
         {
           name: "walls",
-          goal: "Fill walls with water (invalid).",
+          goal: "Hollow shell of water (invalid).",
           primitives: [
             {
-              type: "fill_cuboid",
+              type: "hollow_cuboid",
               from: { x: 0, y: 64, z: 0 },
               to: { x: 3, y: 68, z: 3 },
               block: "minecraft:water",
@@ -553,5 +720,70 @@ describe("resolvePlanMaterials", () => {
     expect(resolved.needsMoreInfo).toBe(true);
     expect(resolved.passes).toEqual([]);
     expect(resolved.clarification).toContain("material:chimney");
+  });
+
+  it("substitutes stone for unknown symbolic slots when fallback is enabled", () => {
+    const plan: Plan = {
+      intent: "build_house",
+      targetWorld: "world",
+      targetRegion: {
+        world: "world",
+        min: { x: 0, y: 64, z: 0 },
+        max: { x: 1, y: 65, z: 1 },
+      },
+      assumptions: [],
+      passes: [
+        {
+          name: "shell",
+          goal: "Build shell.",
+          primitives: [
+            {
+              type: "fill_cuboid",
+              from: { x: 0, y: 64, z: 0 },
+              to: { x: 1, y: 65, z: 1 },
+              block: "material:chimney",
+            },
+          ],
+        },
+      ],
+      reply: "Building it.",
+      needsMoreInfo: false,
+    };
+
+    const resolved = resolvePlanMaterials(plan, request, {
+      fallbackInvalidBlocksToStone: true,
+    });
+
+    expect(resolved.needsMoreInfo).toBe(false);
+    expect(resolved.passes[0]?.primitives[0]).toMatchObject({
+      block: MATERIAL_FALLBACK_BLOCK,
+    });
+  });
+});
+
+describe("isMaterialResolutionFailure", () => {
+  it("is true only for material-resolution pushback plans", () => {
+    const plan: Plan = {
+      intent: "unknown",
+      targetWorld: "world",
+      targetRegion: {
+        world: "world",
+        min: { x: 0, y: 64, z: 0 },
+        max: { x: 1, y: 65, z: 1 },
+      },
+      assumptions: [],
+      passes: [],
+      needsMoreInfo: true,
+      reply: MATERIAL_RESOLUTION_FAILURE_REPLY,
+      clarification: "couldn't safely map",
+    };
+    expect(isMaterialResolutionFailure(plan)).toBe(true);
+
+    expect(
+      isMaterialResolutionFailure({
+        ...plan,
+        reply: "other",
+      }),
+    ).toBe(false);
   });
 });

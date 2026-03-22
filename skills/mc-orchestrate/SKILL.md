@@ -25,6 +25,7 @@ Use this skill for coding and debugging work in `/Users/cjg/Projects/MC-Orchestr
 - Orchestrator: `/Users/cjg/Projects/MC-Orchestrate/src/orchestrator/orchestrator.ts`
 - Design loop: `/Users/cjg/Projects/MC-Orchestrate/src/planner/aiPlanner.ts`
 - Prompt: `/Users/cjg/Projects/MC-Orchestrate/src/planner/prompt.ts`
+- Keyword prompt hints (small extra system text when `message` + `recentMessages` match): `/Users/cjg/Projects/MC-Orchestrate/src/planner/promptHints.ts` (`DEFAULT_PROMPT_HINTS`, `collectPromptHints`)
 - Planner schema: `/Users/cjg/Projects/MC-Orchestrate/src/planner/schema.ts`
 - Bridge: `/Users/cjg/Projects/MC-Orchestrate/src/bridge/bridgeServer.ts`
 - World reader: `/Users/cjg/Projects/MC-Orchestrate/src/world/worldReader.ts`
@@ -33,7 +34,7 @@ Use this skill for coding and debugging work in `/Users/cjg/Projects/MC-Orchestr
 
 ## AI Design Loop
 
-The orchestrator runs `runDesignLoop()` for every chat request. The loop runs up to 5 turns:
+The orchestrator runs `runDesignLoop()` for every chat request. The loop runs up to `MCORCH_DESIGN_LOOP_MAX_TURNS` iterations (default **10**):
 
 1. Sends initial context to the AI (player position, look vector, target block, 15×8×15 world scan, optional **CONVERSATION HISTORY** + **LAST BUILD SUMMARY** lines, JSON including `lastBuiltStructureSummary` and full `lastBuiltStructure`).
 2. AI returns either `{ action: "view_request", region, selfNotes }` or a build plan (wrapped or bare).
@@ -87,7 +88,8 @@ Run this after plugin changes:
 Inspect these first when bot behavior is wrong:
 
 - Bridge actions: `/Users/cjg/Projects/MC-Orchestrate/logs/bridge-actions.jsonl`
-- Design loop stages: `/Users/cjg/Projects/MC-Orchestrate/logs/ai-planner.jsonl`
+- Design loop stages (structured JSONL): `/Users/cjg/Projects/MC-Orchestrate/logs/ai-planner.jsonl`
+- Design loop progress (human-readable lines): `/Users/cjg/Projects/MC-Orchestrate/logs/design-loop.log` (`MCORCH_DESIGN_LOOP_LOG`)
 - Raw provider trace: `/Users/cjg/Projects/MC-Orchestrate/logs/ai-provider.log`
 
 Use them to answer:

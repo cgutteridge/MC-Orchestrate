@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { validateLayerMapShape } from "./layerMap.js";
 
 export const IntentSchema = z
   .string()
@@ -60,11 +61,43 @@ export const PrimitiveSchema = z.discriminatedUnion("type", [
   }),
 ]);
 
-export const PassSchema = z.object({
-  name: z.string().min(1),
-  goal: z.string().min(1),
-  primitives: z.array(PrimitiveSchema).min(1),
-});
+/**
+ * Character-layer voxel grid (alternative to `primitives`). Layers are ordered
+ * **top → bottom**; each layer is newline-separated rows; spaces are air unless
+ * mapped in `palette`.
+ */
+export const LayerMapSchema = z
+  .object({
+    layers: z.array(z.string()).min(1),
+    palette: z.record(z.string(), z.string().min(1)),
+  })
+  .superRefine((data, ctx) => {
+    const err = validateLayerMapShape(data);
+    if (err) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: err });
+    }
+  });
+
+export type LayerMap = z.infer<typeof LayerMapSchema>;
+
+export const PassSchema = z
+  .object({
+    name: z.string().min(1),
+    goal: z.string().min(1),
+    primitives: z.array(PrimitiveSchema).default([]),
+    layerMap: LayerMapSchema.optional(),
+  })
+  .superRefine((data, ctx) => {
+    const hasLayer = data.layerMap !== undefined;
+    const hasPrimitives = data.primitives.length > 0;
+    if (hasLayer === hasPrimitives) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "Each pass must have exactly one of: non-empty primitives, or layerMap.",
+      });
+    }
+  });
 
 export const PlanSchema = z.object({
   intent: IntentSchema,

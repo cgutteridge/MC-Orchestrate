@@ -5,6 +5,7 @@ import type { ChatCommandRequest } from "../types/plugin.js";
 import type { BlockSample } from "../types/plugin.js";
 import { escapeRegex } from "../utils/regex.js";
 import { normalizeBlockId, parseRequestedBlock } from "./materialPalette.js";
+import type { DesignLoopLogger } from "./designLoopLogger.js";
 import type { PlannerLogger } from "./planLogger.js";
 import {
   appendVerifyFulfillment,
@@ -30,9 +31,10 @@ import {
   CLARIFICATION_ACTION_MISMATCH,
   designLoopFailureMessage,
 } from "./playerRefusalMessages.js";
+import { deriveLayerMapLocalBounds } from "./layerMap.js";
 
-/** Maximum number of AI loop iterations before giving up. */
-const MAX_LOOP_TURNS = 5;
+/** Default when {@link DesignLoopOptions.maxTurns} is omitted (orchestrator passes config). */
+export const DEFAULT_DESIGN_LOOP_MAX_TURNS = 10;
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -56,6 +58,10 @@ export type DesignLoopResult =
 /** Optional controls for {@link runDesignLoop} (e.g. HTTP client disconnect). */
 export type DesignLoopOptions = {
   signal?: AbortSignal;
+  /** Max AI iterations (clamped 1–50). Defaults to {@link DEFAULT_DESIGN_LOOP_MAX_TURNS}. */
+  maxTurns?: number;
+  /** Plain-text progress log (see `logs/design-loop.log`). */
+  designLoopLogger?: DesignLoopLogger;
 };
 
 // ---------------------------------------------------------------------------
@@ -70,7 +76,7 @@ export type DesignLoopOptions = {
  * 2. If the AI returns `view_request`, fulfils the scan (from the initial
  *    plugin payload or WorldReader disk reads) and loops.
  * 3. If the AI returns `build` or a bare Plan, repairs and validates it.
- * 4. Aborts with `needs_more_info` after {@link MAX_LOOP_TURNS} turns or two
+ * 4. Aborts with `needs_more_info` after the configured max turns or two
  *    consecutive parse/validation failures.
  *
  * @param provider AI chat provider.
@@ -79,7 +85,7 @@ export type DesignLoopOptions = {
  * @param lastPlan The last successfully built plan for this player (follow-up context).
  * @param plannerLogger Optional structured logger for each loop stage.
  * @param placedBlocks Optional map of blocks placed by the bridge this session.
- * @param options Optional abort signal (e.g. when the HTTP client disconnects).
+ * @param options Optional abort signal, max turns, and design-loop text logger.
  */
 export async function runDesignLoop(
   provider: ChatProvider,
@@ -90,15 +96,31 @@ export async function runDesignLoop(
   placedBlocks?: ReadonlyMap<string, string>,
   options?: DesignLoopOptions,
 ): Promise<DesignLoopResult> {
+  const maxTurns = clampDesignLoopMaxTurns(
+    options?.maxTurns ?? DEFAULT_DESIGN_LOOP_MAX_TURNS,
+  );
+  const dl = options?.designLoopLogger;
+
   const messages: ChatMessage[] = buildInitialMessages(request, lastPlan);
   let consecutiveParseFailures = 0;
   /** Set when two assistant turns in a row could not yield a usable structured response. */
   let abortedAfterRepeatedAssistantErrors = false;
 
-  for (let turn = 0; turn < MAX_LOOP_TURNS; turn++) {
+  await dl?.line(
+    request.requestId,
+    -1,
+    maxTurns,
+    "design_loop_start",
+    `maxTurns=${maxTurns}; msg=${truncateOneLine(request.message)}`,
+  );
+
+  for (let turn = 0; turn < maxTurns; turn++) {
     if (options?.signal?.aborted) {
+      await dl?.line(request.requestId, turn, maxTurns, "exit", "cancelled (signal)");
       return { outcome: "cancelled" };
     }
+
+    await dl?.line(request.requestId, turn, maxTurns, "turn_start", "calling AI provider");
 
     const rawResponse = await provider.chat(messages, { temperature: 0.2 });
 
@@ -112,6 +134,13 @@ export async function runDesignLoop(
     const jsonText = extractJsonValue(rawResponse);
     if (!jsonText) {
       consecutiveParseFailures++;
+      await dl?.line(
+        request.requestId,
+        turn,
+        maxTurns,
+        "json_missing",
+        "no JSON object in assistant reply",
+      );
       await plannerLogger?.log({
         timestamp: new Date().toISOString(),
         requestId: request.requestId,
@@ -138,10 +167,17 @@ export async function runDesignLoop(
     let looseParsed: Record<string, unknown>;
     try {
       looseParsed = parseJsonStrict<Record<string, unknown>>(jsonText);
-    } catch {
+    } catch (err) {
       // The extracted JSON text was syntactically invalid (e.g. truncated or
       // escape-sequence error). Treat it the same as a missing JSON block.
       consecutiveParseFailures++;
+      await dl?.line(
+        request.requestId,
+        turn,
+        maxTurns,
+        "json_parse_error",
+        err instanceof Error ? err.message.slice(0, 120) : "parse error",
+      );
       await plannerLogger?.log({
         timestamp: new Date().toISOString(),
         requestId: request.requestId,
@@ -162,6 +198,14 @@ export async function runDesignLoop(
       continue;
     }
 
+    await dl?.line(
+      request.requestId,
+      turn,
+      maxTurns,
+      "json_ok",
+      summarizeLooseParsed(looseParsed),
+    );
+
     await plannerLogger?.log({
       timestamp: new Date().toISOString(),
       requestId: request.requestId,
@@ -180,6 +224,13 @@ export async function runDesignLoop(
       const viewResult = ViewRequestSchema.safeParse(looseParsed);
       if (!viewResult.success) {
         consecutiveParseFailures++;
+        await dl?.line(
+          request.requestId,
+          turn,
+          maxTurns,
+          "view_request_invalid",
+          viewResult.error.message.slice(0, 160),
+        );
         if (consecutiveParseFailures >= 2) {
           abortedAfterRepeatedAssistantErrors = true;
           break;
@@ -196,6 +247,14 @@ export async function runDesignLoop(
 
       const { region, selfNotes } = viewResult.data;
 
+      await dl?.line(
+        request.requestId,
+        turn,
+        maxTurns,
+        "view_request",
+        summarizeRegion(region),
+      );
+
       await plannerLogger?.log({
         timestamp: new Date().toISOString(),
         requestId: request.requestId,
@@ -204,10 +263,21 @@ export async function runDesignLoop(
       });
 
       if (options?.signal?.aborted) {
+        await dl?.line(request.requestId, -1, maxTurns, "exit", "cancelled (signal) before view scan");
         return { outcome: "cancelled" };
       }
 
       const viewFulfillment = await fulfillViewRequest(region, request, worldReader);
+
+      await dl?.line(
+        request.requestId,
+        turn,
+        maxTurns,
+        "view_scan_fulfilled",
+        viewFulfillment.kind === "disk_unavailable"
+          ? `scan_unavailable (${viewFulfillment.reason ?? "unknown"})`
+          : `blocks=${viewFulfillment.blocks.length}`,
+      );
 
       await plannerLogger?.log({
         timestamp: new Date().toISOString(),
@@ -259,6 +329,13 @@ export async function runDesignLoop(
     const planResult = PlanSchema.safeParse(repairedPlan);
     if (!planResult.success) {
       consecutiveParseFailures++;
+      await dl?.line(
+        request.requestId,
+        turn,
+        maxTurns,
+        "plan_invalid",
+        planResult.error.message.slice(0, 200),
+      );
       await plannerLogger?.log({
         timestamp: new Date().toISOString(),
         requestId: request.requestId,
@@ -288,16 +365,26 @@ export async function runDesignLoop(
       payload: { turn, validatedPlan: planResult.data, placement },
     });
 
+    await dl?.line(request.requestId, turn, maxTurns, "success", "validated plan ready for execution");
+
     return { outcome: "plan", plan: planResult.data, placement };
   }
 
   if (abortedAfterRepeatedAssistantErrors) {
+    await dl?.line(
+      request.requestId,
+      -1,
+      maxTurns,
+      "exit",
+      "needs_more_info: repeated assistant or validation failures",
+    );
     return {
       outcome: "needs_more_info",
       clarification: designLoopFailureMessage("assistant_failed_twice", request),
     };
   }
 
+  await dl?.line(request.requestId, -1, maxTurns, "exit", "needs_more_info: max turns exhausted");
   return {
     outcome: "needs_more_info",
     clarification: designLoopFailureMessage("max_turns", request),
@@ -508,7 +595,9 @@ export function repairLoosePlanCandidate(
         .map((pass) => repairPass(pass, request))
         .filter(
           (pass) =>
-            Array.isArray(pass.primitives) && pass.primitives.length > 0,
+            (Array.isArray(pass.primitives) && pass.primitives.length > 0) ||
+            (isRecord(pass.layerMap) &&
+              Array.isArray((pass.layerMap as { layers: unknown }).layers)),
         )
     : [];
 
@@ -532,11 +621,33 @@ export function repairLoosePlanCandidate(
       ? candidate.targetWorld
       : request.player.world;
 
-  const targetRegion = needsMoreInfo
+  let targetRegion: Record<string, unknown> = needsMoreInfo
     ? defaultRegion(request)
     : isRecord(candidate.targetRegion)
       ? candidate.targetRegion
       : defaultRegion(request);
+
+  if (
+    !needsMoreInfo &&
+    candidatePasses.length > 0 &&
+    !isRecord(candidate.targetRegion)
+  ) {
+    const lmPass = candidatePasses.find(
+      (p) =>
+        isRecord(p.layerMap) &&
+        Array.isArray((p.layerMap as { layers: unknown }).layers),
+    );
+    if (lmPass && isRecord(lmPass.layerMap)) {
+      const bounds = deriveLayerMapLocalBounds(
+        lmPass.layerMap as { layers: string[]; palette: Record<string, string> },
+      );
+      targetRegion = {
+        world: targetWorld,
+        min: bounds.min,
+        max: bounds.max,
+      };
+    }
+  }
 
   return {
     intent: needsMoreInfo ? "unknown" : rawIntent,
@@ -556,6 +667,22 @@ function repairPass(
   request: ChatCommandRequest,
 ): Record<string, unknown> {
   const record = isRecord(pass) ? pass : {};
+  const layerRaw = record.layerMap;
+  if (layerRaw && isRecord(layerRaw) && Array.isArray(layerRaw.layers)) {
+    return {
+      name: typeof record.name === "string" ? record.name : "build_pass",
+      goal:
+        typeof record.goal === "string" ? record.goal : "Apply layer map build.",
+      primitives: [],
+      layerMap: {
+        layers: layerRaw.layers as string[],
+        palette: (isRecord(layerRaw.palette)
+          ? layerRaw.palette
+          : {}) as Record<string, string>,
+      },
+    };
+  }
+
   const primitives = Array.isArray(record.primitives)
     ? record.primitives
         .map((p) => repairPrimitive(p, request))
@@ -728,6 +855,10 @@ function classifyPlanAction(
   let removeSignals = 0;
 
   for (const pass of passes) {
+    if (isRecord(pass.layerMap)) {
+      buildSignals++;
+      continue;
+    }
     const primitives = Array.isArray(pass.primitives) ? pass.primitives : [];
     for (const primitive of primitives) {
       if (!isRecord(primitive) || typeof primitive.type !== "string") {
@@ -766,6 +897,33 @@ function classifyPlanAction(
 // ---------------------------------------------------------------------------
 // Shared helpers
 // ---------------------------------------------------------------------------
+
+function clampDesignLoopMaxTurns(n: number): number {
+  return Math.min(50, Math.max(1, Math.round(n)));
+}
+
+function truncateOneLine(s: string, max = 160): string {
+  const t = s.replace(/\s+/g, " ").trim();
+  return t.length <= max ? t : `${t.slice(0, max)}…`;
+}
+
+function summarizeLooseParsed(loose: Record<string, unknown>): string {
+  const action = typeof loose.action === "string" ? loose.action : undefined;
+  if (action === "view_request") {
+    return "action=view_request";
+  }
+  if (action === "build") {
+    return "action=build";
+  }
+  if (typeof loose.intent === "string" || Array.isArray(loose.passes)) {
+    return "bare_plan";
+  }
+  return "unknown_shape";
+}
+
+function summarizeRegion(region: Region): string {
+  return `world=${region.world} min=(${region.min.x},${region.min.y},${region.min.z}) max=(${region.max.x},${region.max.y},${region.max.z})`;
+}
 
 function normalizeIntentLabel(value: unknown): string | undefined {
   if (typeof value !== "string") {

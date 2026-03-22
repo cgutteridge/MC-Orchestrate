@@ -2,6 +2,7 @@ import type { ChatMessage } from "../services/ai/types.js";
 import type { ChatCommandRequest } from "../types/plugin.js";
 import type { Plan, Region } from "./schema.js";
 import type { BlockSample } from "../types/plugin.js";
+import { collectPromptHints, formatPromptHintsSection } from "./promptHints.js";
 
 // ---------------------------------------------------------------------------
 // Nearby context card
@@ -240,6 +241,7 @@ const SYSTEM_PROMPT = [
   "Use nearby block data to pick materials that fit the environment.",
   "Think in terms of passes: foundation → walls → roof → detail → trim.",
   "Use hollow_cuboid for walls, cylinder for towers or round structures, fill_cuboid for floors and roofs.",
+  "LAYER MAP (optional alternative to primitives): a pass may use `layerMap` instead of `primitives`. `layers` is a JSON array of strings — each string is ONE horizontal slice, ordered TOP to BOTTOM (first element = highest Y, last = lowest Y). Within each slice, use newlines between rows; each row is characters left-to-right = +X, rows top-to-bottom = +Z. After the layers, `palette` maps each single-character key to a full `minecraft:` block id. Use a space character for air (or map \" \" in palette). All rows in a slice must have the same width; all slices must share the same footprint. Max footprint 32×32 per slice, max 48 slices tall. At most ONE layer-map pass per plan (combine slices into one `layers` array). Good for castles, trenches, and anything that reads better as a 2D pattern per height level.",
   "Set verifyRegion to a box 2 blocks larger than your build on all sides so you can see the full context.",
   "",
   "=== PLACEMENT AND OFFSETS ===",
@@ -320,6 +322,13 @@ const SYSTEM_PROMPT = [
 
 /**
  * Builds the initial messages array for the first turn of the design loop.
+ *
+ * The system message is {@link SYSTEM_PROMPT} plus optional contextual paragraphs
+ * from {@link collectPromptHints} when the request text (message + recentMessages)
+ * matches configured keywords — see `src/planner/promptHints.ts`.
+ *
+ * @param request Current plugin request (used for placement card, history, and hint matching).
+ * @param lastPlan Optional prior successful plan for follow-up turns.
  */
 export function buildInitialMessages(request: ChatCommandRequest, lastPlan?: Plan): ChatMessage[] {
   const parts: string[] = [
@@ -361,8 +370,12 @@ export function buildInitialMessages(request: ChatCommandRequest, lastPlan?: Pla
     2,
   ));
 
+  const hintSection = formatPromptHintsSection(collectPromptHints(request));
+  const systemContent =
+    hintSection !== undefined ? `${SYSTEM_PROMPT}\n\n${hintSection}` : SYSTEM_PROMPT;
+
   return [
-    { role: "system", content: SYSTEM_PROMPT },
+    { role: "system", content: systemContent },
     { role: "user", content: parts.join("\n\n") },
   ];
 }
