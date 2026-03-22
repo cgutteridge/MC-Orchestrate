@@ -21,7 +21,8 @@ export const DEFAULT_PROMPT_HINTS: readonly PromptHint[] = [
     keywords: ["moat", "trench", "ditch"],
     hint:
       "Moats and trenches: do not use one giant horizontal slab of water across the whole footprint — that reads as a flat pool. " +
-      "Use a ring pattern in the layer map so the outer water/air trench and the inner keep/courtyard are visibly separate regions.",
+      "Separate the trench (water or `_`) from the inner keep with an **orthogonal** plan: **straight walls and corners** — a rectangular channel around a rectangular courtyard. " +
+      "Do **not** model the whole castle as a flat circular disk or bullseye; round moats are rare unless the player asked for round or circular.",
   },
   {
     keywords: ["battlement", "crenellat", "merlon", "parapet"],
@@ -31,7 +32,7 @@ export const DEFAULT_PROMPT_HINTS: readonly PromptHint[] = [
   {
     keywords: ["ship", "boat", "vessel", "galley", "hull", "sailboat", "schooner"],
     hint:
-      "Ships and boats: never use a single horizontal slice — you need many `layers` (keel, hull sides rising toward the deck, then deck and superstructure). In **plan view** (looking down at each slice), the hull should read as a long narrow shape along one axis (bow toward one end), not a square blob; mirror left/right often helps. Use water or air around the hull in the grid so the outline is visible. Prefer planks, stairs, and stripped logs for wood ships.",
+      "Ships and boats: never use a single horizontal slice — you need many `layers` (keel, hull sides rising toward the deck, then deck and superstructure). In **plan view** (looking down at each slice), the hull should read as a long narrow shape along one axis (bow toward one end), not a square blob; mirror left/right often helps. Use water or `_` (air) around the hull in the grid so the outline is visible. Prefer planks, stairs, and stripped logs for wood ships.",
   },
 ];
 

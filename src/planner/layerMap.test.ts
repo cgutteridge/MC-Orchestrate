@@ -7,7 +7,7 @@ import {
 } from "./layerMap.js";
 
 describe("layer map", () => {
-  it("parses top-to-bottom layers and compiles non-air voxels", () => {
+  it("parses top-to-bottom layers and compiles each non–no-op cell", () => {
     const layerMap = {
       layers: [
         "#", // top (highest Y)
@@ -35,5 +35,45 @@ describe("layer map", () => {
       palette: { "#": "minecraft:stone" },
     });
     expect(err).toContain("same row width");
+  });
+
+  it("treats space as no-op (no batchSet for that cell)", () => {
+    const layerMap = {
+      layers: ["# #"],
+      palette: { "#": "minecraft:stone" },
+    };
+    expect(validateLayerMapShape(layerMap)).toBeUndefined();
+    expect(estimateLayerMapBlockCount(layerMap)).toBe(2);
+    const cmds = compileLayerMapToBridgeCommands(layerMap, { x: 0, y: 0, z: 0 });
+    expect(cmds).toHaveLength(1);
+    if (cmds[0]?.kind === "batchSet") {
+      expect(cmds[0].blocks).toHaveLength(2);
+    }
+  });
+
+  it("compiles underscore to minecraft:air by default", () => {
+    const layerMap = {
+      layers: ["_"],
+      palette: {},
+    };
+    expect(validateLayerMapShape(layerMap)).toBeUndefined();
+    const cmds = compileLayerMapToBridgeCommands(layerMap, { x: 5, y: 10, z: 3 });
+    expect(cmds).toHaveLength(1);
+    if (cmds[0]?.kind === "batchSet") {
+      expect(cmds[0].blocks[0]).toEqual({
+        x: 5,
+        y: 10,
+        z: 3,
+        type: "minecraft:air",
+      });
+    }
+  });
+
+  it("rejects a palette key that is a space", () => {
+    const err = validateLayerMapShape({
+      layers: ["S"],
+      palette: { " ": "minecraft:air", S: "minecraft:stone" },
+    });
+    expect(err).toContain("space");
   });
 });

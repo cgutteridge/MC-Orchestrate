@@ -3,6 +3,9 @@ import { z } from "zod";
 
 loadEnv();
 
+/** Default chat completion HTTP timeout when `AZURE_OPENAI_CHAT_TIMEOUT_MS` is unset (slow links + big layer-map JSON often need several minutes). */
+export const DEFAULT_AZURE_OPENAI_CHAT_TIMEOUT_MS = 300_000;
+
 const optionalNonEmpty = z.preprocess(
   (value) =>
     typeof value === "string" && value.trim() === "" ? undefined : value,
@@ -39,6 +42,16 @@ const Schema = z.object({
         : value,
     z.coerce.number().int().min(1).max(50).optional(),
   ),
+  /** HTTP timeout for Azure chat completions (ms). Includes upload, model time, and full response download. */
+  AZURE_OPENAI_CHAT_TIMEOUT_MS: z.preprocess(
+    (value) =>
+      value === undefined ||
+      value === "" ||
+      (typeof value === "string" && value.trim() === "")
+        ? undefined
+        : value,
+    z.coerce.number().int().min(5_000).max(1_800_000).optional(),
+  ),
 });
 
 export type AppConfig = {
@@ -48,6 +61,8 @@ export type AppConfig = {
     apiVersion: string;
     deployment: string;
     policyId?: string;
+    /** Upper bound on a single chat completion HTTP request (including model time). */
+    chatTimeoutMs: number;
   };
   minecraft: {
     tcpHost: string;
@@ -84,6 +99,8 @@ export function loadConfig(): AppConfig {
         apiVersion: parsed.AZURE_OPENAI_API_VERSION!,
         deployment: parsed.AZURE_OPENAI_DEPLOYMENT!,
         policyId: parsed.AZURE_OPENAI_POLICY_ID,
+        chatTimeoutMs:
+          parsed.AZURE_OPENAI_CHAT_TIMEOUT_MS ?? DEFAULT_AZURE_OPENAI_CHAT_TIMEOUT_MS,
       }
     : undefined;
 

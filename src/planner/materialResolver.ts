@@ -193,6 +193,10 @@ function resolveLayerPalette(
 ): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [ch, block] of Object.entries(palette)) {
+    if (ch === " ") {
+      // Legacy palette keys used space for air; space in `layers` is now no-op — omit.
+      continue;
+    }
     out[ch] = resolveBlockId(block, unresolved, context, false, undefined, fallback);
   }
   return out;

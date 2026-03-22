@@ -50,7 +50,7 @@ describe("primitivesToLayerMapData", () => {
       ([, id]) => id === "minecraft:stone_bricks",
     )?.[0];
     expect(stone).toBeDefined();
-    const air = " ";
+    const air = "_";
     for (const layer of layers) {
       const rows = layer.split("\n");
       expect(rows).toHaveLength(3);

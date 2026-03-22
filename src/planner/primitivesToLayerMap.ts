@@ -1,5 +1,6 @@
 import type { LayerMapData } from "./layerMap.js";
 import {
+  LAYER_MAP_AIR_CHAR,
   LAYER_MAP_MAX_HORIZONTAL,
   LAYER_MAP_MAX_VERTICAL,
   validateLayerMapShape,
@@ -266,12 +267,13 @@ export function primitivesToLayerMapData(
     }
   }
 
-  const palette: Record<string, string> = { " ": AIR };
-  const charByBlock = new Map<string, string>([["minecraft:air", " "]]);
-  const used = new Set<string>([" "]);
+  const palette: Record<string, string> = { [LAYER_MAP_AIR_CHAR]: AIR };
+  const charByBlock = new Map<string, string>([[AIR, LAYER_MAP_AIR_CHAR]]);
+  const used = new Set<string>([LAYER_MAP_AIR_CHAR]);
 
+  /** Reserved for air; never assign `_` from the pool to other materials. */
   const pool =
-    "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz!@#$%^&*()-_=+[]{}|;:,.<>?`~";
+    "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz!@#$%^&*()-=+[]{}|;:,.<>?`~";
 
   let poolIndex = 0;
   const sortedIds = [...blockIds].sort();
@@ -309,7 +311,7 @@ export function primitivesToLayerMapData(
       for (let lx = 0; lx < width; lx++) {
         const wx = origin.x + lx;
         const block = map.get(voxelKey(wx, wy, wz)) ?? AIR;
-        row += charByBlock.get(block) ?? " ";
+        row += charByBlock.get(block) ?? "?";
       }
       rows.push(row);
     }

@@ -16,6 +16,7 @@ export function createChatProvider(config: AppConfig): ChatProvider | undefined 
     config.azureOpenAI.apiKey,
     config.azureOpenAI.apiVersion,
     config.azureOpenAI.deployment,
+    config.azureOpenAI.chatTimeoutMs,
     config.ai.providerLogPath,
     config.azureOpenAI.policyId,
   );

@@ -64,8 +64,9 @@ export const PrimitiveSchema = z.discriminatedUnion("type", [
 
 /**
  * Character-layer voxel grid (alternative to `primitives`). Layers are ordered
- * **top → bottom**; each layer is newline-separated rows; spaces are air unless
- * mapped in `palette`.
+ * **top → bottom**; each layer is newline-separated rows. **` ` (space)** means
+ * leave that cell unchanged (no-op). **`_`** means place air (default
+ * `minecraft:air` if `_` is omitted from `palette`).
  */
 export const LayerMapSchema = z
   .object({

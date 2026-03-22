@@ -1,10 +1,24 @@
 import type { BridgeBatchBlock, BridgeCommand } from "../bridge/types.js";
 
-/** Layer map payload: top-to-bottom layers + character → block id palette (see `layerMap.ts`). */
+/**
+ * Layer map payload: top-to-bottom layers + character → block id palette.
+ *
+ * **Grid characters**
+ * - **` ` (space)** — no-op: do not place or change this block (skip in compile).
+ * - **`_`** — explicit air (`minecraft:air` by default; may appear in `palette`).
+ *
+ * When the server encodes world data for display, use `_` for air (not space).
+ */
 export type LayerMapData = {
   layers: string[];
   palette: Record<string, string>;
 };
+
+/** Sentinel returned by {@link ParsedLayerGrid.getBlock} for space cells (compile skips). */
+export const LAYER_MAP_NOOP_BLOCK = "__layer_map_noop__" as const;
+
+/** Default palette key for explicit air placement. */
+export const LAYER_MAP_AIR_CHAR = "_" as const;
 
 /** Max horizontal span (X/Z) per layer-map grid axis — matches {@link MAX_REGION_WIDTH}. */
 export const LAYER_MAP_MAX_HORIZONTAL = 32;
@@ -56,7 +70,7 @@ export function deriveLayerMapLocalBounds(
 }
 
 /**
- * Estimates how many non-air voxels a layer map would place (upper bound for safety).
+ * Estimates how many cells a layer map would affect (non–no-op voxels; upper bound for safety).
  */
 export function estimateLayerMapBlockCount(layerMap: LayerMapData): number {
   const p = parseLayerMapGrid(layerMap);
@@ -69,9 +83,10 @@ export function estimateLayerMapBlockCount(layerMap: LayerMapData): number {
     for (let lz = 0; lz < grid.depth; lz++) {
       for (let lx = 0; lx < grid.width; lx++) {
         const b = grid.getBlock(lx, ly, lz);
-        if (b !== "minecraft:air") {
-          n++;
+        if (b === LAYER_MAP_NOOP_BLOCK) {
+          continue;
         }
+        n++;
       }
     }
   }
@@ -96,14 +111,15 @@ export function compileLayerMapToBridgeCommands(
     for (let lz = 0; lz < grid.depth; lz++) {
       for (let lx = 0; lx < grid.width; lx++) {
         const block = grid.getBlock(lx, ly, lz);
-        if (block !== "minecraft:air") {
-          blocks.push({
-            x: origin.x + lx,
-            y: origin.y + ly,
-            z: origin.z + lz,
-            type: block,
-          });
+        if (block === LAYER_MAP_NOOP_BLOCK) {
+          continue;
         }
+        blocks.push({
+          x: origin.x + lx,
+          y: origin.y + ly,
+          z: origin.z + lz,
+          type: block,
+        });
       }
     }
   }
@@ -133,10 +149,16 @@ function parseLayerMapGrid(
     if (key.length !== 1) {
       return { error: `palette keys must be single characters; got key length ${key.length}` };
     }
+    if (key === " ") {
+      return {
+        error:
+          'palette must not use the space key `" "` — space in `layers` means no-op (leave block unchanged); use `"_"` for air in the grid',
+      };
+    }
     resolvedPalette.set(key, value);
   }
-  if (!resolvedPalette.has(" ")) {
-    resolvedPalette.set(" ", "minecraft:air");
+  if (!resolvedPalette.has(LAYER_MAP_AIR_CHAR)) {
+    resolvedPalette.set(LAYER_MAP_AIR_CHAR, "minecraft:air");
   }
 
   const rowSets: string[][] = [];
@@ -186,16 +208,16 @@ function parseLayerMapGrid(
     const chars = [...row];
     const ch = chars[lx];
     if (ch === undefined) {
-      return "minecraft:air";
+      return LAYER_MAP_NOOP_BLOCK;
+    }
+    if (ch === " ") {
+      return LAYER_MAP_NOOP_BLOCK;
     }
     const id = resolvedPalette.get(ch);
     if (id !== undefined) {
       return id;
     }
-    if (ch === " ") {
-      return "minecraft:air";
-    }
-    return "minecraft:air";
+    return LAYER_MAP_NOOP_BLOCK;
   };
 
   for (let ly = 0; ly < height; ly++) {
@@ -204,7 +226,10 @@ function parseLayerMapGrid(
         const layerFromTop = height - 1 - ly;
         const row = rowSets[layerFromTop]![lz]!;
         const ch = [...row][lx]!;
-        if (ch !== " " && !resolvedPalette.has(ch)) {
+        if (ch === " ") {
+          continue;
+        }
+        if (!resolvedPalette.has(ch)) {
           return {
             error: `undefined character ${JSON.stringify(ch)} in layer map (add it to palette)`,
           };

@@ -301,7 +301,7 @@ describe("validatePlanSemantics — degenerate structure", () => {
 
   const tinyLayerMap = {
     layers: ["S"],
-    palette: { S: "minecraft:stone", " ": "minecraft:air" },
+    palette: { S: "minecraft:stone" },
   };
 
   it("allows two layer-map passes (full build plus optional refinement)", () => {
@@ -318,7 +318,7 @@ describe("validatePlanSemantics — degenerate structure", () => {
         primitives: [],
         layerMap: {
           layers: ["S"],
-          palette: { S: "minecraft:stone_bricks", " ": "minecraft:air" },
+          palette: { S: "minecraft:stone_bricks" },
         },
       },
     ]);

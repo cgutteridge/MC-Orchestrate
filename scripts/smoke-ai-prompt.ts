@@ -4,8 +4,10 @@
  *   npx tsx scripts/smoke-ai-prompt.ts "your message here"
  *
  * Requires AZURE_OPENAI_* (or whatever createChatProvider needs) in the environment.
+ * If requests abort with a timeout, set AZURE_OPENAI_CHAT_TIMEOUT_MS (default 300000 ms).
  *
- * When the model returns `passes[0].layerMap`, prints each `layers[i]` string in
+ * Prints the full system and user messages before calling the API. When the
+ * model returns `passes[0].layerMap`, prints each `layers[i]` string in
  * order with a blank line between layers (newlines inside a string are preserved).
  * If only `primitives` are present (legacy / MCORCH_LAYER_MAP_ONLY=false), expands
  * to a layer map and prints the same way.
@@ -17,6 +19,7 @@ import {
 } from "../src/planner/primitivesToLayerMap.js";
 import { buildInitialMessages } from "../src/planner/prompt.js";
 import { createChatProvider } from "../src/services/ai/provider.js";
+import type { ChatMessage } from "../src/services/ai/types.js";
 import type { Primitive } from "../src/planner/schema.js";
 import { extractJsonValue, parseJsonStrict } from "../src/services/ai/json.js";
 import type { ChatCommandRequest } from "../src/types/plugin.js";
@@ -30,6 +33,25 @@ function isRecord(v: unknown): v is Record<string, unknown> {
  */
 function formatLayerMapForDisplay(layerMap: LayerMapData): string {
   return layerMap.layers.join("\n\n");
+}
+
+/**
+ * Pretty-prints the exact chat payload (system + user) passed to the AI provider.
+ */
+function formatMessagesForStdout(messages: ChatMessage[]): string {
+  const lines: string[] = [
+    "=== Messages sent to the model (same as design loop) ===",
+    "",
+  ];
+  for (let i = 0; i < messages.length; i++) {
+    const m = messages[i]!;
+    lines.push(`--- ${m.role} (${i + 1}/${messages.length}) ---`);
+    lines.push(m.content);
+    lines.push("");
+  }
+  lines.push("=== End messages ===");
+  lines.push("");
+  return lines.join("\n");
 }
 
 const message =
@@ -84,7 +106,7 @@ async function main(): Promise<void> {
   }
 
   const messages = buildInitialMessages(request, undefined);
-  process.stdout.write(`--- Prompt (user message field): ${JSON.stringify(message)}\n`);
+  process.stdout.write(formatMessagesForStdout(messages));
   process.stdout.write(`--- Calling ${provider.name} (temperature 0.2)…\n\n`);
 
   const raw = await provider.chat(messages, { temperature: 0.2 });
