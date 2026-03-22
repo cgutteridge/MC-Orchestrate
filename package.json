@@ -9,6 +9,8 @@
     "start": "tsx src/index.ts",
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
+    "test:agent": "vitest run --config vitest.agent.config.ts",
+    "test:agent:watch": "vitest --config vitest.agent.config.ts",
     "plugin:build": "sh ./spigot-build/apache-maven-3.9.6/bin/mvn -Dmaven.repo.local=.m2/repository -f spigot-plugin/pom.xml package",
     "plugin:copy": "cp spigot-plugin/target/mc-orchestrate-plugin-1.0.0.jar minecraft-server/plugins/",
     "plugin:install": "npm run plugin:build && npm run plugin:copy"
