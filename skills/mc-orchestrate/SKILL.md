@@ -47,6 +47,10 @@ The orchestrator runs `runDesignLoop()` for every chat request. The loop runs up
 - Max turns reached: return `needs_more_info`.
 - All AI responses are validated by `validatePlanSafety` and `validatePlanSemantics` before execution.
 
+### Placement intent
+
+The AI returns `placement` (`ref` + offsets). `resolvePlacement()` maps that to a world anchor; the orchestrator recenters the AI plan with `shiftPlan()` so absolute coords from the model need not be trusted. Vertical baseline: **`player_view` / `player_absolute`** use `up:0` at **player head** (`round(feet Y) + 1`); **`focus`** uses **top of target block** (`block Y + 1`); **`last_build`** uses the **last plan centre Y**.
+
 ## Plugin Payload
 
 The plugin sends a 15×8×15 block scan centered on the player with air filtered out (cap 300 blocks). It also sends `initialScanRegion` bounding box so the AI knows what world data it received without requesting a disk read.
