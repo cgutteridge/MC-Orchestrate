@@ -55,6 +55,55 @@ function buildNearbyContextSummary(request: ChatCommandRequest): string | undefi
 }
 
 // ---------------------------------------------------------------------------
+// Placement card — pre-computed reference points so the AI never has to do
+// trig from raw yaw/lookVector values.
+// ---------------------------------------------------------------------------
+
+/**
+ * Computes a set of concrete anchor coordinates from the player's position and
+ * look vector and formats them as a compact placement reference card.
+ *
+ * The horizontal look direction is derived from lookVector.x/z (ignoring Y so
+ * steep pitch angles don't skew the result). All Y values are at player feet
+ * unless noted.
+ */
+function buildPlacementCard(request: ChatCommandRequest): string {
+  const { position, lookVector } = request.player;
+  const px = Math.round(position.x);
+  const py = Math.round(position.y);
+  const pz = Math.round(position.z);
+
+  // Horizontal projection of look vector — ignoring pitch so steep angles
+  // don't collapse the in-front direction toward (0,0).
+  const hx = lookVector.x;
+  const hz = lookVector.z;
+  const hLen = Math.sqrt(hx * hx + hz * hz);
+  const nhx = hLen > 0.01 ? hx / hLen : 0;
+  const nhz = hLen > 0.01 ? hz / hLen : 1;
+
+  const front = (d: number) => `(${Math.round(px + nhx * d)}, ${py}, ${Math.round(pz + nhz * d)})`;
+  const left  = (d: number) => `(${Math.round(px - nhz * d)}, ${py}, ${Math.round(pz + nhx * d)})`;
+  const right = (d: number) => `(${Math.round(px + nhz * d)}, ${py}, ${Math.round(pz - nhx * d)})`;
+
+  return [
+    "PLACEMENT REFERENCE — use these pre-computed coordinates as your anchor origin.",
+    `  Player feet:         x=${px} y=${py} z=${pz}  ← never build on the player's body blocks (y=${py} and y=${py + 1})`,
+    `  5 blocks in front:  ${front(5)}`,
+    `  10 blocks in front: ${front(10)}`,
+    `  20 blocks in front: ${front(20)}`,
+    `  5 blocks behind:    (${Math.round(px - nhx * 5)}, ${py}, ${Math.round(pz - nhz * 5)})`,
+    `  5 blocks left:      ${left(5)}`,
+    `  5 blocks right:     ${right(5)}`,
+    "  Cardinal offsets from player (scale D as needed):",
+    `    north (−z): x=${px} z=${pz}-D`,
+    `    south (+z): x=${px} z=${pz}+D`,
+    `    east  (+x): x=${px}+D z=${pz}`,
+    `    west  (−x): x=${px}-D z=${pz}`,
+    "  Vertical: above = y+D, below = y−D",
+  ].join("\n");
+}
+
+// ---------------------------------------------------------------------------
 // Schema guide (embedded in system prompt so AI stays aligned with Zod types)
 // ---------------------------------------------------------------------------
 
@@ -133,12 +182,26 @@ const SYSTEM_PROMPT = [
   "Use hollow_cuboid for walls, cylinder for towers or round structures, fill_cuboid for floors and roofs.",
   "Set verifyRegion to a box 2 blocks larger than your build on all sides so you can see the full context.",
   "",
-  "=== ANCHORING ===",
+  "=== PLACEMENT AND OFFSETS ===",
   "",
-  "Anchor to targetBlock (the block the player is looking at) when available — build on TOP of or adjacent to it.",
-  "If no targetBlock, anchor horizontally in front of the player based on the lookVector.",
-  "Avoid placing blocks on or through the player's body (y = player.position.y and y+1).",
-  "Do not trust steep pitch angles (pitch > 60 degrees) for placement direction.",
+  "The user message contains a PLACEMENT REFERENCE card with pre-computed anchor coordinates. Always use those values — do not recompute from raw yaw or lookVector.",
+  "",
+  "DEFAULT placement (no offset phrase): 5–10 blocks in front of the player. Never place structures at or on the player's body (y = feet or y = feet+1).",
+  "",
+  "Resolve these phrases to the pre-computed reference points:",
+  "  'here' / 'at my location' → use targetBlock surface if present, otherwise player feet + 1",
+  "  'in front of me' / 'ahead' / 'there' → 5-blocks-in-front coordinate",
+  "  'behind me' → 5-blocks-behind coordinate",
+  "  'to my left' / 'on my left' → 5-blocks-left coordinate",
+  "  'to my right' / 'on my right' → 5-blocks-right coordinate",
+  "  'above me' / 'in the air' → y = player.y + requested distance (default 10)",
+  "  'below me' / 'underground' → y = player.y − requested distance",
+  "  'north' / 'south' / 'east' / 'west' → use cardinal offset formula from the card",
+  "  '10 blocks north' → apply stated distance to cardinal formula",
+  "",
+  "When the player specifies a distance (e.g. '15 blocks in front'), scale the in-front unit vector by that distance.",
+  "When targetBlock is present and the player says 'here' or 'on this', build on top of the targetBlock (targetBlock.y + 1).",
+  "Do not trust steep pitch angles (pitch > 60°) to infer in-front direction — use the pre-computed card instead.",
   "",
   "=== CONTEXT AWARENESS ===",
   "",
@@ -179,6 +242,7 @@ const SYSTEM_PROMPT = [
 export function buildInitialMessages(request: ChatCommandRequest, lastPlan?: Plan): ChatMessage[] {
   const parts: string[] = [
     "Design a Minecraft build for this player request.",
+    buildPlacementCard(request),
   ];
 
   const nearbySummary = buildNearbyContextSummary(request);

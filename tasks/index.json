@@ -109,15 +109,6 @@
       "notes": "Detect likely player-made nearby structures. Add avoidance/protection policies during planning and execution. Requires world scan (17) and stable terrain/context (23)."
     },
     {
-      "id": 27,
-      "title": "Positional offset resolution in prompt (above, below, north, in front of me, etc.)",
-      "status": "todo",
-      "priority": "high",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "AI should resolve approximate directional offsets from the player into concrete anchor coordinates in the first planning pass. Player says 'above me', '10 blocks north', 'in front of me', 'to my left' etc. Orchestrator already sends player position, yaw, pitch, and look vector — the AI has all inputs needed. Prompt should explicitly instruct the AI to compute the anchor from these before generating primitives, rather than placing structures at or on the player. Consider adding a resolved anchor field to the plan reply so the player can confirm placement before blocks are placed."
-    },
-    {
       "id": 28,
       "title": "Clearer rejection messages — explain why, not just that",
       "status": "todo",

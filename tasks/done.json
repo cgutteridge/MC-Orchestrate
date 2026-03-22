@@ -90,6 +90,15 @@
       "title": "AI Design Loop — Core Architecture (heuristic planner deletion)",
       "status": "done",
       "notes": "Completed 2026-03-22. 87 tests. Deleted heuristicPlanner.ts/templates.ts, runDesignLoop multi-turn loop, readRegionBlocks, getPlacedBlocks, expanded plugin scan 15x8x15, DesignStepSchema, immediate Thinking... response, no-provider early return. BUG-1 through BUG-7 (all heuristic-planner live-test defects: template parsers not firing, tower anchor off-by-one, second build bypassing templates, AI 2-wide structures, cylinder-for-tower, rectangular gazebo, narrow bridge) all superseded by this deletion — no individual fixes applied."
+    },
+    {
+      "id": 27,
+      "title": "Positional offset resolution in prompt (above, below, north, in front of me, etc.)",
+      "status": "done",
+      "priority": "high",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Completed 2026-03-22. Added buildPlacementCard() that pre-computes in-front/behind/left/right/cardinal reference coordinates from player position and horizontal look vector and injects them into every turn-1 user message. System prompt updated with PLACEMENT AND OFFSETS section mapping directional phrases to those coordinates. 3 new tests, 87 → 90 total."
     }
   ]
 }

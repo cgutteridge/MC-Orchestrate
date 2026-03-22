@@ -138,6 +138,65 @@ describe("buildInitialMessages", () => {
     expect(userContent).toContain("\"lastBuiltStructure\": null");
   });
 
+  it("includes a placement reference card with pre-computed anchor positions", () => {
+    // Player at (10, 64, 20) looking south (+z), yaw=0, lookVector=(0,0,1)
+    const req: ChatCommandRequest = {
+      ...request,
+      player: {
+        ...request.player,
+        position: { x: 10, y: 64, z: 20 },
+        lookVector: { x: 0, y: 0, z: 1 },
+      },
+    };
+    const messages = buildInitialMessages(req);
+    const userContent = messages[1]?.content ?? "";
+
+    // Card should be present
+    expect(userContent).toContain("PLACEMENT REFERENCE");
+    // Player feet
+    expect(userContent).toContain("x=10 y=64 z=20");
+    // 5 blocks in front = (10, 64, 25) since lookVector is (0,0,1)
+    expect(userContent).toContain("(10, 64, 25)");
+    // 10 blocks in front = (10, 64, 30)
+    expect(userContent).toContain("(10, 64, 30)");
+    // Cardinal hints
+    expect(userContent).toContain("north");
+    expect(userContent).toContain("south");
+  });
+
+  it("placement card left/right are perpendicular to look direction", () => {
+    // Player looking east (+x), lookVector=(1,0,0)
+    const req: ChatCommandRequest = {
+      ...request,
+      player: {
+        ...request.player,
+        position: { x: 0, y: 64, z: 0 },
+        lookVector: { x: 1, y: 0, z: 0 },
+      },
+    };
+    const messages = buildInitialMessages(req);
+    const userContent = messages[1]?.content ?? "";
+
+    // 5 blocks in front = (5, 64, 0)
+    expect(userContent).toContain("(5, 64, 0)");
+    // 5 blocks left (perpendicular: nhx=1,nhz=0 → left = -nhz=0, nhx=1 → (0,64,5))
+    expect(userContent).toContain("(0, 64, 5)");
+    // 5 blocks right → (0, 64, -5)
+    expect(userContent).toContain("(0, 64, -5)");
+  });
+
+  it("system prompt explains how to resolve directional phrases", () => {
+    const messages = buildInitialMessages(request);
+    const system = messages[0]?.content ?? "";
+
+    expect(system).toContain("PLACEMENT AND OFFSETS");
+    expect(system).toContain("in front of me");
+    expect(system).toContain("to my left");
+    expect(system).toContain("north");
+    expect(system).toContain("above me");
+    expect(system).toContain("PLACEMENT REFERENCE card");
+  });
+
   it("includes initialScanRegion when present", () => {
     const messages = buildInitialMessages({
       ...request,
