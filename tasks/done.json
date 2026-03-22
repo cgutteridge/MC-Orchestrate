@@ -2,6 +2,15 @@
   "_comment": "AGENT: completed tasks archive. Read via task-index-manager skill. Do not add active tasks here.",
   "tasks": [
     {
+      "id": 16,
+      "title": "Azure Planner Path Baseline Validation",
+      "status": "done",
+      "priority": "critical",
+      "complexity": "s",
+      "blockedBy": [],
+      "notes": "Completed 2026-03-22. replayChatProvider (createReplayChatProvider, parseReplayFixture), benchmark/fixtures/azure-baseline/v1-single-turn-build.json, benchmark/azure-baseline.md (live capture from MCORCH_AI_PROVIDER_LOG), tests/benchmark/azureBaselineReplay.test.ts. CI uses replay only; live Azure remains manual."
+    },
+    {
       "id": 19,
       "title": "Benchmark and Evaluation Harness",
       "status": "done",

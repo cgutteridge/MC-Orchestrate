@@ -10,15 +10,6 @@
   },
   "tasks": [
     {
-      "id": 16,
-      "title": "Azure Planner Path Baseline Validation",
-      "status": "doing",
-      "priority": "critical",
-      "complexity": "s",
-      "blockedBy": [],
-      "notes": "Run real Azure path with representative prompts; collect and replay provider traces; record fixtures for regression."
-    },
-    {
       "id": 18,
       "title": "Execution UX and Job Control",
       "status": "todo",

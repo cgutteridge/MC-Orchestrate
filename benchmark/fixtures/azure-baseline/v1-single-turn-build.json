@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "description": "Representative single-turn Azure-style response: build wrapper + placement + hollow glass cylinder. Re-record from logs/ai-provider.log after a live Azure run if the model output shape changes.",
+  "assistantTurns": [
+    "{\"action\":\"build\",\"placement\":{\"ref\":\"player_view\",\"forward\":8},\"plan\":{\"intent\":\"build_cylinder\",\"targetWorld\":\"world\",\"targetRegion\":{\"world\":\"world\",\"min\":{\"x\":-53,\"y\":113,\"z\":-19},\"max\":{\"x\":-49,\"y\":118,\"z\":-15}},\"assumptions\":[],\"passes\":[{\"name\":\"cylinder_pass\",\"goal\":\"Build a hollow glass cylinder at the target block.\",\"primitives\":[{\"type\":\"cylinder\",\"center\":{\"x\":-51,\"y\":114,\"z\":-17},\"radius\":3,\"height\":5,\"block\":\"minecraft:glass\",\"hollow\":true,\"axis\":\"y\"}]}],\"reply\":\"Here is your hollow glass cylinder!\",\"needsMoreInfo\":false}}"
+  ]
+}

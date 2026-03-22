@@ -68,6 +68,7 @@ Run these after TypeScript or planner changes:
 - `npm run build`
 - `npm test`
 - `npm run benchmark -- benchmark/scenarios/tower-plan.json` (optional — structural plan metrics via `src/benchmark/scorePlan.ts`)
+- Azure baseline replay fixtures: `benchmark/fixtures/azure-baseline/` + `benchmark/azure-baseline.md` (`src/services/ai/replayChatProvider.ts`; no network in `npm test`)
 
 Run this after plugin changes:
 
