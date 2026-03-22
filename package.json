@@ -9,6 +9,7 @@
     "start": "tsx src/index.ts",
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
+    "benchmark": "tsx src/benchmark/cli.ts",
     "test:agent": "vitest run --config vitest.agent.config.ts",
     "test:agent:watch": "vitest --config vitest.agent.config.ts",
     "plugin:build": "sh ./spigot-build/apache-maven-3.9.6/bin/mvn -Dmaven.repo.local=.m2/repository -f spigot-plugin/pom.xml package",

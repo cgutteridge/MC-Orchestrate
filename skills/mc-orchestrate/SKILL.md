@@ -67,6 +67,7 @@ Run these after TypeScript or planner changes:
 
 - `npm run build`
 - `npm test`
+- `npm run benchmark -- benchmark/scenarios/tower-plan.json` (optional — structural plan metrics via `src/benchmark/scorePlan.ts`)
 
 Run this after plugin changes:
 

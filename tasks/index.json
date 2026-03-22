@@ -28,15 +28,6 @@
       "notes": "Progress/status messaging, per-step failure surfacing, cancellation semantics. Coordinate with refinement-loop and undo design. Recommended after task 16 (Azure baseline) so messaging targets real failure modes — not a hard code dependency."
     },
     {
-      "id": 19,
-      "title": "Benchmark and Evaluation Harness",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "l",
-      "blockedBy": [],
-      "notes": "Repeatable scenario fixtures, automatic scoring for structural validity / terrain intrusion / palette diversity / budget. Use for baseline-vs-new comparisons (pairs well with task 16 but does not require 16 to be done first)."
-    },
-    {
       "id": 20,
       "title": "Bug: parseRequestedBlock silently ignores ids after the first",
       "status": "todo",
@@ -69,8 +60,8 @@
       "status": "todo",
       "priority": "medium",
       "complexity": "xl",
-      "blockedBy": [19],
-      "notes": "TerrainContextCard generator, terrain-adaptive compile transforms, placement mode expansion, primitive hardening. Terrain context now feeds into initial world scan for AI loop. Needs benchmark harness to validate quality gains (19). ON START: read tasks/phase-2-terrain-blending.md (specDocs.phase2) and expand its subtasks into individual index.json entries before beginning implementation."
+      "blockedBy": [],
+      "notes": "TerrainContextCard generator, terrain-adaptive compile transforms, placement mode expansion, primitive hardening. Terrain context now feeds into initial world scan for AI loop. Benchmark harness (task 19) provides scorePlan + golden JSON. ON START: read tasks/phase-2-terrain-blending.md (specDocs.phase2) and expand its subtasks into individual index.json entries before beginning implementation."
     },
     {
       "id": 24,
@@ -78,8 +69,8 @@
       "status": "todo",
       "priority": "medium",
       "complexity": "xl",
-      "blockedBy": [19, 23],
-      "notes": "Retrieval library, bounded refinement loop with DIG patches, transaction log, undo buffer, material variety quality gates. Gate behind benchmark outcomes and Phase 2 terrain stability. ON START: read tasks/phase-3-retrieval-refinement-undo.md (specDocs.phase3) and expand its subtasks into individual index.json entries before beginning implementation."
+      "blockedBy": [23],
+      "notes": "Retrieval library, bounded refinement loop with DIG patches, transaction log, undo buffer, material variety quality gates. Gate behind Phase 2 terrain stability. ON START: read tasks/phase-3-retrieval-refinement-undo.md (specDocs.phase3) and expand its subtasks into individual index.json entries before beginning implementation."
     },
     {
       "id": 25,

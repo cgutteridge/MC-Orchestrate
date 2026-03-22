@@ -1,0 +1,26 @@
+{
+  "intent": "build_tower",
+  "targetWorld": "world",
+  "targetRegion": {
+    "world": "world",
+    "min": { "x": -1, "y": 64, "z": -1 },
+    "max": { "x": 1, "y": 71, "z": 1 }
+  },
+  "assumptions": [],
+  "passes": [
+    {
+      "name": "tower_column",
+      "goal": "Build tower.",
+      "primitives": [
+        {
+          "type": "fill_cuboid",
+          "from": { "x": -1, "y": 64, "z": -1 },
+          "to": { "x": 1, "y": 71, "z": 1 },
+          "block": "minecraft:stone"
+        }
+      ]
+    }
+  ],
+  "reply": "Built.",
+  "needsMoreInfo": false
+}

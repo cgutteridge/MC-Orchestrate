@@ -2,6 +2,15 @@
   "_comment": "AGENT: completed tasks archive. Read via task-index-manager skill. Do not add active tasks here.",
   "tasks": [
     {
+      "id": 19,
+      "title": "Benchmark and Evaluation Harness",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "l",
+      "blockedBy": [],
+      "notes": "Completed 2026-03-22. src/benchmark/scorePlan.ts (scorePlan + PlanBenchmarkMetrics), npm run benchmark CLI, benchmark/scenarios/tower-plan.json, tests/benchmark/scorePlan.test.ts. Metrics: schema, estimatedBridgeOperations, palette diversity, target region volume. Terrain-intrusion scoring deferred (needs world samples)."
+    },
+    {
       "id": 1,
       "title": "Generic Material Follow-Up Fallback",
       "status": "done",
