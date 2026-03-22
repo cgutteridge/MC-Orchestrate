@@ -52,15 +52,14 @@ describe("validatePlanSafety", () => {
     expect(result).toContain("current world");
   });
 
-  it("rejects oversized regions", () => {
-    // arrange
+  it("rejects regions wider than 32 blocks", () => {
     const plan: Plan = {
       intent: "build_tower",
       targetWorld: "world",
       targetRegion: {
         world: "world",
         min: { x: 0, y: 64, z: 0 },
-        max: { x: 20, y: 100, z: 20 },
+        max: { x: 40, y: 110, z: 40 }, // 41 wide × 47 tall × 41 deep — over width limit
       },
       assumptions: [],
       passes: [],
@@ -68,16 +67,14 @@ describe("validatePlanSafety", () => {
       needsMoreInfo: false,
     };
 
-    // act
     const result = validatePlanSafety(request, plan);
 
-    // assert
     expect(result).toBeTruthy();
   });
 
   it("rejects a cylinder whose block count exceeds the per-request limit even when the declared region is small", () => {
     // The AI declares a 5×5×5 targetRegion (passes region checks) but produces
-    // a solid cylinder at radius=8, height=32 ≈ 6434 blocks — over the 2048 cap.
+    // a solid cylinder at radius=10, height=32 ≈ 10,053 blocks — over the 8192 cap.
     // This tests the primitive block-count guard that the bounding-box check misses.
     const plan: Plan = {
       intent: "build_tower",
@@ -91,12 +88,12 @@ describe("validatePlanSafety", () => {
       passes: [
         {
           name: "column",
-          goal: "Big solid cylinder.",
+          goal: "Oversized solid cylinder.",
           primitives: [
             {
               type: "cylinder",
               center: { x: 0, y: 64, z: 0 },
-              radius: 8,
+              radius: 10,
               height: 32,
               block: "minecraft:stone",
               hollow: false,

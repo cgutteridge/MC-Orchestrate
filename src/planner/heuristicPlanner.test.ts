@@ -317,7 +317,7 @@ describe("buildHeuristicPlan", () => {
     });
   });
 
-  it("clamps height delta to 8 when the player asks for more than 8 blocks taller", () => {
+  it("clamps height delta to 16 when the player asks for more than 16 blocks taller", () => {
     const previousPlan: Plan = {
       intent: "build_structure",
       targetWorld: "world",
@@ -351,10 +351,10 @@ describe("buildHeuristicPlan", () => {
     );
 
     expect(plan?.needsMoreInfo).toBe(false);
-    // Delta is capped at 8
+    // Delta is capped at 16
     expect(plan?.passes[0]?.primitives[0]).toMatchObject({
       from: { y: 71 },
-      to: { y: 78 },
+      to: { y: 86 },
     });
   });
 

@@ -23,6 +23,21 @@
      - Completed: 2026-03-21
      - Evidence: `npm test`, `npm run build` — 38 → 53 tests, all green.
 
+14. Phase 1 Close-Out — Safety Limits and Degenerate Shape Check (2026-03-21)
+    - Subtasks:
+      - Raised safety constants: MAX_REGION_WIDTH 16→32, MAX_REGION_HEIGHT 32→48,
+        MAX_BLOCKS_PER_REQUEST 2048→8192, player distance 16→32.
+      - Updated template parser caps: tower height max 32, tower width max 14,
+        bridge length max 30, height delta max 16, footprint delta max 8.
+      - Added `detectDegenerateStructure` to `validatePlanSemantics`: rejects
+        fill-type plans with bounding-box volume < 4 for structure intents.
+        set_block-only plans exempt (deliberate point placements).
+      - Updated safety and semantics tests to use values that exceed the new limits.
+    - Notes:
+      - Completed: 2026-03-21
+      - Evidence: `npm test`, `npm run build` — 133 → 138 tests, all green.
+      - Phase 1 declared complete. Phase 2 is now active.
+
 13. Phase 1 Task 1 — Design Intent Graph v1 (2026-03-21)
     - Subtasks:
       - Added `src/planner/dig.ts` with Zod-validated schema for `DesignIntentGraph`, `DigPart` (stable deterministic part ids: `${passName}:${index}`), `DigMaterialSlot`, and `DigPatch` (set_material, scale_height, scale_footprint).

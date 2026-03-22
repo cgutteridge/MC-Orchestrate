@@ -44,12 +44,12 @@ function parseTowerRequest(
     return undefined;
   }
 
-  const height = Math.max(3, Math.min(16, parseRequestedHeight(request.message) ?? 8));
+  const height = Math.max(3, Math.min(32, parseRequestedHeight(request.message) ?? 8));
   const hollow = message.includes("hollow");
 
   const widthMatch = message.match(/(\d+)\s*(?:wide|by\s*\d+|block\s*wide)/);
   const width = widthMatch
-    ? Math.max(2, Math.min(8, Number.parseInt(widthMatch[1], 10)))
+    ? Math.max(2, Math.min(14, Number.parseInt(widthMatch[1], 10)))
     : 3;
 
   const block = parseRequestedBlock(request.message) ?? "material:wall";
@@ -162,7 +162,7 @@ function parseBridgeRequest(
     return undefined;
   }
 
-  const length = Math.max(4, Math.min(16, parseRequestedHeight(request.message) ?? 8));
+  const length = Math.max(4, Math.min(30, parseRequestedHeight(request.message) ?? 12));
   const railings = !/(no\s+rail|no\s+fence)/.test(message);
   const walkBlock = parseRequestedBlock(request.message) ?? "material:floor";
   const railBlock = "material:detail";
@@ -542,7 +542,7 @@ function parseHeightDelta(message: string): number | undefined {
   if (!lowered.includes("taller") && !lowered.includes("higher")) {
     return undefined;
   }
-  return parseDelta(lowered, 1, 8);
+  return parseDelta(lowered, 1, 16);
 }
 
 function parseFootprintDelta(message: string): number | undefined {
@@ -550,7 +550,7 @@ function parseFootprintDelta(message: string): number | undefined {
   if (!lowered.includes("bigger") && !lowered.includes("larger")) {
     return undefined;
   }
-  return parseDelta(lowered, 1, 4);
+  return parseDelta(lowered, 1, 8);
 }
 
 function parseDelta(lowered: string, min: number, max: number): number | undefined {

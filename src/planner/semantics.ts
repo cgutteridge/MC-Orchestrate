@@ -1,17 +1,86 @@
-import { normalizeCuboid } from "./requestContext.js";
+import { normalizeCuboid, normalizeRegion } from "./requestContext.js";
 import type { Plan, Point, Primitive } from "./schema.js";
 
 /**
- * Validates that the plan's pass ordering is semantically coherent.
+ * Validates that the plan is semantically coherent: pass ordering is valid and
+ * the structure has non-degenerate dimensions for its stated intent.
  *
  * Returns a player-facing rejection reason when a violation is found, or
  * `undefined` when the plan is safe to compile and execute.
  */
 export function validatePlanSemantics(plan: Plan): string | undefined {
-  const violation = detectPassOrderViolation(plan);
-  if (violation) {
-    return violation;
+  const orderViolation = detectPassOrderViolation(plan);
+  if (orderViolation) {
+    return orderViolation;
   }
+
+  const degenerateViolation = detectDegenerateStructure(plan);
+  if (degenerateViolation) {
+    return degenerateViolation;
+  }
+
+  return undefined;
+}
+
+/**
+ * Intents that imply a meaningful 3-D structure. Plans with these intents must
+ * occupy at least a minimum bounding box or they are considered degenerate.
+ */
+const STRUCTURE_INTENTS = new Set([
+  "build_tower",
+  "build_house",
+  "build_cottage",
+  "build_barn",
+  "build_bridge",
+  "build_gazebo",
+]);
+
+/**
+ * Minimum bounding-box volume for a structure to be considered non-degenerate.
+ * 1×1×1 = 1 and 1×1×2 = 2 are clearly wrong for any structure intent;
+ * 1×5×1 = 5 is a valid tower column and should pass.
+ */
+const MIN_STRUCTURE_VOLUME = 4;
+
+/**
+ * Detects plans where the bounding box is so small that the AI almost certainly
+ * produced bad coordinates (e.g. `from == to` for a house).
+ *
+ * The check is intentionally lenient — it only catches single-block or
+ * two-block regions, not narrow-but-legitimate shapes like a 1-wide tower.
+ * `set_block`-only plans are exempt because they are deliberate point placements.
+ */
+function detectDegenerateStructure(plan: Plan): string | undefined {
+  if (!STRUCTURE_INTENTS.has(plan.intent)) {
+    return undefined;
+  }
+  if (plan.needsMoreInfo || plan.passes.length === 0) {
+    return undefined;
+  }
+
+  // set_block-only plans are deliberate point placements, not structures.
+  const hasFillPrimitive = plan.passes.some((pass) =>
+    pass.primitives.some(
+      (p) =>
+        p.type === "fill_cuboid" ||
+        p.type === "hollow_cuboid" ||
+        p.type === "cylinder",
+    ),
+  );
+  if (!hasFillPrimitive) {
+    return undefined;
+  }
+
+  const region = normalizeRegion(plan.targetRegion);
+  const dx = region.max.x - region.min.x + 1;
+  const dy = region.max.y - region.min.y + 1;
+  const dz = region.max.z - region.min.z + 1;
+  const volume = dx * dy * dz;
+
+  if (volume < MIN_STRUCTURE_VOLUME) {
+    return "That plan would produce a structure too small to be meaningful. Please specify dimensions or try again.";
+  }
+
   return undefined;
 }
 

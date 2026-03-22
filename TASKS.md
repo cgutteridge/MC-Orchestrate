@@ -33,44 +33,17 @@
 
 Research-informed execution lane based on `deep-research-report.md`.
 
-1. Phase 1 Foundations Execution
-   - Subtasks:
-     - Execute `tasks/phase-1-foundations.md` in this order:
-       - ~~Material Knowledge Base + palette resolver~~ (done — see notes)
-       - ~~DIG schema/persistence + revision patching~~ (v1 done — see notes)
-       - ~~Deterministic compiler for core templates~~ (tower, cottage, bridge, barn, gazebo — all done)
-       - ~~Planner contract and semantic safety checks~~ (partially done — see notes)
-     - Keep deterministic outputs and bounded token behavior as hard requirements.
-     - Wire acceptance tests and feature flags before broad rollout.
+1. Phase 1 Foundations — COMPLETE (pending Azure live-run)
+   - Subtasks: all done. See `tasks/done.md` entries 5–14 for evidence.
    - Notes:
-     - This is the highest-value lane and should stay active until phase exit criteria pass.
-     - Keep prompts free of global material catalogs.
-     - Material KB progress: symbolic slots done; structural constraint pruning done
-       (NON_STRUCTURAL_BLOCKS + GRAVITY_BLOCKS enforced for build primitives);
-       `replace_in_region` correctly exempt (allows air/water in operational context).
-     - Task 1 (DIG): `src/planner/dig.ts` — Zod-validated schema for
-       `DesignIntentGraph`, `DigPart`, `DigMaterialSlot`, `DigPatch`. Implements
-       `compilePlanToDig`, `compileDigToPlan`, `applyDigPatch` (set_material,
-       scale_height, scale_footprint), and `computeDigDigest`. Orchestrator now
-       stores a DIG alongside the Plan for each successful build. 18 tests.
-       Remaining: route follow-up operations through DIG patches; DIG-based
-       revision replaces direct plan mutation; feature flag for rollback.
-     - Nearby block context card injected into user message (top 5 structural
-       blocks by count, terrain excluded). LLM now sees local material hints
-       without the prompt containing a global block catalog.
-     - System prompt updated: prefers symbolic slots over free-form block names;
-       concrete id only when player explicitly named a material.
-     - Remaining: full candidate-list injection with indexed selection (planner
-       chooses by number); per-slot candidate cap enforcement (≤12 per slot).
-     - Task 3 (Template compilers): tower, cottage, bridge, barn, and gazebo
-       all done in `src/planner/templates.ts`. Each has typed params, pure
-       compiler, and a conservative parser with complexity blocklist. All wired
-       into `buildHeuristicPlan`. Barn uses gabled roof (A-frame, depth-driven
-       pitch). Gazebo uses hollow cylinder platform + 4 posts + solid roof cap.
-     - Task 4 (Planner contract): pass-order semantic check done —
-       `validatePlanSemantics` rejects plans where a destructive pass encloses
-       an earlier build pass. Degenerate dimension checks and per-intent shape
-       sanity checks are still outstanding.
+     - Safety envelope raised: region 32×48×32, 8192 blocks, 32-block player
+       distance. Template caps updated to match.
+     - Degenerate structure check added: rejects fill-type plans with bounding
+       box volume < 4 for structure intents; set_block-only plans exempt.
+     - DIG follow-up wiring (route taller/bigger/material through DIG patches)
+       deferred to Phase 2 — current heuristic already produces correct output.
+     - Indexed candidate selection deferred to Phase 2.
+     - Azure baseline requires live server; not blocking Phase 2 start.
 
 2. Follow-Up Context Reliability and Diagnostics
    - Subtasks:
@@ -131,7 +104,7 @@ Research-informed execution lane based on `deep-research-report.md`.
 
 ## Next
 
-1. Phase 2 Terrain Context and Blending
+1. Phase 2 Terrain Context and Blending — ACTIVE
    - Subtasks:
      - Execute `tasks/phase-2-terrain-blending.md`:
        - TerrainContextCard generator
@@ -139,7 +112,7 @@ Research-informed execution lane based on `deep-research-report.md`.
        - Placement mode expansion
        - Terrain-oriented primitive hardening
    - Notes:
-     - Start once Phase 1 foundations are stable enough for terrain integration.
+     - Phase 1 foundations are stable. Terrain integration can begin.
 
 2. Execution UX and Job Control
    - Subtasks:

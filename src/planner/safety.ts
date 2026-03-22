@@ -2,9 +2,10 @@ import type { ChatCommandRequest } from "../types/plugin.js";
 import { normalizeCuboid, normalizeRegion } from "./requestContext.js";
 import type { Plan, Primitive } from "./schema.js";
 
-const MAX_BLOCKS_PER_REQUEST = 2048;
-const MAX_REGION_WIDTH = 16;
-const MAX_REGION_HEIGHT = 32;
+const MAX_BLOCKS_PER_REQUEST = 8192;
+const MAX_REGION_WIDTH = 32;
+const MAX_REGION_HEIGHT = 48;
+const MAX_PLAYER_DISTANCE = 32;
 
 /**
  * Enforces the v1 safety envelope for size, distance, and world locality.
@@ -52,8 +53,8 @@ export function validatePlanSafety(
     Math.round((targetRegion.min.z + targetRegion.max.z) / 2) -
       Math.round(request.player.position.z),
   );
-  if (dx > 16 || dz > 16) {
-    return "That target is too far from you for v1.";
+  if (dx > MAX_PLAYER_DISTANCE || dz > MAX_PLAYER_DISTANCE) {
+    return "That target is too far from you.";
   }
 
   return undefined;

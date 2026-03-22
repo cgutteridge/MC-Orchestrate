@@ -214,3 +214,88 @@ describe("validatePlanSemantics", () => {
     expect(validatePlanSemantics(plan)).toBeUndefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Degenerate structure checks
+// ---------------------------------------------------------------------------
+
+describe("validatePlanSemantics — degenerate structure", () => {
+  function makeBuildPlan(intent: string, min: { x: number; y: number; z: number }, max: { x: number; y: number; z: number }): Plan {
+    return {
+      intent,
+      targetWorld: "world",
+      targetRegion: { world: "world", min, max },
+      assumptions: [],
+      passes: [
+        {
+          name: "body",
+          goal: "Build.",
+          primitives: [
+            {
+              type: "fill_cuboid",
+              from: min,
+              to: max,
+              block: "minecraft:stone",
+            },
+          ],
+        },
+      ],
+      reply: "Building.",
+      needsMoreInfo: false,
+    };
+  }
+
+  it("rejects a structure plan whose bounding box is a single block (from == to)", () => {
+    const plan = makeBuildPlan(
+      "build_house",
+      { x: 0, y: 64, z: 0 },
+      { x: 0, y: 64, z: 0 }, // 1×1×1 — clearly degenerate AI output
+    );
+
+    expect(validatePlanSemantics(plan)).toContain("too small");
+  });
+
+  it("passes a 1-wide tower column because narrow structures are valid", () => {
+    const plan = makeBuildPlan(
+      "build_tower",
+      { x: 0, y: 64, z: 0 },
+      { x: 0, y: 72, z: 0 }, // 1×9×1 — narrow but legitimate tower column
+    );
+
+    expect(validatePlanSemantics(plan)).toBeUndefined();
+  });
+
+  it("passes a properly-sized structure plan", () => {
+    const plan = makeBuildPlan(
+      "build_tower",
+      { x: -1, y: 64, z: -1 },
+      { x: 1, y: 72, z: 1 }, // 3×9×3 — clearly valid
+    );
+
+    expect(validatePlanSemantics(plan)).toBeUndefined();
+  });
+
+  it("does not apply degenerate check to non-structure intents", () => {
+    const plan = makeBuildPlan(
+      "remove_tree",
+      { x: 0, y: 64, z: 0 },
+      { x: 0, y: 64, z: 0 }, // 1×1×1 — degenerate but intent is not a structure
+    );
+
+    expect(validatePlanSemantics(plan)).toBeUndefined();
+  });
+
+  it("does not apply degenerate check to needsMoreInfo plans", () => {
+    const plan: Plan = {
+      intent: "build_tower",
+      targetWorld: "world",
+      targetRegion: { world: "world", min: { x: 0, y: 64, z: 0 }, max: { x: 0, y: 64, z: 0 } },
+      assumptions: [],
+      passes: [],
+      reply: "Tell me more.",
+      needsMoreInfo: true,
+    };
+
+    expect(validatePlanSemantics(plan)).toBeUndefined();
+  });
+});
