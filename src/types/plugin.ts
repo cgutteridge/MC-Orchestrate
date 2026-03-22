@@ -44,6 +44,19 @@ export type ServerContext = {
   motd?: string;
 };
 
+/**
+ * Bounding box of the initial block scan sent with every plugin request.
+ * Allows the AI to know the spatial extent of the world data it received.
+ */
+export type InitialScanRegion = {
+  minX: number;
+  minY: number;
+  minZ: number;
+  maxX: number;
+  maxY: number;
+  maxZ: number;
+};
+
 export type ChatCommandRequest = {
   requestId: string;
   player: PlayerSnapshot;
@@ -51,6 +64,8 @@ export type ChatCommandRequest = {
   recentMessages: string[];
   localContext: LocalContext;
   serverContext: ServerContext;
+  /** Bounding box of the expanded block scan included in `localContext.nearbyBlocks`. */
+  initialScanRegion?: InitialScanRegion;
 };
 
 export type ChatCommandResponse = {

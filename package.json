@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "dotenv": "^16.4.5",
+    "prismarine-chunk": "^1.39.0",
     "prismarine-nbt": "^2.7.0",
     "zod": "^3.23.8"
   },

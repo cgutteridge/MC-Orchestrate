@@ -1,11 +1,25 @@
 import { readFile, readdir } from "node:fs/promises";
+import { inflateSync, gunzipSync } from "node:zlib";
 import path from "node:path";
 import { parse } from "prismarine-nbt";
+import type { Region } from "../planner/schema.js";
+import type { BlockSample } from "../types/plugin.js";
 
 type NbtSummary = Record<string, unknown>;
 
+/** Maximum number of blocks returned by a single region scan. */
+const MAX_SCAN_BLOCKS = 4096;
+
+/** Block names treated as empty space in scan results. */
+const AIR_BLOCKS = new Set([
+  "minecraft:air",
+  "minecraft:cave_air",
+  "minecraft:void_air",
+]);
+
 /**
- * Provides read-only access to world metadata and region listings on disk.
+ * Provides read-only access to world metadata, region listings, and block data
+ * from the local Minecraft server directory.
  */
 export class WorldReader {
   constructor(private readonly minecraftDir: string) {}
@@ -43,7 +57,393 @@ export class WorldReader {
       return [];
     }
   }
+
+  /**
+   * Reads non-air blocks within the given region from Minecraft world files on
+   * disk. Parses `.mca` Anvil region files using the 1.18+ chunk NBT format
+   * (palette-based block states). Returns `undefined` on any I/O or parse
+   * error so callers can fail gracefully without disrupting the design loop.
+   *
+   * COMPATIBILITY: Designed for Minecraft 1.18+. The 1.21.x chunk NBT layout
+   * uses the same palette format. If parsing fails for any reason the method
+   * returns `undefined` rather than throwing.
+   */
+  async readRegionBlocks(
+    region: Region,
+    worldName = "world",
+  ): Promise<BlockSample[] | undefined> {
+    try {
+      return await readBlocksFromRegion(
+        path.join(this.minecraftDir, worldName, "region"),
+        region,
+      );
+    } catch {
+      return undefined;
+    }
+  }
 }
+
+// ---------------------------------------------------------------------------
+// Region file (Anvil .mca) parsing
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns all non-air BlockSamples within `region` by reading the relevant
+ * `.mca` region files. Throws on unrecoverable errors; the public API wraps
+ * in try/catch.
+ */
+async function readBlocksFromRegion(
+  regionDir: string,
+  region: Region,
+): Promise<BlockSample[]> {
+  const { min, max } = region;
+
+  // Determine which 16-block-wide chunk columns intersect the region.
+  const chunkMinX = Math.floor(min.x / 16);
+  const chunkMinZ = Math.floor(min.z / 16);
+  const chunkMaxX = Math.floor(max.x / 16);
+  const chunkMaxZ = Math.floor(max.z / 16);
+
+  // Group chunk columns by the .mca file that contains them (32×32 chunks).
+  type ChunkCoord = { cx: number; cz: number };
+  const regionChunks = new Map<string, ChunkCoord[]>();
+
+  for (let cx = chunkMinX; cx <= chunkMaxX; cx++) {
+    for (let cz = chunkMinZ; cz <= chunkMaxZ; cz++) {
+      const rx = Math.floor(cx / 32);
+      const rz = Math.floor(cz / 32);
+      const filename = `r.${rx}.${rz}.mca`;
+      const coords = regionChunks.get(filename) ?? [];
+      coords.push({ cx, cz });
+      regionChunks.set(filename, coords);
+    }
+  }
+
+  const results: BlockSample[] = [];
+
+  for (const [filename, chunks] of regionChunks) {
+    if (results.length >= MAX_SCAN_BLOCKS) {
+      break;
+    }
+
+    let regionData: Buffer;
+    try {
+      regionData = await readFile(path.join(regionDir, filename));
+    } catch {
+      // Region file doesn't exist yet (ungenerated area) — skip silently.
+      continue;
+    }
+
+    for (const { cx, cz } of chunks) {
+      if (results.length >= MAX_SCAN_BLOCKS) {
+        break;
+      }
+      const chunkBlocks = await extractChunkBlocks(regionData, cx, cz, region);
+      if (chunkBlocks) {
+        results.push(...chunkBlocks);
+      }
+    }
+  }
+
+  return results.slice(0, MAX_SCAN_BLOCKS);
+}
+
+/**
+ * Reads one chunk column from a loaded region buffer and returns its
+ * non-air BlockSamples within the given region bounds. Returns `undefined`
+ * when the chunk is ungenerated or cannot be parsed.
+ */
+async function extractChunkBlocks(
+  regionData: Buffer,
+  cx: number,
+  cz: number,
+  region: Region,
+): Promise<BlockSample[] | undefined> {
+  try {
+    // Anvil header: 1024 entries of 4 bytes each.
+    // Entry layout: 3-byte sector offset (big-endian) + 1-byte sector count.
+    const localCx = ((cx % 32) + 32) % 32;
+    const localCz = ((cz % 32) + 32) % 32;
+    const headerOffset = (localCx + localCz * 32) * 4;
+
+    if (headerOffset + 4 > regionData.length) {
+      return undefined;
+    }
+
+    const sectorOffset =
+      (regionData[headerOffset]! << 16) |
+      (regionData[headerOffset + 1]! << 8) |
+      regionData[headerOffset + 2]!;
+
+    if (sectorOffset === 0) {
+      // Chunk has not been generated.
+      return undefined;
+    }
+
+    const dataStart = sectorOffset * 4096;
+    if (dataStart + 5 > regionData.length) {
+      return undefined;
+    }
+
+    // Chunk data: 4-byte length (big-endian) + 1-byte compression type.
+    const dataLength = regionData.readUInt32BE(dataStart);
+    const compressionType = regionData[dataStart + 4]!;
+    const compressedData = regionData.subarray(
+      dataStart + 5,
+      dataStart + 4 + dataLength,
+    );
+
+    let rawNbt: Buffer;
+    if (compressionType === 1) {
+      rawNbt = gunzipSync(compressedData);
+    } else if (compressionType === 2) {
+      rawNbt = inflateSync(compressedData);
+    } else if (compressionType === 3) {
+      rawNbt = Buffer.from(compressedData);
+    } else {
+      // Unsupported compression format (e.g. LZ4 = type 4) — skip this chunk.
+      return undefined;
+    }
+
+    return await parseChunkNbtAndExtract(rawNbt, cx, cz, region);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Parses raw (already decompressed) chunk NBT bytes and extracts BlockSamples
+ * within the region bounds. Supports the 1.18+ `sections[].block_states`
+ * format with palette and packed long-array block data.
+ */
+async function parseChunkNbtAndExtract(
+  rawNbt: Buffer,
+  cx: number,
+  cz: number,
+  region: Region,
+): Promise<BlockSample[]> {
+  const parsed = await parse(rawNbt);
+
+  // prismarine-nbt wraps the root compound under an empty-string key.
+  const rawRoot = parsed.parsed.value as Record<string, unknown>;
+  const root = isRecord(rawRoot[""])
+    ? (rawRoot[""] as Record<string, unknown>)
+    : rawRoot;
+
+  // 1.18+ format: `sections` is at the top level.
+  // Pre-1.18 format: data lives under a `Level` key.
+  const chunkData = Array.isArray(root["sections"])
+    ? root
+    : isRecord(root["Level"])
+      ? (root["Level"] as Record<string, unknown>)
+      : root;
+
+  const sections: unknown[] = Array.isArray(chunkData["sections"])
+    ? chunkData["sections"]
+    : Array.isArray(chunkData["Sections"])
+      ? chunkData["Sections"]
+      : [];
+
+  const chunkWorldX = cx * 16;
+  const chunkWorldZ = cz * 16;
+  const { min, max } = region;
+  const results: BlockSample[] = [];
+
+  for (const section of sections) {
+    if (!isRecord(section)) {
+      continue;
+    }
+
+    // Section Y index: each section covers 16 blocks vertically.
+    const sectionY = extractNbtInt(section["Y"] ?? section["y"]);
+    if (sectionY === undefined) {
+      continue;
+    }
+    const sectionMinY = sectionY * 16;
+    const sectionMaxY = sectionMinY + 15;
+
+    if (sectionMaxY < min.y || sectionMinY > max.y) {
+      continue;
+    }
+
+    // Block states container — either `block_states` (1.18+) or at section root (pre-1.18).
+    const blockStates: Record<string, unknown> = isRecord(section["block_states"])
+      ? (section["block_states"] as Record<string, unknown>)
+      : section;
+
+    const rawPalette: unknown[] = Array.isArray(blockStates["palette"])
+      ? blockStates["palette"]
+      : Array.isArray(blockStates["Palette"])
+        ? blockStates["Palette"]
+        : [];
+
+    const palette: string[] = rawPalette.map((entry) => {
+      if (!isRecord(entry)) {
+        return "minecraft:air";
+      }
+      const name = entry["Name"] ?? entry["name"];
+      return typeof name === "string" ? name : "minecraft:air";
+    });
+
+    if (palette.length === 0) {
+      continue;
+    }
+
+    // Single-entry palette: every block in this section is the same type.
+    if (palette.length === 1) {
+      const blockName = palette[0]!;
+      if (!AIR_BLOCKS.has(blockName)) {
+        emitSectionBlocks(blockName, chunkWorldX, sectionMinY, chunkWorldZ, min, max, results);
+      }
+      continue;
+    }
+
+    // Multi-entry palette: decode the packed long array.
+    const rawLongs = extractLongArray(blockStates["data"]);
+    if (!rawLongs || rawLongs.length === 0) {
+      continue;
+    }
+
+    const bitsPerEntry = Math.max(4, Math.ceil(Math.log2(palette.length)));
+    const indices = unpackLongArray(rawLongs, bitsPerEntry, 4096);
+
+    for (let localY = 0; localY < 16; localY++) {
+      const worldY = sectionMinY + localY;
+      if (worldY < min.y || worldY > max.y) {
+        continue;
+      }
+      for (let localZ = 0; localZ < 16; localZ++) {
+        const worldZ = chunkWorldZ + localZ;
+        if (worldZ < min.z || worldZ > max.z) {
+          continue;
+        }
+        for (let localX = 0; localX < 16; localX++) {
+          const worldX = chunkWorldX + localX;
+          if (worldX < min.x || worldX > max.x) {
+            continue;
+          }
+          // 1.18+ index ordering: Y*256 + Z*16 + X
+          const blockIndex = localY * 256 + localZ * 16 + localX;
+          const paletteIndex = indices[blockIndex] ?? 0;
+          const blockName = palette[paletteIndex] ?? "minecraft:air";
+          if (!AIR_BLOCKS.has(blockName)) {
+            results.push({ x: worldX, y: worldY, z: worldZ, type: blockName });
+          }
+        }
+      }
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Emits a BlockSample for every position in a 16×16×16 section that falls
+ * within the region bounds. Used when the palette has only one entry.
+ */
+function emitSectionBlocks(
+  blockName: string,
+  chunkWorldX: number,
+  sectionMinY: number,
+  chunkWorldZ: number,
+  min: { x: number; y: number; z: number },
+  max: { x: number; y: number; z: number },
+  results: BlockSample[],
+): void {
+  for (let localY = 0; localY < 16; localY++) {
+    const worldY = sectionMinY + localY;
+    if (worldY < min.y || worldY > max.y) {
+      continue;
+    }
+    for (let localZ = 0; localZ < 16; localZ++) {
+      const worldZ = chunkWorldZ + localZ;
+      if (worldZ < min.z || worldZ > max.z) {
+        continue;
+      }
+      for (let localX = 0; localX < 16; localX++) {
+        const worldX = chunkWorldX + localX;
+        if (worldX < min.x || worldX > max.x) {
+          continue;
+        }
+        results.push({ x: worldX, y: worldY, z: worldZ, type: blockName });
+      }
+    }
+  }
+}
+
+/**
+ * Unpacks a packed big-endian long array into palette indices. Uses the
+ * 1.16+ "no-spanning" format where entries never straddle long boundaries.
+ */
+function unpackLongArray(
+  longs: bigint[],
+  bitsPerEntry: number,
+  count: number,
+): number[] {
+  const mask = (1n << BigInt(bitsPerEntry)) - 1n;
+  const entriesPerLong = Math.floor(64 / bitsPerEntry);
+  const indices: number[] = new Array<number>(count).fill(0);
+
+  for (let i = 0; i < count; i++) {
+    const longIndex = Math.floor(i / entriesPerLong);
+    const bitOffset = BigInt((i % entriesPerLong) * bitsPerEntry);
+    if (longIndex < longs.length) {
+      indices[i] = Number((longs[longIndex]! >> bitOffset) & mask);
+    }
+  }
+
+  return indices;
+}
+
+/**
+ * Extracts a BigInt array from an NBT long-array value.
+ * prismarine-nbt represents `longArray` as `{ type: "longArray", value: ... }`.
+ */
+function extractLongArray(value: unknown): bigint[] | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const inner = value["value"];
+  if (!Array.isArray(inner)) {
+    return undefined;
+  }
+  try {
+    return (inner as (number | bigint)[]).map((v) => BigInt(v));
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Extracts an integer from an NBT numeric value.
+ * prismarine-nbt wraps primitive values as `{ type, value }` objects.
+ */
+function extractNbtInt(value: unknown): number | undefined {
+  if (typeof value === "number") {
+    return Math.trunc(value);
+  }
+  if (typeof value === "bigint") {
+    return Number(value);
+  }
+  if (isRecord(value)) {
+    const inner = value["value"];
+    if (typeof inner === "number") {
+      return Math.trunc(inner);
+    }
+    if (typeof inner === "bigint") {
+      return Number(inner);
+    }
+  }
+  return undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+// ---------------------------------------------------------------------------
+// Shared NBT summary helpers (existing functionality)
+// ---------------------------------------------------------------------------
 
 async function readNbtSummary(filePath: string): Promise<NbtSummary | undefined> {
   try {

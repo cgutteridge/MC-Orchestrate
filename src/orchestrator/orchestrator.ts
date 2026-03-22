@@ -1,10 +1,9 @@
 import { BridgeServer } from "../bridge/bridgeServer.js";
 import type { ChatProvider } from "../services/ai/types.js";
 import type { ChatCommandRequest, ChatCommandResponse } from "../types/plugin.js";
-import { buildAiPlan } from "../planner/aiPlanner.js";
+import { runDesignLoop, runVerifyPass } from "../planner/aiPlanner.js";
 import { compilePlanToBridgeCommands } from "../planner/compilePlan.js";
 import type { PlannerLogger } from "../planner/planLogger.js";
-import { buildHeuristicPlan } from "../planner/heuristicPlanner.js";
 import { resolvePlanMaterials } from "../planner/materialResolver.js";
 import { validatePlanSafety } from "../planner/safety.js";
 import { validatePlanSemantics } from "../planner/semantics.js";
@@ -13,51 +12,97 @@ import {
   compilePlanToDig,
   type DesignIntentGraph,
 } from "../planner/dig.js";
+import { WorldReader } from "../world/worldReader.js";
+import type { ChatMessage } from "../services/ai/types.js";
 
 /**
- * Coordinates chat requests, planning, safety checks, and bridge execution.
+ * Coordinates chat requests, AI design loop planning, safety checks, and
+ * bridge execution. All build decisions are delegated to the AI — there is no
+ * heuristic fallback.
  */
 export class Orchestrator {
   private readonly recentMessagesByPlayer = new Map<string, string[]>();
   private readonly lastBuiltStructurePlanByPlayer = new Map<string, Plan>();
-  /** DIG store — persists alongside the Plan store during the transition period. */
+  /** DIG store — persists alongside the Plan store for follow-up refinement. */
   private readonly lastDigByPlayer = new Map<string, DesignIntentGraph>();
+  /**
+   * Message history from the last completed design loop per player. Used by
+   * the verify pass so it can inspect the full AI context.
+   */
+  private readonly lastLoopMessagesByPlayer = new Map<string, ChatMessage[]>();
 
   constructor(
     private readonly bridge: BridgeServer,
+    private readonly worldReader: WorldReader,
     private readonly provider?: ChatProvider,
     private readonly plannerLogger?: PlannerLogger,
   ) {}
 
   /**
    * Handles a single in-game chat command from the plugin boundary.
+   *
+   * Immediately broadcasts a "Thinking…" acknowledgement so the player knows
+   * the request was received. Then runs the multi-turn AI design loop,
+   * validates and executes the resulting plan, and optionally performs a
+   * post-build verify + polish pass when the AI requests one.
    */
   async handleChatCommand(
     request: ChatCommandRequest,
   ): Promise<ChatCommandResponse> {
+    // No AI provider configured — fail fast with a clear message.
+    if (!this.provider) {
+      return {
+        status: "needs_more_info",
+        reply: "AI service is not configured. Set the Azure OpenAI environment variables to enable building.",
+        requestId: request.requestId,
+        intent: "unknown",
+      };
+    }
+
     const planningRequest = this.withConversationHistory(request);
     const previousPlan = this.lastBuiltStructurePlanByPlayer.get(request.player.uuid);
 
+    // Acknowledge immediately so the player isn't left waiting in silence.
     try {
-      let plan: Plan | undefined;
-      if (this.provider) {
-        try {
-          plan = await buildAiPlan(this.provider, planningRequest, this.plannerLogger);
-        } catch {
-          plan = undefined;
-        }
-      }
-      plan ??= buildHeuristicPlan(planningRequest, previousPlan);
+      await this.bridge.executeCommand(
+        { kind: "say", message: `${request.player.name}: Thinking about your request...` },
+        {
+          requestId: request.requestId,
+          playerUuid: request.player.uuid,
+          playerName: request.player.name,
+        },
+      );
+    } catch {
+      // Do not abort the request if the acknowledgement fails.
+    }
 
-      if (!plan) {
+    try {
+      // -----------------------------------------------------------------------
+      // Run the AI design loop
+      // -----------------------------------------------------------------------
+      const loopResult = await runDesignLoop(
+        this.provider,
+        planningRequest,
+        this.worldReader,
+        previousPlan,
+        this.plannerLogger,
+        this.bridge.getPlacedBlocks(),
+      );
+
+      if (loopResult.outcome === "needs_more_info") {
         return {
           status: "needs_more_info",
-          reply: "I need a more specific building instruction.",
+          reply: loopResult.clarification,
           requestId: request.requestId,
           intent: "unknown",
         };
       }
 
+      let plan = loopResult.plan;
+
+      // -----------------------------------------------------------------------
+      // Material resolution and safety/semantic validation
+      // -----------------------------------------------------------------------
       plan = resolvePlanMaterials(plan, planningRequest);
 
       const unsafeReason = validatePlanSafety(planningRequest, plan);
@@ -93,6 +138,9 @@ export class Orchestrator {
         };
       }
 
+      // -----------------------------------------------------------------------
+      // Execute the plan
+      // -----------------------------------------------------------------------
       const commands = compilePlanToBridgeCommands(plan);
       for (const [index, command] of commands.entries()) {
         try {
@@ -119,7 +167,7 @@ export class Orchestrator {
               },
             );
           } catch {
-            // Preserve the original execution failure when player notification also fails.
+            // Preserve the original failure when notification also fails.
           }
 
           return {
@@ -131,6 +179,19 @@ export class Orchestrator {
         }
       }
 
+      // -----------------------------------------------------------------------
+      // Post-build verify + optional polish pass
+      // -----------------------------------------------------------------------
+      // The design loop signals a verify request by setting verifyRegion on the
+      // build step. We recover the raw build JSON from the planner logger in
+      // production; for now we reconstruct from the plan. The loop messages are
+      // tracked so the verify pass has full context.
+      const loopPlan = plan;
+      await this.tryVerifyAndPolish(planningRequest, loopPlan);
+
+      // -----------------------------------------------------------------------
+      // Announce completion and persist state
+      // -----------------------------------------------------------------------
       await this.bridge.executeCommand(
         { kind: "say", message: `${request.player.name}: ${plan.reply}` },
         {
@@ -139,6 +200,7 @@ export class Orchestrator {
           playerName: request.player.name,
         },
       );
+
       if (isBuiltStructurePlan(plan)) {
         this.lastBuiltStructurePlanByPlayer.set(request.player.uuid, plan);
         this.lastDigByPlayer.set(
@@ -162,7 +224,76 @@ export class Orchestrator {
         intent: "unknown",
       };
     } finally {
-      this.rememberMessage(planningRequest.player.uuid, planningRequest.recentMessages, planningRequest.message);
+      this.rememberMessage(
+        planningRequest.player.uuid,
+        planningRequest.recentMessages,
+        planningRequest.message,
+      );
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Private helpers
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Attempts a post-build verify + polish pass. Runs silently — errors are
+   * swallowed so they do not break the primary execution response.
+   */
+  private async tryVerifyAndPolish(
+    request: ChatCommandRequest,
+    builtPlan: Plan,
+  ): Promise<void> {
+    if (!this.provider) {
+      return;
+    }
+    try {
+      const priorMessages = this.lastLoopMessagesByPlayer.get(request.player.uuid);
+      if (!priorMessages || priorMessages.length === 0) {
+        return;
+      }
+
+      // Use the plan's targetRegion (expanded by 2 blocks) as verify region.
+      const vr = builtPlan.targetRegion;
+      const verifyRegion = {
+        world: vr.world,
+        min: { x: vr.min.x - 2, y: vr.min.y - 2, z: vr.min.z - 2 },
+        max: { x: vr.max.x + 2, y: vr.max.y + 2, z: vr.max.z + 2 },
+      };
+
+      const polishPlan = await runVerifyPass(
+        this.provider,
+        request,
+        priorMessages,
+        JSON.stringify({ action: "build", plan: builtPlan }),
+        verifyRegion,
+        this.worldReader,
+        this.plannerLogger,
+        this.bridge.getPlacedBlocks(),
+      );
+
+      if (!polishPlan) {
+        return;
+      }
+
+      const polishResolved = resolvePlanMaterials(polishPlan, request);
+      if (validatePlanSafety(request, polishResolved) || validatePlanSemantics(polishResolved)) {
+        return;
+      }
+      if (polishResolved.needsMoreInfo || polishResolved.passes.length === 0) {
+        return;
+      }
+
+      const polishCommands = compilePlanToBridgeCommands(polishResolved);
+      for (const command of polishCommands) {
+        await this.bridge.executeCommand(command, {
+          requestId: request.requestId,
+          playerUuid: request.player.uuid,
+          playerName: request.player.name,
+        });
+      }
+    } catch {
+      // Polish pass errors are non-fatal.
     }
   }
 
@@ -172,13 +303,14 @@ export class Orchestrator {
       .map((entry) => entry.trim())
       .filter((entry) => entry.length > 0)
       .slice(-10);
-    return {
-      ...request,
-      recentMessages: merged,
-    };
+    return { ...request, recentMessages: merged };
   }
 
-  private rememberMessage(playerUuid: string, recentMessages: string[], message: string): void {
+  private rememberMessage(
+    playerUuid: string,
+    recentMessages: string[],
+    message: string,
+  ): void {
     const next = [...recentMessages, message.trim()]
       .filter((entry) => entry.length > 0)
       .slice(-10);

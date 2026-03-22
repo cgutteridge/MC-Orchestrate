@@ -31,7 +31,8 @@ final class JsonPayloadBuilder {
         appendField(json, "message", message).append(",");
         json.append("\"recentMessages\":").append(stringArrayJson(recentMessages)).append(",");
         json.append("\"localContext\":").append(localContextJson(player)).append(",");
-        json.append("\"serverContext\":").append(serverContextJson(player.getWorld()));
+        json.append("\"serverContext\":").append(serverContextJson(player.getWorld())).append(",");
+        json.append("\"initialScanRegion\":").append(initialScanRegionJson(player));
         json.append("}");
         return json.toString();
     }
@@ -85,6 +86,27 @@ final class JsonPayloadBuilder {
         return json.toString();
     }
 
+    /**
+     * Returns the bounding box of the expanded block scan so the AI knows the
+     * exact extent of the world data included in the initial payload.
+     */
+    private static String initialScanRegionJson(Player player) {
+        Location origin = player.getLocation();
+        int cx = origin.getBlockX();
+        int cy = origin.getBlockY();
+        int cz = origin.getBlockZ();
+        StringBuilder json = new StringBuilder();
+        json.append("{");
+        json.append("\"minX\":").append(cx - SCAN_RADIUS_H).append(",");
+        json.append("\"minY\":").append(cy - SCAN_RADIUS_DOWN).append(",");
+        json.append("\"minZ\":").append(cz - SCAN_RADIUS_H).append(",");
+        json.append("\"maxX\":").append(cx + SCAN_RADIUS_H).append(",");
+        json.append("\"maxY\":").append(cy + SCAN_RADIUS_UP).append(",");
+        json.append("\"maxZ\":").append(cz + SCAN_RADIUS_H);
+        json.append("}");
+        return json.toString();
+    }
+
     private static String serverContextJson(World world) {
         StringBuilder json = new StringBuilder();
         json.append("{");
@@ -96,21 +118,42 @@ final class JsonPayloadBuilder {
         return json.toString();
     }
 
+    /** Half-width of the expanded horizontal block scan (inclusive). 15×15 = ±7. */
+    private static final int SCAN_RADIUS_H = 7;
+    /** Blocks to scan downward from the player's feet. */
+    private static final int SCAN_RADIUS_DOWN = 2;
+    /** Blocks to scan upward from the player's feet. */
+    private static final int SCAN_RADIUS_UP = 5;
+    /** Maximum non-air blocks returned to cap payload size. */
+    private static final int SCAN_MAX_BLOCKS = 300;
+
     private static Block targetBlock(Player player) {
         RayTraceResult result = player.rayTraceBlocks(8.0);
         return result == null ? null : result.getHitBlock();
     }
 
+    /**
+     * Samples non-air blocks in a 15×8×15 region centred on the player.
+     * Air blocks are skipped to keep payload size manageable. The list is
+     * capped at {@value #SCAN_MAX_BLOCKS} entries processed in XZY order so
+     * ground-level blocks are prioritised over high-altitude ones.
+     */
     private static List<Block> sampleBlocks(Player player) {
         List<Block> blocks = new ArrayList<>();
         Location origin = player.getLocation();
-        for (int dx = -2; dx <= 2; dx++) {
-            for (int dy = -1; dy <= 2; dy++) {
-                for (int dz = -2; dz <= 2; dz++) {
-                    if (blocks.size() >= 40) {
-                        return blocks;
+        outer:
+        for (int dx = -SCAN_RADIUS_H; dx <= SCAN_RADIUS_H; dx++) {
+            for (int dz = -SCAN_RADIUS_H; dz <= SCAN_RADIUS_H; dz++) {
+                for (int dy = -SCAN_RADIUS_DOWN; dy <= SCAN_RADIUS_UP; dy++) {
+                    if (blocks.size() >= SCAN_MAX_BLOCKS) {
+                        break outer;
                     }
-                    blocks.add(origin.clone().add(dx, dy, dz).getBlock());
+                    Block block = origin.clone().add(dx, dy, dz).getBlock();
+                    if (block.getType() != org.bukkit.Material.AIR
+                            && block.getType() != org.bukkit.Material.CAVE_AIR
+                            && block.getType() != org.bukkit.Material.VOID_AIR) {
+                        blocks.add(block);
+                    }
                 }
             }
         }

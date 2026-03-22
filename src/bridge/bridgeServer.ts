@@ -83,6 +83,16 @@ export class BridgeServer {
   }
 
   /**
+   * Returns a read-only view of every block the bridge has placed this session,
+   * keyed by `"x y z"` coordinate string and valued by the block type string
+   * (e.g. `"minecraft:stone"`). Used by the design loop to provide the AI with
+   * a zero-I/O view of the region it just built for post-build verification.
+   */
+  getPlacedBlocks(): ReadonlyMap<string, string> {
+    return this.managedBlocks;
+  }
+
+  /**
    * Executes a validated bridge command and records it in the action log when context is provided.
    */
   async executeCommand(

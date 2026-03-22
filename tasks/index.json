@@ -1,0 +1,79 @@
+{
+  "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state.",
+  "doneRef": "tasks/done.json",
+  "specDocs": {
+    "phase1": "tasks/phase-1-foundations.md",
+    "phase2": "tasks/phase-2-terrain-blending.md",
+    "phase3": "tasks/phase-3-retrieval-refinement-undo.md",
+    "worldMutation": "tasks/world-mutation-path.md",
+    "openQuestions": "tasks/open-questions.md"
+  },
+  "tasks": [
+    {
+      "id": 16,
+      "title": "Azure Planner Path Baseline Validation",
+      "status": "doing",
+      "notes": "Run real Azure path with representative prompts; collect and replay provider traces; record fixtures for regression."
+    },
+    {
+      "id": 17,
+      "title": "World Scan — prismarine-chunk 1.21.x Compatibility",
+      "status": "todo",
+      "notes": "Test readRegionBlocks against local spigot-1.21.1.jar world files. If incompatible evaluate direct NBT parsing or plugin-side scan endpoint. Until verified, view requests outside initial payload return graceful scan-unavailable."
+    },
+    {
+      "id": 18,
+      "title": "Execution UX and Job Control",
+      "status": "todo",
+      "notes": "Progress/status messaging, per-step failure surfacing, cancellation semantics. Coordinate with refinement-loop and undo design."
+    },
+    {
+      "id": 19,
+      "title": "Benchmark and Evaluation Harness",
+      "status": "todo",
+      "notes": "Repeatable scenario fixtures, automatic scoring for structural validity / terrain intrusion / palette diversity / budget. Baseline-vs-new comparisons before enabling each major phase."
+    },
+    {
+      "id": 20,
+      "title": "Bug: parseRequestedBlock silently ignores ids after the first",
+      "status": "todo",
+      "notes": "Fix when touched. Returns only first matched minecraft: id; multi-block messages lose later ids. Document before expanding material resolution."
+    },
+    {
+      "id": 21,
+      "title": "Bug: managedBlocks unbounded cache in BridgeServer",
+      "status": "todo",
+      "notes": "Fix when touched. Never evicts. Fine for dev session; add max-size cap or session-scoped reset for long-running server."
+    },
+    {
+      "id": 22,
+      "title": "Bug: serverContextJson dimension format mismatch",
+      "status": "todo",
+      "notes": "Fix when touched. Plugin sends NORMAL/NETHER/THE_END; TS fixtures use minecraft:overworld. Align if dimension becomes meaningful."
+    },
+    {
+      "id": 23,
+      "title": "Phase 2 — Terrain Context and Blending",
+      "status": "todo",
+      "notes": "TerrainContextCard generator, terrain-adaptive compile transforms, placement mode expansion, primitive hardening. Terrain context now feeds into initial world scan for AI loop."
+    },
+    {
+      "id": 24,
+      "title": "Phase 3 — Retrieval, Refinement, and Undo",
+      "status": "todo",
+      "notes": "Retrieval library, bounded refinement loop with DIG patches, transaction log, undo buffer, material variety quality gates. Gate behind benchmark outcomes."
+    },
+    {
+      "id": 25,
+      "title": "Decorative and Biome Style Expansion",
+      "status": "todo",
+      "notes": "Richer detail passes, style presets, biome-aware material preferences, repair mode. Keep separate from correctness milestones."
+    },
+    {
+      "id": 26,
+      "title": "Nearby Build Preservation",
+      "status": "todo",
+      "notes": "Detect likely player-made nearby structures. Add avoidance/protection policies during planning and execution. Requires stable terrain/context."
+    }
+  ]
+}

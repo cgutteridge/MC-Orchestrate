@@ -1,0 +1,95 @@
+{
+  "_comment": "AGENT: completed tasks archive. Read via task-index-manager skill. Do not add active tasks here.",
+  "tasks": [
+    {
+      "id": 1,
+      "title": "Generic Material Follow-Up Fallback",
+      "status": "done",
+      "notes": "Completed 2026-03-21. commit 8922aec. Heuristic material restyle against last built structure."
+    },
+    {
+      "id": 2,
+      "title": "Generic Bigger Follow-Up Fallback",
+      "status": "done",
+      "notes": "Completed 2026-03-21. Heuristic footprint expansion using last built structure context."
+    },
+    {
+      "id": 3,
+      "title": "Follow-Up Structure Context Hardening",
+      "status": "done",
+      "notes": "Completed 2026-03-21. commit 8b3194d. taller/higher follow-ups use last built plan, not keyword heuristics."
+    },
+    {
+      "id": 4,
+      "title": "Material Slot Resolver v1",
+      "status": "done",
+      "notes": "Completed 2026-03-21. Symbolic slots material:wall/roof/floor/trim/detail/wood/stone/glass/wool with context-aware ranking."
+    },
+    {
+      "id": 5,
+      "title": "Code Review + Vibe-Coding Cleanup Pass",
+      "status": "done",
+      "notes": "Completed 2026-03-21. 38 → 53 tests. isWoodBlock fix, cylinder guard, escapeRegex extraction, {{ wall }} trim bug, createChatProvider config fix."
+    },
+    {
+      "id": 6,
+      "title": "Phase 1 — Follow-Up Pattern Expansion",
+      "status": "done",
+      "notes": "Completed 2026-03-21. 53 → 56 tests. 'with/as/using' material follow-ups, location query replies."
+    },
+    {
+      "id": 7,
+      "title": "Phase 1 — Material KB: Structural Constraint Pruning",
+      "status": "done",
+      "notes": "Completed 2026-03-21. 56 → 61 tests. NON_STRUCTURAL_BLOCKS and GRAVITY_BLOCKS filters in resolveBlockId."
+    },
+    {
+      "id": 8,
+      "title": "Phase 1 — Material KB: Prompt Context Card",
+      "status": "done",
+      "notes": "Completed 2026-03-21. 61 → 64 tests. buildNearbyContextSummary injected into user message; symbolic slot preference instruction."
+    },
+    {
+      "id": 9,
+      "title": "Phase 1 Task 4 — Pass-Order Semantic Guardrail",
+      "status": "done",
+      "notes": "Completed 2026-03-21. 64 → 72 tests. validatePlanSemantics with detectPassOrderViolation."
+    },
+    {
+      "id": 10,
+      "title": "Phase 1 Task 3 — Deterministic Template Compilers: Tower + Cottage",
+      "status": "done",
+      "notes": "Completed 2026-03-21. 72 → 91 tests. compileTowerTemplate, compileCottageTemplate, complexity blocklist."
+    },
+    {
+      "id": 11,
+      "title": "Phase 1 Task 3 — Deterministic Template Compiler: Bridge",
+      "status": "done",
+      "notes": "Completed 2026-03-21. 91 → 100 tests. compileBridgeTemplate with look-vector span axis."
+    },
+    {
+      "id": 12,
+      "title": "Phase 1 Task 3 — Deterministic Template Compilers: Barn + Gazebo",
+      "status": "done",
+      "notes": "Completed 2026-03-21. 100 → 115 tests. compileBarnTemplate (A-frame roof), compileGazeboTemplate (cylinder ring + posts)."
+    },
+    {
+      "id": 13,
+      "title": "Phase 1 Task 1 — Design Intent Graph v1",
+      "status": "done",
+      "notes": "Completed 2026-03-21. 115 → 133 tests. dig.ts with compilePlanToDig, compileDigToPlan, applyDigPatch, computeDigDigest."
+    },
+    {
+      "id": 14,
+      "title": "Phase 1 Close-Out — Safety Limits and Degenerate Shape Check",
+      "status": "done",
+      "notes": "Completed 2026-03-21. 133 → 138 tests. Raised safety envelopes, detectDegenerateStructure in validatePlanSemantics."
+    },
+    {
+      "id": 15,
+      "title": "AI Design Loop — Core Architecture (heuristic planner deletion)",
+      "status": "done",
+      "notes": "Completed 2026-03-22. 87 tests. Deleted heuristicPlanner.ts/templates.ts, runDesignLoop multi-turn loop, readRegionBlocks, getPlacedBlocks, expanded plugin scan 15x8x15, DesignStepSchema, immediate Thinking... response, no-provider early return. BUG-1 through BUG-7 (all heuristic-planner live-test defects: template parsers not firing, tower anchor off-by-one, second build bypassing templates, AI 2-wide structures, cylinder-for-tower, rectangular gazebo, narrow bridge) all superseded by this deletion — no individual fixes applied."
+    }
+  ]
+}
