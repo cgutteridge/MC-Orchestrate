@@ -5,12 +5,16 @@
  *
  * Requires AZURE_OPENAI_* (or whatever createChatProvider needs) in the environment.
  *
- * When the model returns JSON with `passes[0].layerMap`, prints that object
- * as formatted JSON. If only `primitives` are present (legacy / tests with
- * MCORCH_LAYER_MAP_ONLY=false), prints {@link formatPrimitivesAsLayerMapJson}.
+ * When the model returns `passes[0].layerMap`, prints each `layers[i]` string in
+ * order with a blank line between layers (newlines inside a string are preserved).
+ * If only `primitives` are present (legacy / MCORCH_LAYER_MAP_ONLY=false), expands
+ * to a layer map and prints the same way.
  */
 import { loadConfig } from "../src/config/env.js";
-import { formatPrimitivesAsLayerMapJson } from "../src/planner/primitivesToLayerMap.js";
+import type { LayerMapData } from "../src/planner/layerMap.js";
+import {
+  primitivesToLayerMapData,
+} from "../src/planner/primitivesToLayerMap.js";
 import { buildInitialMessages } from "../src/planner/prompt.js";
 import { createChatProvider } from "../src/services/ai/provider.js";
 import type { Primitive } from "../src/planner/schema.js";
@@ -19,6 +23,13 @@ import type { ChatCommandRequest } from "../src/types/plugin.js";
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+/**
+ * Each layer string in order (top Y → bottom Y), separated by a blank line.
+ */
+function formatLayerMapForDisplay(layerMap: LayerMapData): string {
+  return layerMap.layers.join("\n\n");
 }
 
 const message =
@@ -106,12 +117,15 @@ async function main(): Promise<void> {
     return;
   }
 
-  const layerMap = firstPass.layerMap;
-  if (isRecord(layerMap) && Array.isArray(layerMap.layers)) {
-    process.stdout.write(
-      "\n--- Layer map JSON (first pass, for debugging) ---\n",
-    );
-    process.stdout.write(JSON.stringify(layerMap, null, 2) + "\n");
+  const layerMapRaw = firstPass.layerMap;
+  if (isRecord(layerMapRaw) && Array.isArray(layerMapRaw.layers)) {
+    const lm: LayerMapData = {
+      layers: layerMapRaw.layers as string[],
+      palette: isRecord(layerMapRaw.palette)
+        ? (layerMapRaw.palette as Record<string, string>)
+        : {},
+    };
+    process.stdout.write("\n" + formatLayerMapForDisplay(lm) + "\n");
     return;
   }
 
@@ -123,12 +137,12 @@ async function main(): Promise<void> {
     return;
   }
 
-  process.stdout.write(
-    "\n--- Primitives as layer map JSON (first pass, for debugging) ---\n",
-  );
-  process.stdout.write(
-    formatPrimitivesAsLayerMapJson(primitives as Primitive[]) + "\n",
-  );
+  const expanded = primitivesToLayerMapData(primitives as Primitive[]);
+  if (!expanded.ok) {
+    process.stdout.write("\n" + expanded.error + "\n");
+    return;
+  }
+  process.stdout.write("\n" + formatLayerMapForDisplay(expanded.layerMap) + "\n");
 }
 
 main().catch((err) => {

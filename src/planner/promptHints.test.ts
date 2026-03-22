@@ -96,6 +96,12 @@ describe("collectPromptHints", () => {
     expect(hints.some((h) => h.includes("Moats and trenches"))).toBe(true);
   });
 
+  it("matches ship-related keywords from DEFAULT_PROMPT_HINTS", () => {
+    const r = minimalRequest({ message: "build a spruce ship" });
+    const hints = collectPromptHints(r);
+    expect(hints.some((h) => h.includes("Ships and boats"))).toBe(true);
+  });
+
   it("returns empty when nothing matches", () => {
     const r = minimalRequest({ message: "plain stone box" });
     expect(collectPromptHints(r, customHints)).toEqual([]);

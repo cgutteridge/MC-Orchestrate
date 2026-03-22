@@ -28,6 +28,11 @@ export const DEFAULT_PROMPT_HINTS: readonly PromptHint[] = [
     hint:
       "Battlements: model crenellations with alternating solid blocks and gaps (air or lower wall segments) along the wall top, not a solid slab unless the player asked for a flat roof only.",
   },
+  {
+    keywords: ["ship", "boat", "vessel", "galley", "hull", "sailboat", "schooner"],
+    hint:
+      "Ships and boats: never use a single horizontal slice — you need many `layers` (keel, hull sides rising toward the deck, then deck and superstructure). In **plan view** (looking down at each slice), the hull should read as a long narrow shape along one axis (bow toward one end), not a square blob; mirror left/right often helps. Use water or air around the hull in the grid so the outline is visible. Prefer planks, stairs, and stripped logs for wood ships.",
+  },
 ];
 
 /**
