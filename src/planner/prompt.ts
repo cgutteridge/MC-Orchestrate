@@ -321,6 +321,81 @@ const SYSTEM_PROMPT = [
   "Do not invent coordinates when asking for clarification.",
 ].join("\n");
 
+/**
+ * When `MCORCH_MINIMAL_INITIAL_PROMPT` is `true`/`1`/`yes`, {@link buildInitialMessages}
+ * uses a drastically shortened system and user prompt for debugging token count and latency.
+ * Output quality is not expected to match production; unset for real runs.
+ *
+ * @returns True when minimal prompt mode is enabled.
+ */
+export function isMinimalInitialPromptEnabled(): boolean {
+  const v = process.env.MCORCH_MINIMAL_INITIAL_PROMPT?.trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes";
+}
+
+/** Tiny plan example embedded in the minimal system prompt (not full {@link PLAN_SCHEMA_GUIDE}). */
+const MINIMAL_PLAN_EXAMPLE = {
+  intent: "build_example",
+  targetWorld: "world",
+  targetRegion: {
+    world: "world",
+    min: { x: 0, y: 64, z: 0 },
+    max: { x: 1, y: 65, z: 1 },
+  },
+  assumptions: [],
+  passes: [
+    {
+      name: "main",
+      goal: "…",
+      primitives: [],
+      layerMap: {
+        layers: ["SS", "SS"],
+        palette: { S: "minecraft:stone" },
+      },
+    },
+  ],
+  reply: "…",
+  needsMoreInfo: false,
+};
+
+/**
+ * Stripped-down first-turn messages (experimental). Omits placement card, hint blocks,
+ * conversation history formatting, and pretty-printed request JSON.
+ */
+function buildMinimalInitialMessages(request: ChatCommandRequest, lastPlan?: Plan): ChatMessage[] {
+  const planLine = JSON.stringify(MINIMAL_PLAN_EXAMPLE);
+  const systemContent = [
+    "Minecraft builder. Reply with exactly one JSON object. No markdown fences or prose outside JSON.",
+    "Either view_request: {\"action\":\"view_request\",\"region\":{\"world\":\"…\",\"min\":{x,y,z},\"max\":{x,y,z}},\"selfNotes\":\"…\"}",
+    "Or build: {\"action\":\"build\",\"plan\":Plan,\"placement\":{\"ref\":\"player_view\"|\"player_absolute\"|\"focus\"|\"last_build\",…offsets}}.",
+    "Plan fields: intent, targetWorld, targetRegion, assumptions, passes with layerMap only (primitives: []).",
+    "layerMap: layers top→bottom; rows = +Z, chars = +X; space = leave block unchanged; _ = air; ≤32×32 footprint, ≤48 layer strings.",
+    "Default placement when unsure: {ref:\"player_view\",forward:8}. Prefer BUILD over view_request when this message already includes scan context.",
+    `Example plan shape: ${planLine}`,
+  ].join("\n");
+
+  const userParts: string[] = [`Request: ${request.message}`];
+  if (lastPlan !== undefined) {
+    userParts.push(`Prior build: ${summarizeLastBuiltPlan(lastPlan)}`);
+  }
+  userParts.push(
+    `Context: ${JSON.stringify({
+      requestId: request.requestId,
+      world: request.player.world,
+      position: request.player.position,
+      message: request.message,
+      recentMessages: request.recentMessages,
+      nearbyBlocks: request.localContext.nearbyBlocks.slice(0, 24),
+      initialScanRegion: request.initialScanRegion,
+    })}`,
+  );
+
+  return [
+    { role: "system", content: systemContent },
+    { role: "user", content: userParts.join("\n\n") },
+  ];
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -332,10 +407,16 @@ const SYSTEM_PROMPT = [
  * from {@link collectPromptHints} when the request text (message + recentMessages)
  * matches configured keywords — see `src/planner/promptHints.ts`.
  *
+ * When {@link isMinimalInitialPromptEnabled} is true, uses {@link buildMinimalInitialMessages} instead.
+ *
  * @param request Current plugin request (used for placement card, history, and hint matching).
  * @param lastPlan Optional prior successful plan for follow-up turns.
  */
 export function buildInitialMessages(request: ChatCommandRequest, lastPlan?: Plan): ChatMessage[] {
+  if (isMinimalInitialPromptEnabled()) {
+    return buildMinimalInitialMessages(request, lastPlan);
+  }
+
   const parts: string[] = [
     "Design a Minecraft build for this player request.",
     buildPlacementCard(request),

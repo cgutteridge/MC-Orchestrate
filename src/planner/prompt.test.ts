@@ -30,6 +30,25 @@ const request: ChatCommandRequest = {
 };
 
 describe("buildInitialMessages", () => {
+  it("uses a short experimental prompt when MCORCH_MINIMAL_INITIAL_PROMPT is enabled", () => {
+    const prev = process.env.MCORCH_MINIMAL_INITIAL_PROMPT;
+    process.env.MCORCH_MINIMAL_INITIAL_PROMPT = "true";
+    try {
+      const messages = buildInitialMessages(request);
+      expect(messages[0]?.content.length).toBeLessThan(6000);
+      expect(messages[0]?.content).toContain("Minecraft builder");
+      expect(messages[0]?.content).toContain("Example plan shape:");
+      expect(messages[1]?.content).toContain("five by five");
+      expect(messages[1]?.content).not.toContain("PLACEMENT REFERENCE");
+    } finally {
+      if (prev === undefined) {
+        delete process.env.MCORCH_MINIMAL_INITIAL_PROMPT;
+      } else {
+        process.env.MCORCH_MINIMAL_INITIAL_PROMPT = prev;
+      }
+    }
+  });
+
   it("includes recent player prompts for clarification follow-ups", () => {
     const messages = buildInitialMessages(request);
 

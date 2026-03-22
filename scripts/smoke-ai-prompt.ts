@@ -5,6 +5,7 @@
  *
  * Requires AZURE_OPENAI_* (or whatever createChatProvider needs) in the environment.
  * If requests abort with a timeout, set AZURE_OPENAI_CHAT_TIMEOUT_MS (default 300000 ms).
+ * Set MCORCH_MINIMAL_INITIAL_PROMPT=true to use a tiny experimental prompt (debugging only).
  *
  * Prints the full system and user messages before calling the API. When the
  * model returns `passes[0].layerMap`, prints each `layers[i]` string in
