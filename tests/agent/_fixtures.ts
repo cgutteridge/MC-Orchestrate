@@ -53,22 +53,44 @@ export const worldReader = new WorldReader(
 // ---------------------------------------------------------------------------
 
 /**
- * Cardinal facing directions. Each maps to the correct Minecraft yaw and
- * normalised horizontal look vector so tests never have to derive them.
+ * All 8 compass-point facing directions. Each maps to the correct Minecraft
+ * yaw and a normalised horizontal look vector so tests never have to derive
+ * them manually.
  *
- * Minecraft yaw convention:
- *   0°  = south  (+z)
- *   90° = west   (−x)
- *   180°= north  (−z)
- *   270°= east   (+x)
+ * Minecraft yaw convention (pitch = 0):
+ *   lookVector.x = −sin(yaw°)
+ *   lookVector.z =  cos(yaw°)
+ *
+ *   0°  = south     (+z)
+ *   45° = southwest (−x, +z)
+ *   90° = west      (−x)
+ *   135°= northwest (−x, −z)
+ *   180°= north     (−z)
+ *   225°= northeast (+x, −z)
+ *   270°= east      (+x)
+ *   315°= southeast (+x, +z)
  */
-export type Facing = "north" | "south" | "east" | "west";
+export type Facing =
+  | "north"
+  | "northeast"
+  | "east"
+  | "southeast"
+  | "south"
+  | "southwest"
+  | "west"
+  | "northwest";
+
+const D = Math.SQRT1_2; // 1/√2 ≈ 0.707 — diagonal component
 
 const FACING: Record<Facing, { yaw: number; lookVector: { x: number; y: number; z: number } }> = {
-  south: { yaw: 0,   lookVector: { x:  0, y: 0, z:  1 } },
-  west:  { yaw: 90,  lookVector: { x: -1, y: 0, z:  0 } },
-  north: { yaw: 180, lookVector: { x:  0, y: 0, z: -1 } },
-  east:  { yaw: 270, lookVector: { x:  1, y: 0, z:  0 } },
+  south:     { yaw:   0, lookVector: { x:  0, y: 0, z:  1 } },
+  southwest: { yaw:  45, lookVector: { x: -D, y: 0, z:  D } },
+  west:      { yaw:  90, lookVector: { x: -1, y: 0, z:  0 } },
+  northwest: { yaw: 135, lookVector: { x: -D, y: 0, z: -D } },
+  north:     { yaw: 180, lookVector: { x:  0, y: 0, z: -1 } },
+  northeast: { yaw: 225, lookVector: { x:  D, y: 0, z: -D } },
+  east:      { yaw: 270, lookVector: { x:  1, y: 0, z:  0 } },
+  southeast: { yaw: 315, lookVector: { x:  D, y: 0, z:  D } },
 };
 
 /** Baseline player position — origin at y=64. */
