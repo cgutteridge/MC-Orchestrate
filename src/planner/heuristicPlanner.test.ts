@@ -110,8 +110,9 @@ describe("buildHeuristicPlan — template dispatch", () => {
     expect(lighthouse).toBeUndefined();
   });
 
-  it("does not use template compilers when following up on a previous plan", () => {
-    // If a previous plan exists, follow-up context takes priority over new template dispatch.
+  it("material follow-up with a previousPlan does not accidentally trigger a template compiler", () => {
+    // "use stone instead" contains no template keyword, so templates don't match;
+    // follow-up context applies the material restyle to the prior plan.
     const previousPlan: Plan = {
       intent: "build_tower",
       targetWorld: "world",

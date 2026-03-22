@@ -53,7 +53,15 @@ function parseTowerRequest(
     : 3;
 
   const block = parseRequestedBlock(request.message) ?? "material:wall";
-  const anchor = structureFootprintOrigin(request, width, width);
+  // structureFootprintOrigin returns the min corner of the footprint.
+  // compileTowerTemplate expects the bottom-centre block, so offset by half the width.
+  const footprintMin = structureFootprintOrigin(request, width, width);
+  const half = Math.floor(width / 2);
+  const anchor = {
+    x: footprintMin.x + half,
+    y: footprintMin.y,
+    z: footprintMin.z + half,
+  };
 
   return {
     world: request.player.world,
@@ -258,33 +266,33 @@ export function buildHeuristicPlan(
 ): Plan | undefined {
   const message = request.message.toLowerCase().trim();
 
-  // Template compilers — only run when there is no prior plan context to
-  // follow up on, so explicit follow-up phrases always take priority.
-  if (!previousPlan) {
-    const towerParams = parseTowerRequest(request);
-    if (towerParams) {
-      return PlanSchema.parse(compileTowerTemplate(towerParams));
-    }
+  // Template compilers run before follow-up checks. Follow-up phrases
+  // ("taller", "bigger", "use oak", etc.) never contain template keywords
+  // ("tower", "house", etc.) so there is no ambiguity. Templates must fire
+  // on every matching fresh-build request, regardless of session history.
+  const towerParams = parseTowerRequest(request);
+  if (towerParams) {
+    return PlanSchema.parse(compileTowerTemplate(towerParams));
+  }
 
-    const bridgeParams = parseBridgeRequest(request);
-    if (bridgeParams) {
-      return PlanSchema.parse(compileBridgeTemplate(bridgeParams));
-    }
+  const bridgeParams = parseBridgeRequest(request);
+  if (bridgeParams) {
+    return PlanSchema.parse(compileBridgeTemplate(bridgeParams));
+  }
 
-    const cottageParams = parseCottageRequest(request);
-    if (cottageParams) {
-      return PlanSchema.parse(compileCottageTemplate(cottageParams));
-    }
+  const cottageParams = parseCottageRequest(request);
+  if (cottageParams) {
+    return PlanSchema.parse(compileCottageTemplate(cottageParams));
+  }
 
-    const barnParams = parseBarnRequest(request);
-    if (barnParams) {
-      return PlanSchema.parse(compileBarnTemplate(barnParams));
-    }
+  const barnParams = parseBarnRequest(request);
+  if (barnParams) {
+    return PlanSchema.parse(compileBarnTemplate(barnParams));
+  }
 
-    const gazeboParams = parseGazeboRequest(request);
-    if (gazeboParams) {
-      return PlanSchema.parse(compileGazeboTemplate(gazeboParams));
-    }
+  const gazeboParams = parseGazeboRequest(request);
+  if (gazeboParams) {
+    return PlanSchema.parse(compileGazeboTemplate(gazeboParams));
   }
 
   const requestedBlock = parseRequestedBlock(message);

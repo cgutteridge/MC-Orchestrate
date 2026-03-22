@@ -40,7 +40,7 @@ describe("compileTowerTemplate", () => {
 
   it("computes correct bounding box for a 3×3×8 tower anchored at (0,64,0)", () => {
     const plan = compileTowerTemplate(base);
-    // width=3, half=1 → from x=-1 to x=1, z=-1 to z=1; y=64 to y=71
+    // anchor=(0,64,0) is the centre; width=3, half=1 → from x=-1 to x=1; y=64 to y=71
     expect(plan.targetRegion.min).toEqual({ x: -1, y: 64, z: -1 });
     expect(plan.targetRegion.max).toEqual({ x: 1, y: 71, z: 1 });
     expect(plan.passes[0]?.primitives[0]).toMatchObject({

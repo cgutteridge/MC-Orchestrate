@@ -130,6 +130,61 @@ Research-informed execution lane based on `deep-research-report.md`.
    - Notes:
      - Needed to validate deep-research recommendations objectively.
 
+## Known Bugs (confirmed from live test 2026-03-22)
+
+Each entry states: what should happen / what actually happened / log evidence / suspected cause.
+
+**BUG-1: Template parsers never fire if server not restarted after code change**
+- Should: "bot: build me a tower here" → heuristic tower template → 3×3×8 fill_cuboid, no AI call.
+- Actual: Every request today (07:27–07:38) appears in `ai-planner.jsonl` under `plan_validated`, confirming all went through the AI path. No fill_cuboid from a template was observed.
+- Evidence: req=786314fe "build_tower", req=9010f839 "build_gazebo", req=39a3eba6 "build_barn" all in AI planner log.
+- Cause: `tsx` compiles once at process startup. Running server must be restarted after code commits for templates to take effect.
+- Fix: Operational — always `npm start` (restart) after code changes. Add a startup banner that prints the git commit hash so the running version is visible.
+
+**BUG-2: Tower anchor uses footprint min-corner instead of centre — tower displaced by 1 block**
+- Should: Tower centred on the looked-at block.
+- Actual: `parseTowerRequest` calls `structureFootprintOrigin(request, width, width)` which returns the min corner, then passes it to `compileTowerTemplate` as `anchor` (documented as "bottom-centre"). The tower is shifted one block left and forward relative to the target.
+- Evidence: Code inspection — `structureFootprintOrigin` returns `{ x: centre.x - floor(w/2), z: centre.z - floor(w/2) }`. `compileTowerTemplate` then does `fromX = anchor.x - floor(w/2)`, further displacing the tower.
+- Fix: Change `parseTowerRequest` to pass the true centre: `const footprintMin = structureFootprintOrigin(request, width, width); const anchor = { x: footprintMin.x + Math.floor(width/2), y: footprintMin.y, z: footprintMin.z + Math.floor(width/2) };`
+
+**BUG-3: Second build request in same session bypasses templates and goes to AI**
+- Should: "bot: build me a barn here" → barn template every time.
+- Actual: Template parsers are gated on `!previousPlan`. After the first successful build sets `lastBuiltStructurePlanByPlayer`, every subsequent build request (even completely new structures) skips the template check and goes straight to AI.
+- Evidence: `buildHeuristicPlan` dispatch block has `if (!previousPlan) { ... templates ... }`. After any successful build, `previousPlan` is non-null for the rest of the session.
+- Fix: Template parsers should only be skipped for FOLLOW-UP phrasing (taller, bigger, material, location), not for fresh build requests. Restructure dispatch: check if the message is a follow-up first; if not, always try templates regardless of `previousPlan`.
+
+**BUG-4: AI produces 2-block-wide structures for house/barn/cottage instead of template dimensions**
+- Should: "bot: build me a house here" → cottage template → 7×7 hollow shell + roof.
+- Actual (AI path): req=bbb0463e "build_house" → 2×3×5 hollow_cuboid walls + flat roof (2 blocks wide). req=39a3eba6 "build_barn" → 5×4×5 box. req=c9f6a9da "build_cottage" → 3×3×5 box. req=681b91d4 "build_cottage" → 4×3×4 box.
+- Evidence: bridge-actions.jsonl: fill 2x3x5 stone_bricks, fill 2x1x5 (roof); fill 5x4x5, etc.
+- Cause: BUG-3 (templates bypassed after first build) + AI does not respect minimum footprint dimensions and generates coordinates within 2 blocks of the player position.
+- Fix: Fix BUG-3. For AI fallback, the degenerate structure check (volume < 4) catches the worst cases, but the AI generating 2-wide structures still passes.
+
+**BUG-5: AI generates cylinder primitive for "tower" instead of fill_cuboid column**
+- Should: Tower template produces a fill_cuboid (solid) or hollow_cuboid (hollow) column.
+- Actual (AI path): req=786314fe — fill 9×1×5 (stone_bricks base) + batchSet blocks=580 (cylinder, r≈4, h≈20) + fill 9×1×5 (oak_stairs roof). User reported: "only 5 blocks high, made a 2×7×3 stone blocks structure."
+- Evidence: bridge-actions.jsonl: batchSet blocks=580 for tower request.
+- Cause: BUG-1 (wrong server version) + AI interprets "tower" as cylindrical and uses the cylinder primitive.
+- Fix: Fix BUG-1 and BUG-3. Template towers never use cylinders.
+
+**BUG-6: AI gazebo is a rectangular box, not a cylinder ring + posts + cap**
+- Should: Gazebo template → hollow cylinder ring (ground) + 4 vertical posts + solid cylinder roof cap.
+- Actual (AI path): req=9010f839 "build_gazebo" → fill 4×1×9 (floor, material:floor) + hollow_cuboid 4×2×9 (walls, material:wall) + fill 4×1×9 (roof, material:roof). User reported: "filled stone cube with wood on bottom, wood steps on top, 4×9".
+- Evidence: bridge-actions.jsonl: fill 4x1x9 oak_planks + hollow + fill oak_stairs.
+- Cause: BUG-1 and BUG-3. AI does not know the gazebo template shape.
+- Fix: Fix BUG-1 and BUG-3. Gazebo template always produces cylinders.
+
+**BUG-7: Bridge template route — AI produces 2-wide flat span without proper railings**
+- Should: Bridge template → 3-wide walkway oriented along look direction + fill_cuboid fence railings.
+- Actual (AI path): req=a2c3d21f "build_bridge" → fill 2×1×5 stone_bricks + 4 set_block (roof material used as railing — incorrect slot). User reported: "still 2 wide, 2×5".
+- Evidence: bridge-actions.jsonl: fill 2x1x5 stone_bricks + setBlock oak_stairs (4 times).
+- Cause: BUG-1 and BUG-3. AI produces a narrow flat span; the `material:roof` slot is used for railings (wrong — should be `material:detail`).
+- Fix: Fix BUG-1 and BUG-3. Bridge template uses `material:detail` (fence-family) for railings, oriented by look vector.
+
+**BUG-8: Nearby material resolver correctly picks up environment (PASS with caveat)**
+- Should: Material slots resolve to blocks that match the player's surroundings.
+- Actual: User confirmed "worked — picked up on spruce deck and made it spruce." Material resolver correctly scored spruce_planks higher due to nearby blocks. No fix needed. Caveat: only works when the AI path is also used; template path resolves materials via `resolvePlanMaterials` after template compilation, which should also work.
+
 ## Known Small Defects (fix when touched)
 
 - `parseRequestedBlock` returns only the first matched `minecraft:` id in a
