@@ -1,6 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the task-index-manager skill before reading or writing any task state.",
   "doneRef": "tasks/done.json",
+  "nextTaskId": 31,
   "specDocs": {
     "phase1": "tasks/phase-1-foundations.md",
     "phase2": "tasks/phase-2-terrain-blending.md",
@@ -38,12 +39,12 @@
     },
     {
       "id": 23,
-      "title": "Phase 2 — Terrain Context and Blending",
-      "status": "todo",
+      "title": "Phase 2 — Terrain Context and Blending (milestone)",
+      "status": "blocked",
       "priority": "medium",
       "complexity": "xl",
-      "blockedBy": [],
-      "notes": "TerrainContextCard generator, terrain-adaptive compile transforms, placement mode expansion, primitive hardening. Terrain context now feeds into initial world scan for AI loop. Benchmark harness (task 19) provides scorePlan + golden JSON. ON START: read tasks/phase-2-terrain-blending.md (specDocs.phase2) and expand its subtasks into individual index.json entries before beginning implementation."
+      "blockedBy": [27, 28, 29, 30],
+      "notes": "Umbrella: complete when 27–30 are done; then move 23 and 27–30 to done.json. specDocs.phase2. Benchmark harness (task 19): scorePlan + golden JSON; expand terrain-intrusion scoring once terrain context exists."
     },
     {
       "id": 24,
@@ -71,6 +72,42 @@
       "complexity": "l",
       "blockedBy": [23],
       "notes": "Detect likely player-made nearby structures. Add avoidance/protection policies during planning and execution. Requires stable terrain/context (23)."
+    },
+    {
+      "id": 27,
+      "title": "Phase 2.1 — TerrainContextCard generator",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "l",
+      "blockedBy": [],
+      "notes": "Plugin terrain sampling (footprint + buffer), compact metrics (height/slope, top-block histogram, water proximity, biome mix), bounded payload + deterministic planner card text. terrain_context_enabled=false rollback. Tests: synthetic metrics, size cap, fallback. specDocs.phase2 Task 1."
+    },
+    {
+      "id": 28,
+      "title": "Phase 2.2 — Terrain-adaptive compile transforms",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "l",
+      "blockedBy": [],
+      "notes": "Cut/fill foundation (max cut depth), retaining wall, feathering ring, vegetation save/restore in blend ring where safe. terrain_blend=false rollback. Tests: max cut, region bounds, benchmark regressions. specDocs.phase2 Task 2."
+    },
+    {
+      "id": 29,
+      "title": "Phase 2.3 — Placement and anchoring mode expansion",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [],
+      "notes": "Surface / inset / underground / elevated modes; no-target fallback samples build area ahead of player; directives (under here, into hill, beneath house); stronger tree-removal targeting. Low-confidence → surface mode. Tests: mode classification, anchor regressions, tree types. specDocs.phase2 Task 3."
+    },
+    {
+      "id": 30,
+      "title": "Phase 2.4 — Primitive coverage for terrain-aware structures",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [28],
+      "notes": "Harden ramps, tunnels, roof helpers, planes; deterministic compile, pass-order safe, safety limits. Feature-flag individual helpers if needed. Tests: uneven fixtures, pass-order + validation. Depends on 2.2 transforms. specDocs.phase2 Task 4."
     }
   ]
 }
