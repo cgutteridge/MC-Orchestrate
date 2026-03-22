@@ -52,57 +52,76 @@ export const worldReader = new WorldReader(
 // Request factory
 // ---------------------------------------------------------------------------
 
-/** Baseline player snapshot — at the world origin, looking south (+z). */
-const BASE_REQUEST: ChatCommandRequest = {
-  requestId: "agent-test",
-  player: {
-    uuid: "agent-test-uuid",
-    name: "TestPlayer",
-    world: "world",
-    position: { x: 0, y: 64, z: 0 },
-    yaw: 0,       // south
-    pitch: 0,
-    lookVector: { x: 0, y: 0, z: 1 }, // south (+z)
-  },
-  message: "",
-  recentMessages: [],
-  localContext: {
-    nearbyBlocks: [],
-    nearbyEntities: [],
-    nearbyPlayers: [],
-  },
-  serverContext: {
-    timestamp: new Date().toISOString(),
-    dimension: "NORMAL",
-    onlinePlayerCount: 1,
-  },
-  initialScanRegion: {
-    minX: -7, minY: 61, minZ: -7,
-    maxX: 7,  maxY: 69, maxZ: 7,
-  },
+/**
+ * Cardinal facing directions. Each maps to the correct Minecraft yaw and
+ * normalised horizontal look vector so tests never have to derive them.
+ *
+ * Minecraft yaw convention:
+ *   0°  = south  (+z)
+ *   90° = west   (−x)
+ *   180°= north  (−z)
+ *   270°= east   (+x)
+ */
+export type Facing = "north" | "south" | "east" | "west";
+
+const FACING: Record<Facing, { yaw: number; lookVector: { x: number; y: number; z: number } }> = {
+  south: { yaw: 0,   lookVector: { x:  0, y: 0, z:  1 } },
+  west:  { yaw: 90,  lookVector: { x: -1, y: 0, z:  0 } },
+  north: { yaw: 180, lookVector: { x:  0, y: 0, z: -1 } },
+  east:  { yaw: 270, lookVector: { x:  1, y: 0, z:  0 } },
 };
 
+/** Baseline player position — origin at y=64. */
+const BASE_POSITION = { x: 0, y: 64, z: 0 };
+
 /**
- * Builds a `ChatCommandRequest` for agent tests. Deep-merges `overrides` so
- * callers only need to specify what differs from the baseline.
+ * Builds a `ChatCommandRequest` for agent tests.
+ *
+ * `facing` is required so every test explicitly declares which way the player
+ * is looking — the most important spatial input and the one most likely to
+ * cause a confusing failure if left implicit.
+ *
+ * Pass `overrides` only for fields that genuinely differ from the baseline
+ * (e.g. a specific `targetBlock` or `recentMessages`).
  */
 export function makeRequest(
   message: string,
-  overrides: Partial<ChatCommandRequest> = {},
+  facing: Facing,
+  overrides: Partial<Omit<ChatCommandRequest, "player" | "message">> & {
+    position?: { x: number; y: number; z: number };
+  } = {},
 ): ChatCommandRequest {
+  const { position = BASE_POSITION, ...rest } = overrides;
+  const { yaw, lookVector } = FACING[facing];
+
   return {
-    ...BASE_REQUEST,
-    ...overrides,
     requestId: `agent-test-${Date.now()}`,
     message,
     player: {
-      ...BASE_REQUEST.player,
-      ...(overrides.player ?? {}),
+      uuid: "agent-test-uuid",
+      name: "TestPlayer",
+      world: "world",
+      position,
+      yaw,
+      pitch: 0,
+      lookVector,
     },
+    recentMessages: [],
     localContext: {
-      ...BASE_REQUEST.localContext,
-      ...(overrides.localContext ?? {}),
+      nearbyBlocks: [],
+      nearbyEntities: [],
+      nearbyPlayers: [],
     },
+    serverContext: {
+      timestamp: new Date().toISOString(),
+      dimension: "NORMAL",
+      onlinePlayerCount: 1,
+    },
+    initialScanRegion: {
+      minX: position.x - 7, minY: position.y - 3, minZ: position.z - 7,
+      maxX: position.x + 7, maxY: position.y + 5, maxZ: position.z + 7,
+    },
+    ...rest,
   };
 }
 
