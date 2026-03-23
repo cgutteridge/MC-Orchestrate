@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ChatCommandRequest } from "../types/plugin.js";
+import type { DesignChoiceStep } from "./schema.js";
 import {
   buildPlacementPhaseMessages,
   buildPlanPhaseSystemContent,
@@ -7,6 +8,14 @@ import {
   hasSolidGroundBelowResolvedAnchor,
   summarizeLastBuiltPlan,
 } from "./prompt.js";
+
+const designFixture: DesignChoiceStep = {
+  action: "design_choice",
+  designSummary: "Test hut",
+  builderGuide: "Small hut per request.",
+  desiredSize: { width: 8, depth: 8, height: 6 },
+  recommendedMaterials: ["minecraft:stone", "minecraft:oak_planks", "minecraft:air"],
+};
 
 const request: ChatCommandRequest = {
   requestId: "req-1",
@@ -40,12 +49,13 @@ describe("buildPlacementPhaseMessages (step 1)", () => {
     expect(messages[0]?.content).toContain("lastBuiltStructureSummary");
     const planSystem = buildPlanPhaseSystemContent(request);
     expect(planSystem).toContain("minecraft:stone");
+    expect(planSystem).not.toContain("=== MATERIALS (design step only) ===");
     expect(messages[1]?.content).toContain('"recentMessages"');
     expect(messages[1]?.content).toContain("make me a cottage");
     expect(messages[1]?.content).toContain("actually smaller");
   });
 
-  it("injects a nearby material context card when structural blocks are present", () => {
+  it("does not inject nearby materials in placement (design phase owns material context)", () => {
     const messages = buildPlacementPhaseMessages({
       ...request,
       localContext: {
@@ -54,19 +64,12 @@ describe("buildPlacementPhaseMessages (step 1)", () => {
           { x: 0, y: 64, z: 0, type: "minecraft:stone_bricks" },
           { x: 1, y: 64, z: 0, type: "minecraft:stone_bricks" },
           { x: 2, y: 64, z: 0, type: "minecraft:cobblestone" },
-          { x: 3, y: 64, z: 0, type: "minecraft:air" },
-          { x: 4, y: 64, z: 0, type: "minecraft:grass_block" },
         ],
       },
     });
 
     const userContent = messages[1]?.content ?? "";
-    expect(userContent).toContain("Nearby materials:");
-    expect(userContent).toContain("stone_bricks ×2");
-    expect(userContent).toContain("cobblestone ×1");
-    // Terrain blocks are excluded from the context card.
-    expect(userContent).not.toContain("air ×");
-    expect(userContent).not.toContain("grass_block ×");
+    expect(userContent).not.toContain("Nearby materials:");
   });
 
   it("omits the nearby context card when only terrain blocks are present", () => {
@@ -236,7 +239,7 @@ describe("buildPlanPhaseSystemContent (step 2)", () => {
     const system = buildPlanPhaseSystemContent(request);
 
     expect(system).toContain("verifyRegion");
-    expect(system).toContain("Step 2 of 2");
+    expect(system).toContain("Step 3 of 3");
     expect(system).toContain('"action":"build"');
   });
 });
@@ -285,7 +288,8 @@ describe("plan phase user content (step 2)", () => {
         verticalReference: "bottom",
         desiredSize: { width: 8, depth: 8, height: 6 },
       },
-      undefined,
+      designFixture,
+      false,
     );
     expect(text).toContain("Volume:");
     expect(text).toContain("a hut");
@@ -317,7 +321,8 @@ describe("plan phase user content (step 2)", () => {
         verticalReference: "bottom",
         desiredSize: { width: 8, depth: 8, height: 6 },
       },
-      undefined,
+      designFixture,
+      true,
     );
     expect(text).toContain("Terrain:");
   });

@@ -3,10 +3,11 @@
  */
 import type { LayerMapData } from "../../src/planner/layerMap.js";
 import {
-  PlacementChoicePlacementSchema,
+  DesignChoiceStepSchema,
   PlacementChoiceStepSchema,
+  PlacementWithDesiredSizeSchema,
 } from "../../src/planner/schema.js";
-import type { Placement } from "../../src/planner/schema.js";
+import type { DesignChoiceStep, PlacementPositionOnly } from "../../src/planner/schema.js";
 import { extractJsonValue, parseJsonStrict } from "../../src/services/ai/json.js";
 import type { ChatMessage } from "../../src/services/ai/types.js";
 import type { ChatCommandRequest } from "../../src/types/plugin.js";
@@ -19,12 +20,12 @@ function isRecord(v: unknown): v is Record<string, unknown> {
  * Result of parsing a placement-phase assistant reply into a validated `placement_choice`.
  */
 export type ParsePlacementChoiceResult =
-  | { ok: true; placement: Placement; selfNotes?: string }
+  | { ok: true; placement: PlacementPositionOnly }
   | { ok: false; error: string };
 
 /**
  * Parses assistant text from a placement-phase turn into a validated `placement_choice`
- * (including required `desiredSize`).
+ * (position only — no `desiredSize`).
  *
  * @param raw Raw assistant message (may include markdown fences or prose).
  */
@@ -49,18 +50,67 @@ export function parsePlacementChoiceFromAssistantText(raw: string): ParsePlaceme
   return {
     ok: true,
     placement: result.data.placement,
-    selfNotes: result.data.selfNotes,
   };
 }
 
 /**
- * Default locked placement for {@link buildPlanPhaseUserContent} / step-2 smoke
- * (matches a typical placement_choice outcome).
+ * Result of parsing a design-phase assistant reply into a validated `design_choice`.
  */
-export const DEFAULT_LOCKED_PLACEMENT = PlacementChoicePlacementSchema.parse({
+export type ParseDesignChoiceResult =
+  | { ok: true; design: DesignChoiceStep }
+  | { ok: false; error: string };
+
+/**
+ * Parses assistant text from a design-phase turn into a validated `design_choice`.
+ *
+ * @param raw Raw assistant message (may include markdown fences or prose).
+ */
+export function parseDesignChoiceFromAssistantText(raw: string): ParseDesignChoiceResult {
+  const jsonText = extractJsonValue(raw);
+  if (!jsonText) {
+    return { ok: false, error: "No JSON object in assistant reply" };
+  }
+  let parsed: unknown;
+  try {
+    parsed = parseJsonStrict<unknown>(jsonText);
+  } catch {
+    return { ok: false, error: "Assistant JSON was not parseable" };
+  }
+  if (!isRecord(parsed)) {
+    return { ok: false, error: "Expected JSON object" };
+  }
+  const result = DesignChoiceStepSchema.safeParse(parsed);
+  if (!result.success) {
+    return { ok: false, error: result.error.message };
+  }
+  return { ok: true, design: result.data };
+}
+
+const SMOKE_FOOTPRINT = { width: 16, depth: 16, height: 12 } as const;
+
+/**
+ * Default design fixture for build-step smoke (`smoke-ai-build.ts`).
+ */
+export const DEFAULT_SMOKE_DESIGN: DesignChoiceStep = DesignChoiceStepSchema.parse({
+  action: "design_choice",
+  designSummary: "Smoke fixture",
+  builderGuide: "Follow the player request using the recommended materials.",
+  desiredSize: SMOKE_FOOTPRINT,
+  recommendedMaterials: [
+    "minecraft:stone",
+    "minecraft:cobblestone",
+    "minecraft:oak_planks",
+    "minecraft:air",
+  ],
+});
+
+/**
+ * Merged placement for build-step smoke (matches {@link DEFAULT_SMOKE_DESIGN} footprint).
+ */
+export const DEFAULT_LOCKED_PLACEMENT = PlacementWithDesiredSizeSchema.parse({
   ref: "player_view",
   forward: 8,
-  desiredSize: { width: 16, depth: 16, height: 12 },
+  desiredSize: SMOKE_FOOTPRINT,
   verticalReference: "bottom",
 });
 

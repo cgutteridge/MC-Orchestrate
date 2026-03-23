@@ -9,20 +9,25 @@ import type { PlannerLogger } from "./planLogger.js";
 import {
   appendVerifyFulfillment,
   buildPlacementPhaseMessages,
+  hasSolidGroundBelowResolvedAnchor,
+  resetMessagesForDesignPhase,
   resetMessagesForPlanPhase,
 } from "./prompt.js";
+import { computePlanCenter, resolvePlacement } from "./placement.js";
 import { defaultRegion } from "./requestContext.js";
 import {
+  DesignChoiceStepSchema,
   PlacementChoiceStepSchema,
   PlanSchema,
-  PlacementSchema,
+  type DesignChoiceStep,
   type Plan,
   type Placement,
+  type PlacementPositionOnly,
   type Region,
 } from "./schema.js";
 import type { WorldReader } from "../world/worldReader.js";
 import { aiPlanFailureMessage } from "./playerRefusalMessages.js";
-import { deriveLayerMapLocalBounds } from "./layerMap.js";
+import { deriveLayerMapLocalBounds, normalizeLayerMap, type LayerMapClip } from "./layerMap.js";
 
 /** Default when {@link PlacementThenBuildOptions.maxSteps} is omitted (orchestrator passes config). */
 export const DEFAULT_AI_PLAN_MAX_STEPS = 10;
@@ -63,14 +68,13 @@ export type PlacementThenBuildOptions = {
 // ---------------------------------------------------------------------------
 
 /**
- * Two-step build for one player request: **get the location**, then **build the thing**.
+ * Three-step build: **position** → **design** (materials + size + prose) → **layer map**.
  *
- * 1. **Location** — placement-phase prompt; the model returns `placement_choice`
- *    (locks placement, size, vertical anchor).
- * 2. **Build** — plan-phase prompt; the model returns `build` with a `plan` only;
- *    placement is merged from step 1.
- * 3. Repairs and validates the plan against {@link PlanSchema}.
- * 4. Returns `rejected` after too many AI calls or two consecutive parse/validation failures.
+ * 1. **Placement** — `placement_choice` (anchor only; no size).
+ * 2. **Design** — `design_choice` (only step with full material-registry context).
+ * 3. **Build** — `build` with `plan`; server merges placement from step 1 with size from step 2.
+ * 4. Repairs and validates the plan against {@link PlanSchema}.
+ * 5. Returns `rejected` after too many AI calls or two consecutive parse/validation failures.
  *
  * @param provider AI chat provider.
  * @param request The validated player request.
@@ -93,8 +97,10 @@ export async function runPlacementThenBuild(
   const dl = options?.planProgressLogger;
 
   const messages: ChatMessage[] = buildPlacementPhaseMessages(request, lastPlan);
-  /** When set, placement was chosen in phase 1 and merged into the next build response. */
-  let splitPlanPlacement: Placement | undefined;
+  /** Position-only placement from step 1 (no `desiredSize`). */
+  let splitPlanPlacement: PlacementPositionOnly | undefined;
+  /** Design step output: size + materials + prose for the builder. */
+  let lockedDesign: DesignChoiceStep | undefined;
   let consecutiveParseFailures = 0;
   /** Set when two assistant turns in a row could not yield a usable structured response. */
   let abortedAfterRepeatedAssistantErrors = false;
@@ -208,8 +214,31 @@ export async function runPlacementThenBuild(
     // ------------------------------------------------------------------
     const action = typeof looseParsed.action === "string" ? looseParsed.action : undefined;
 
-    // placement_choice — phase 1 → phase 2 transition
+    // placement_choice — phase 1 → design phase
     if (action === "placement_choice") {
+      if (lockedDesign) {
+        consecutiveParseFailures++;
+        await dl?.line(
+          request.requestId,
+          step,
+          maxSteps,
+          "placement_choice_after_design",
+          "expected build",
+        );
+        if (consecutiveParseFailures >= 2) {
+          abortedAfterRepeatedAssistantErrors = true;
+          break;
+        }
+        messages.push(
+          { role: "assistant", content: jsonText },
+          {
+            role: "user",
+            content:
+              'Placement and design are locked. Return action: "build" with a "plan" field only (omit placement).',
+          },
+        );
+        continue;
+      }
       if (splitPlanPlacement) {
         consecutiveParseFailures++;
         await dl?.line(
@@ -228,7 +257,7 @@ export async function runPlacementThenBuild(
           {
             role: "user",
             content:
-              'Placement is already locked. Return action: "build" with a "plan" field only (omit placement).',
+              'Placement is already locked. Return action: "design_choice" with designSummary, builderGuide, desiredSize, and recommendedMaterials — not placement again.',
           },
         );
         continue;
@@ -252,21 +281,21 @@ export async function runPlacementThenBuild(
           { role: "assistant", content: jsonText },
           {
             role: "user",
-            content: `The placement_choice was invalid: ${pcResult.error.message.slice(0, 200)}. Ensure action is placement_choice, placement includes desiredSize (width, depth, height), verticalReference, ref, and offsets.`,
+            content: `The placement_choice was invalid: ${pcResult.error.message.slice(0, 200)}. Ensure action is placement_choice, placement has verticalReference and ref and offsets, and do NOT include desiredSize.`,
           },
         );
         continue;
       }
 
-      const { placement: chosenPlacement, selfNotes } = pcResult.data;
+      const { placement: chosenPlacement } = pcResult.data;
       splitPlanPlacement = chosenPlacement;
-      resetMessagesForPlanPhase(messages, request, chosenPlacement, lastPlan, selfNotes);
+      resetMessagesForDesignPhase(messages, request, lastPlan);
       await dl?.line(
         request.requestId,
         step,
         maxSteps,
         "split_placement_locked",
-        "transition to plan phase",
+        "transition to design phase",
       );
       await plannerLogger?.log({
         timestamp: new Date().toISOString(),
@@ -278,7 +307,101 @@ export async function runPlacementThenBuild(
       continue;
     }
 
-    // build rejected in phase 1 (placement-only)
+    // design_choice — phase 2 → build phase
+    if (action === "design_choice") {
+      if (!splitPlanPlacement) {
+        consecutiveParseFailures++;
+        await dl?.line(
+          request.requestId,
+          step,
+          maxSteps,
+          "design_choice_without_placement",
+          "expected placement_choice first",
+        );
+        if (consecutiveParseFailures >= 2) {
+          abortedAfterRepeatedAssistantErrors = true;
+          break;
+        }
+        messages.push(
+          { role: "assistant", content: jsonText },
+          {
+            role: "user",
+            content:
+              "Return placement_choice first (anchor only). You cannot output design_choice before placement is locked.",
+          },
+        );
+        continue;
+      }
+      if (lockedDesign) {
+        consecutiveParseFailures++;
+        await dl?.line(
+          request.requestId,
+          step,
+          maxSteps,
+          "design_choice_twice",
+          "design already locked",
+        );
+        if (consecutiveParseFailures >= 2) {
+          abortedAfterRepeatedAssistantErrors = true;
+          break;
+        }
+        messages.push(
+          { role: "assistant", content: jsonText },
+          {
+            role: "user",
+            content:
+              'Design is already locked. Return action: "build" with a "plan" field only (omit placement).',
+          },
+        );
+        continue;
+      }
+
+      const dResult = DesignChoiceStepSchema.safeParse(looseParsed);
+      if (!dResult.success) {
+        consecutiveParseFailures++;
+        await dl?.line(
+          request.requestId,
+          step,
+          maxSteps,
+          "design_choice_invalid",
+          dResult.error.message.slice(0, 160),
+        );
+        if (consecutiveParseFailures >= 2) {
+          abortedAfterRepeatedAssistantErrors = true;
+          break;
+        }
+        messages.push(
+          { role: "assistant", content: jsonText },
+          {
+            role: "user",
+            content: `The design_choice was invalid: ${dResult.error.message.slice(0, 200)}. Ensure designSummary, builderGuide, desiredSize, and recommendedMaterials (vanilla minecraft: ids).`,
+          },
+        );
+        continue;
+      }
+
+      lockedDesign = dResult.data;
+      const mergedPlacement = mergePlacementWithDesign(splitPlanPlacement, lockedDesign);
+      const terrainGroundHint = computeTerrainGroundHint(request, mergedPlacement, lastPlan);
+      resetMessagesForPlanPhase(messages, request, mergedPlacement, lockedDesign, terrainGroundHint);
+      await dl?.line(
+        request.requestId,
+        step,
+        maxSteps,
+        "split_design_locked",
+        "transition to build phase",
+      );
+      await plannerLogger?.log({
+        timestamp: new Date().toISOString(),
+        requestId: request.requestId,
+        stage: "split_design_locked",
+        payload: { step, design: lockedDesign, mergedPlacement },
+      });
+      consecutiveParseFailures = 0;
+      continue;
+    }
+
+    // build rejected before placement
     if (!splitPlanPlacement && action === "build") {
       consecutiveParseFailures++;
       await dl?.line(
@@ -303,8 +426,33 @@ export async function runPlacementThenBuild(
       continue;
     }
 
-    // bare Plan (no action) rejected in placement phase
-    if (!splitPlanPlacement && action !== "build") {
+    // build rejected before design
+    if (splitPlanPlacement && !lockedDesign && action === "build") {
+      consecutiveParseFailures++;
+      await dl?.line(
+        request.requestId,
+        step,
+        maxSteps,
+        "build_in_design_phase",
+        "expected design_choice",
+      );
+      if (consecutiveParseFailures >= 2) {
+        abortedAfterRepeatedAssistantErrors = true;
+        break;
+      }
+      messages.push(
+        { role: "assistant", content: jsonText },
+        {
+          role: "user",
+          content:
+            "This phase is design only. Return design_choice with designSummary, builderGuide, desiredSize, and recommendedMaterials — not a full plan yet.",
+        },
+      );
+      continue;
+    }
+
+    // bare Plan (no action) rejected in placement or design phase
+    if ((!splitPlanPlacement || !lockedDesign) && action !== "build") {
       const looksLikePlan =
         typeof looseParsed.intent === "string" || Array.isArray(looseParsed.passes);
       if (looksLikePlan) {
@@ -313,23 +461,43 @@ export async function runPlacementThenBuild(
           request.requestId,
           step,
           maxSteps,
-          "bare_plan_in_placement_phase",
-          "expected placement_choice",
+          "bare_plan_in_early_phase",
+          !splitPlanPlacement ? "expected placement_choice" : "expected design_choice",
         );
         if (consecutiveParseFailures >= 2) {
           abortedAfterRepeatedAssistantErrors = true;
           break;
         }
-        messages.push(
-          { role: "assistant", content: jsonText },
-          {
-            role: "user",
-            content:
-              'This phase is placement only. Return JSON with action "placement_choice", not a full plan.',
-          },
-        );
+        const expected = !splitPlanPlacement
+          ? 'Return JSON with action "placement_choice", not a full plan.'
+          : 'Return JSON with action "design_choice", not a full plan.';
+        messages.push({ role: "assistant", content: jsonText }, { role: "user", content: expected });
         continue;
       }
+    }
+
+    if (!splitPlanPlacement || !lockedDesign) {
+      consecutiveParseFailures++;
+      await dl?.line(
+        request.requestId,
+        step,
+        maxSteps,
+        "unexpected_shape",
+        "expected placement then design then build",
+      );
+      if (consecutiveParseFailures >= 2) {
+        abortedAfterRepeatedAssistantErrors = true;
+        break;
+      }
+      messages.push(
+        { role: "assistant", content: jsonText },
+        {
+          role: "user",
+          content:
+            "Expected placement_choice, then design_choice, then build with a plan. Return the correct action for this phase.",
+        },
+      );
+      continue;
     }
 
     // build or bare Plan — extract plan candidate and repair.
@@ -339,24 +507,19 @@ export async function runPlacementThenBuild(
         ? (looseParsed.plan as Record<string, unknown>)
         : looseParsed;
 
-    // Extract placement intent. Split loop phase 2 uses placement from phase 1.
-    const rawPlacement = action === "build" ? looseParsed.placement : undefined;
-    const placement = splitPlanPlacement
-      ? splitPlanPlacement
-      : PlacementSchema.catch(PlacementSchema.parse({})).parse(
-          isRecord(rawPlacement) ? rawPlacement : {},
-        );
+    const mergedPlacement = mergePlacementWithDesign(splitPlanPlacement, lockedDesign);
 
     const repairedPlan = repairLoosePlanCandidate(planCandidate, request);
+    const sizedPlan = applyDesiredSizeToPlanCandidate(repairedPlan, lockedDesign.desiredSize);
 
     await plannerLogger?.log({
       timestamp: new Date().toISOString(),
       requestId: request.requestId,
       stage: "plan_repaired",
-      payload: { step, placement, repairedPlan },
+      payload: { step, placement: mergedPlacement, repairedPlan, sizedPlan },
     });
 
-    const planResult = PlanSchema.safeParse(repairedPlan);
+    const planResult = PlanSchema.safeParse(sizedPlan);
     if (!planResult.success) {
       consecutiveParseFailures++;
       await dl?.line(
@@ -390,7 +553,7 @@ export async function runPlacementThenBuild(
       timestamp: new Date().toISOString(),
       requestId: request.requestId,
       stage: "plan_validated",
-      payload: { step, validatedPlan: planResult.data, placement },
+      payload: { step, validatedPlan: planResult.data, placement: mergedPlacement },
     });
 
     await dl?.line(
@@ -401,7 +564,7 @@ export async function runPlacementThenBuild(
       "validated plan ready for execution",
     );
 
-    return { outcome: "plan", plan: planResult.data, placement };
+    return { outcome: "plan", plan: planResult.data, placement: mergedPlacement };
   }
 
   if (abortedAfterRepeatedAssistantErrors) {
@@ -556,6 +719,43 @@ async function resolveVerifyBlocks(
 // ---------------------------------------------------------------------------
 // Plan repair — tolerates common LLM omissions before Zod validation
 // ---------------------------------------------------------------------------
+
+/**
+ * Rectangularizes and clips each pass layer map to the design-step footprint so
+ * normalization matches {@link lockedDesign.desiredSize}, not arbitrary caps.
+ *
+ * @param candidate - Output of {@link repairLoosePlanCandidate}.
+ * @param desiredSize - Locked width × depth × height from `design_choice`.
+ */
+function applyDesiredSizeToPlanCandidate(
+  candidate: Record<string, unknown>,
+  desiredSize: { width: number; depth: number; height: number },
+): Record<string, unknown> {
+  const passes = candidate.passes;
+  if (!Array.isArray(passes)) {
+    return candidate;
+  }
+  const clip: LayerMapClip = {
+    width: desiredSize.width,
+    depth: desiredSize.depth,
+    height: desiredSize.height,
+  };
+  const nextPasses = passes.map((pass) => {
+    if (
+      !isRecord(pass) ||
+      !isRecord(pass.layerMap) ||
+      !Array.isArray((pass.layerMap as { layers: unknown }).layers)
+    ) {
+      return pass;
+    }
+    const lm = pass.layerMap as { layers: string[]; palette: Record<string, string> };
+    return {
+      ...pass,
+      layerMap: normalizeLayerMap(lm, clip),
+    };
+  });
+  return { ...candidate, passes: nextPasses };
+}
 
 /**
  * Tolerates common LLM omissions and type mismatches in a loosely-parsed Plan
@@ -773,10 +973,46 @@ function truncateOneLine(s: string, max = 160): string {
   return t.length <= max ? t : `${t.slice(0, max)}…`;
 }
 
+/**
+ * Merges position-only placement with the design step's footprint.
+ *
+ * @param position Step-1 placement (no `desiredSize`).
+ * @param design Validated design_choice.
+ */
+function mergePlacementWithDesign(
+  position: PlacementPositionOnly,
+  design: DesignChoiceStep,
+): Placement {
+  return {
+    ...position,
+    desiredSize: design.desiredSize,
+  };
+}
+
+/**
+ * Whether sampled blocks suggest solid ground under the merged footprint anchor.
+ *
+ * @param request Player context.
+ * @param mergedPlacement Placement including `desiredSize`.
+ * @param lastPlan Optional prior plan for `last_build` anchor resolution.
+ */
+function computeTerrainGroundHint(
+  request: ChatCommandRequest,
+  mergedPlacement: Placement,
+  lastPlan: Plan | undefined,
+): boolean {
+  const lastCenter = lastPlan !== undefined ? computePlanCenter(lastPlan) : undefined;
+  const anchor = resolvePlacement(mergedPlacement, request, lastCenter);
+  return hasSolidGroundBelowResolvedAnchor(request, anchor);
+}
+
 function summarizeLooseParsed(loose: Record<string, unknown>): string {
   const action = typeof loose.action === "string" ? loose.action : undefined;
   if (action === "placement_choice") {
     return "action=placement_choice";
+  }
+  if (action === "design_choice") {
+    return "action=design_choice";
   }
   if (action === "build") {
     return "action=build";

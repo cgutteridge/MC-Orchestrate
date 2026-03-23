@@ -46,7 +46,7 @@ Every chat build runs **placement then build**: (1) get the location and size, (
 
 - Consecutive parse failures (2 in a row): abort, return `rejected` with a player-facing reason.
 - Max AI steps reached: return `rejected` with a player-facing reason.
-- All AI responses are validated by `validatePlanSafety` and `validatePlanSemantics` before execution.
+- All AI responses are validated by `validatePlanSemantics` before execution (schema repair + semantics; no separate size/distance/world safety envelope).
 
 ### Placement intent
 
@@ -108,7 +108,7 @@ Before asking the user to run a fresh live test, rotate or clear the existing lo
 - Do not let unsupported requests get coerced into the nearest supported intent.
 - Under-specified AI geometry should fail closed and produce clarification, not fabricated default shapes.
 - Clarification-only replies should not carry invented target regions that look executable.
-- Plans must always include at least one executable pass; ambiguous geometry should fail validation or safety checks, not ship as empty work.
+- Plans must always include at least one executable pass; ambiguous geometry should fail validation or semantics checks, not ship as empty work.
 
 ## Anchoring Rules
 

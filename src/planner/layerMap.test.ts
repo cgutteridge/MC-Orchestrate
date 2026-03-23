@@ -3,6 +3,7 @@ import {
   compileLayerMapToBridgeCommands,
   deriveLayerMapLocalBounds,
   estimateLayerMapBlockCount,
+  normalizeLayerMap,
   validateLayerMapShape,
 } from "./layerMap.js";
 
@@ -29,12 +30,28 @@ describe("layer map", () => {
     }
   });
 
-  it("rejects ragged rows", () => {
-    const err = validateLayerMapShape({
+  it("normalizes ragged rows into a rectangle", () => {
+    const raw = {
       layers: ["##", "#"],
       palette: { "#": "minecraft:stone" },
-    });
-    expect(err).toContain("same row width");
+    };
+    const n = normalizeLayerMap(raw);
+    expect(n.layers[1]).toBe("# ");
+    expect(validateLayerMapShape(raw)).toBeUndefined();
+  });
+
+  it("clips to design-step footprint when clip is provided", () => {
+    const raw = {
+      layers: ["##", "#"],
+      palette: { "#": "minecraft:stone" },
+    };
+    const n = normalizeLayerMap(raw, { width: 4, depth: 2, height: 2 });
+    expect(n.layers).toHaveLength(2);
+    const rows0 = n.layers[0]!.split("\n");
+    expect(rows0).toHaveLength(2);
+    expect([...rows0[0]!]).toHaveLength(4);
+    expect([...rows0[1]!]).toHaveLength(4);
+    expect(validateLayerMapShape(n)).toBeUndefined();
   });
 
   it("treats space as no-op (no batchSet for that cell)", () => {
@@ -69,11 +86,13 @@ describe("layer map", () => {
     }
   });
 
-  it("rejects a palette key that is a space", () => {
-    const err = validateLayerMapShape({
+  it("drops a space palette key and still validates", () => {
+    const raw = {
       layers: ["S"],
       palette: { " ": "minecraft:air", S: "minecraft:stone" },
-    });
-    expect(err).toContain("space");
+    };
+    const n = normalizeLayerMap(raw);
+    expect(n.palette[" "]).toBeUndefined();
+    expect(validateLayerMapShape(raw)).toBeUndefined();
   });
 });

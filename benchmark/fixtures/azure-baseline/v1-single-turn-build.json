@@ -1,8 +1,9 @@
 {
   "version": 1,
-  "description": "Two-turn Azure-style replay: turn 1 = placement_choice; turn 2 = build with plan only (placement merged server-side). Re-record from logs/ai-provider.log after a live Azure run if the model output shape changes.",
+  "description": "Three-turn Azure-style replay: turn 1 = placement_choice (no size); turn 2 = design_choice; turn 3 = build with plan only (placement merged server-side). Re-record from logs/ai-provider.log after a live Azure run if the model output shape changes.",
   "assistantTurns": [
-    "{\"action\":\"placement_choice\",\"placement\":{\"ref\":\"player_view\",\"forward\":8,\"back\":0,\"left\":0,\"right\":0,\"north\":0,\"south\":0,\"east\":0,\"west\":0,\"up\":0,\"down\":0,\"desiredSize\":{\"width\":5,\"depth\":5,\"height\":6},\"verticalReference\":\"middle\"}}",
+    "{\"action\":\"placement_choice\",\"placement\":{\"ref\":\"player_view\",\"forward\":8,\"back\":0,\"left\":0,\"right\":0,\"north\":0,\"south\":0,\"east\":0,\"west\":0,\"up\":0,\"down\":0,\"verticalReference\":\"middle\"}}",
+    "{\"action\":\"design_choice\",\"designSummary\":\"Glass cylinder\",\"builderGuide\":\"Hollow vertical walls; floor optional.\",\"desiredSize\":{\"width\":5,\"depth\":5,\"height\":6},\"recommendedMaterials\":[\"minecraft:glass\",\"minecraft:air\"]}",
     "{\"action\":\"build\",\"plan\":{\"intent\":\"build_cylinder\",\"targetWorld\":\"world\",\"targetRegion\":{\"world\":\"world\",\"min\":{\"x\":-53,\"y\":113,\"z\":-19},\"max\":{\"x\":-49,\"y\":118,\"z\":-15}},\"assumptions\":[],\"passes\":[{\"name\":\"cylinder_pass\",\"goal\":\"Build a hollow glass cylinder at the target block.\",\"layerMap\":{\"layers\":[\"GGGGG\\nG___G\\nG___G\\nG___G\\nGGGGG\",\"GGGGG\\nG___G\\nG___G\\nG___G\\nGGGGG\",\"GGGGG\\nG___G\\nG___G\\nG___G\\nGGGGG\",\"GGGGG\\nG___G\\nG___G\\nG___G\\nGGGGG\",\"GGGGG\\nG___G\\nG___G\\nG___G\\nGGGGG\",\"GGGGG\\nG___G\\nG___G\\nG___G\\nGGGGG\"],\"palette\":{\"G\":\"minecraft:glass\",\"_\":\"minecraft:air\"}}}],\"reply\":\"Here is your hollow glass cylinder!\"}}"
   ]
 }

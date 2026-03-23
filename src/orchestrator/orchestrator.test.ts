@@ -57,27 +57,45 @@ function placementChoiceStep(): string {
       west: 0,
       up: 0,
       down: 0,
-      desiredSize: { width: 16, depth: 16, height: 12 },
       verticalReference: "middle",
     },
   });
 }
 
+/** Design loop step 2 — matches production design phase. */
+function designChoiceStep(): string {
+  return JSON.stringify({
+    action: "design_choice",
+    designSummary: "Cottage",
+    builderGuide: "Build per player request and volume.",
+    desiredSize: { width: 16, depth: 16, height: 12 },
+    recommendedMaterials: ["minecraft:stone", "minecraft:oak_planks", "minecraft:air"],
+  });
+}
+
 /** True when the system prompt is placement phase (full or minimal prompt mode). */
 function isPlacementPhaseSystem(sys: string): boolean {
-  return sys.includes("Step 1 of 2") || sys.toLowerCase().includes("step 1/2");
+  return sys.includes("Step 1 of 3");
+}
+
+/** True when the system prompt is design phase. */
+function isDesignPhaseSystem(sys: string): boolean {
+  return sys.includes("Step 2 of 3");
 }
 
 /**
- * Provider that answers placement phase then returns the given plan (two AI turns per request).
+ * Provider that answers placement then design then returns the given plan (three AI turns per request).
  */
-function twoTurnProvider(plan: Record<string, unknown>): ChatProvider {
+function threeTurnProvider(plan: Record<string, unknown>): ChatProvider {
   return {
     name: "test",
     async chat(messages) {
       const sys = messages.find((m) => m.role === "system")?.content ?? "";
       if (isPlacementPhaseSystem(sys)) {
         return placementChoiceStep();
+      }
+      if (isDesignPhaseSystem(sys)) {
+        return designChoiceStep();
       }
       return buildStep(plan);
     },
@@ -147,7 +165,7 @@ describe("Orchestrator", () => {
 
   it("sends a Thinking message before running the AI loop", async () => {
     const layer5 = "SSSSS\nSSSSS\nSSSSS\nSSSSS\nSSSSS";
-    const provider = twoTurnProvider({
+    const provider = threeTurnProvider({
       intent: "build_house",
       targetWorld: "world",
       targetRegion: {
@@ -207,7 +225,7 @@ describe("Orchestrator", () => {
   });
 
   it("replaces invalid block ids with stone, notifies the player, and still executes", async () => {
-    const provider = twoTurnProvider({
+    const provider = threeTurnProvider({
       intent: "build_wall",
       targetWorld: "world",
       targetRegion: {
@@ -245,7 +263,7 @@ describe("Orchestrator", () => {
 
   it("rejects plans with more than two layer-map passes (semantics)", async () => {
     const layer3 = "SSS\nSSS\nSSS";
-    const provider = twoTurnProvider({
+    const provider = threeTurnProvider({
       intent: "build_house",
       targetWorld: "world",
       targetRegion: {
@@ -297,7 +315,7 @@ describe("Orchestrator", () => {
       layers: ["S"],
       palette: { S: "minecraft:stone", _: "minecraft:air" },
     };
-    const provider = twoTurnProvider({
+    const provider = threeTurnProvider({
       intent: "wall_patch",
       targetWorld: "world",
       targetRegion: {
@@ -349,7 +367,7 @@ describe("Orchestrator", () => {
       layers: ["S"],
       palette: { S: "minecraft:stone", _: "minecraft:air" },
     };
-    const provider = twoTurnProvider({
+    const provider = threeTurnProvider({
       intent: "wall_patch",
       targetWorld: "world",
       targetRegion: {
@@ -383,7 +401,7 @@ describe("Orchestrator", () => {
   });
 
   it("returns cancelled when the abort signal is already set", async () => {
-    const provider = twoTurnProvider({
+    const provider = threeTurnProvider({
       intent: "build_house",
       targetWorld: "world",
       targetRegion: {
@@ -424,6 +442,9 @@ describe("Orchestrator", () => {
         const sys = messages.find((m) => m.role === "system")?.content ?? "";
         if (isPlacementPhaseSystem(sys)) {
           return placementChoiceStep();
+        }
+        if (isDesignPhaseSystem(sys)) {
+          return designChoiceStep();
         }
         // Placement phase embeds `message` in JSON; plan phase uses `Build request:`.
         const userContent = messages.find((m) => m.role === "user")?.content ?? "";
@@ -557,6 +578,9 @@ describe("Orchestrator", () => {
         const sys = messages.find((m) => m.role === "system")?.content ?? "";
         if (isPlacementPhaseSystem(sys)) {
           return placementChoiceStep();
+        }
+        if (isDesignPhaseSystem(sys)) {
+          return designChoiceStep();
         }
         // Capture the full user content so we can check for remembered messages.
         seenUserContent = messages.find((m) => m.role === "user")?.content ?? "";

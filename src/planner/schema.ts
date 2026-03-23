@@ -176,22 +176,50 @@ export type Placement = z.infer<typeof PlacementSchema>;
  */
 
 /**
- * Placement object for step 1 of the split loop — includes required
- * {@link DesiredSizeSchema} so size is chosen before the layer map.
+ * Step 1 placement: anchor and offsets only — **no size** (size is chosen in the
+ * design step).
  */
-export const PlacementChoicePlacementSchema = PlacementSchema.extend({
+export const PlacementPositionOnlySchema = PlacementSchema.omit({ desiredSize: true });
+
+/**
+ * Placement with locked footprint from design + position steps (used when merging
+ * and for execution).
+ */
+export const PlacementWithDesiredSizeSchema = PlacementSchema.extend({
   desiredSize: DesiredSizeSchema,
 });
 
 /**
- * Placement-only step for step 1 (first AI call). The next
- * call requests the layer map; the server merges this `placement` with the plan.
+ * @deprecated Use {@link PlacementWithDesiredSizeSchema} — kept for smoke fixtures.
+ */
+export const PlacementChoicePlacementSchema = PlacementWithDesiredSizeSchema;
+
+/**
+ * Placement-only step for step 1 (first AI call). Size is **not** included; the
+ * design step chooses {@link DesiredSizeSchema}.
  */
 export const PlacementChoiceStepSchema = z.object({
   action: z.literal("placement_choice"),
-  placement: PlacementChoicePlacementSchema,
-  /** Optional notes echoed on the plan phase turn. */
-  selfNotes: z.string().min(1).optional(),
+  placement: PlacementPositionOnlySchema,
+});
+
+/**
+ * Step 2: only this phase receives full material-registry context. Produces a
+ * prose guide for the builder, recommended materials, footprint size, and a
+ * short design summary. No world position.
+ */
+export const DesignChoiceStepSchema = z.object({
+  action: z.literal("design_choice"),
+  /** One-line description of the aesthetic / structure. */
+  designSummary: z.string().min(1),
+  /** Prose instructions for the layer-map builder (step 3). */
+  builderGuide: z.string().min(1),
+  desiredSize: DesiredSizeSchema,
+  /** Vanilla `minecraft:` block ids to prefer in palettes (step 3). */
+  recommendedMaterials: z
+    .array(z.string().regex(/^minecraft:[a-z0-9_]+$/))
+    .min(1)
+    .max(48),
 });
 
 export const BuildStepSchema = z.object({
@@ -206,12 +234,16 @@ export const BuildStepSchema = z.object({
   verifyRegion: RegionSchema.optional(),
 });
 
-/** Discriminated union of every valid AI response during placement-then-build planning. */
+/** Discriminated union of every valid AI response during placement-design-build planning. */
 export const DesignStepSchema = z.discriminatedUnion("action", [
   PlacementChoiceStepSchema,
+  DesignChoiceStepSchema,
   BuildStepSchema,
 ]);
 
+export type PlacementPositionOnly = z.infer<typeof PlacementPositionOnlySchema>;
+export type PlacementWithDesiredSize = z.infer<typeof PlacementWithDesiredSizeSchema>;
 export type PlacementChoiceStep = z.infer<typeof PlacementChoiceStepSchema>;
+export type DesignChoiceStep = z.infer<typeof DesignChoiceStepSchema>;
 export type BuildStep = z.infer<typeof BuildStepSchema>;
 export type DesignStep = z.infer<typeof DesignStepSchema>;

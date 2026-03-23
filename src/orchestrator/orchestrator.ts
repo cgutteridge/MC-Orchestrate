@@ -14,7 +14,6 @@ import {
   resolvePlacement,
   shiftPlan,
 } from "../planner/placement.js";
-import { validatePlanSafety } from "../planner/safety.js";
 import { validatePlanSemantics } from "../planner/semantics.js";
 import type { Plan } from "../planner/schema.js";
 import { WorldReader } from "../world/worldReader.js";
@@ -60,7 +59,7 @@ type BridgeExecutionResult =
     };
 
 /**
- * Coordinates chat requests, AI placement-then-build planning, safety checks, and
+ * Coordinates chat requests, AI placement-then-build planning, semantic checks, and
  * bridge execution. Block ids are validated against the pinned vanilla registry;
  * invalid ids become stone and the player is notified.
  */
@@ -218,22 +217,12 @@ export class Orchestrator {
       let plan = shiftPlan(planningResult.plan, reanchorOffset);
 
       // -----------------------------------------------------------------------
-      // Material validation (invalid ids → stone; always continue to safety checks)
+      // Material validation (invalid ids → stone; always continue to semantics)
       // -----------------------------------------------------------------------
       const sanitized = sanitizePlanMaterials(plan);
       plan = sanitized.plan;
       if (sanitized.replacedIds.length > 0) {
         await this.notifyInvalidMaterialsReplaced(request, sanitized.replacedIds);
-      }
-
-      const unsafeReason = validatePlanSafety(planningRequest, plan);
-      if (unsafeReason) {
-        return {
-          status: "rejected",
-          reply: unsafeReason,
-          requestId: request.requestId,
-          intent: plan.intent,
-        };
       }
 
       const semanticReason = validatePlanSemantics(plan);
@@ -468,7 +457,7 @@ export class Orchestrator {
       if (polishSanitized.replacedIds.length > 0) {
         await this.notifyInvalidMaterialsReplaced(request, polishSanitized.replacedIds);
       }
-      if (validatePlanSafety(request, polishResolved) || validatePlanSemantics(polishResolved)) {
+      if (validatePlanSemantics(polishResolved)) {
         return;
       }
       if (polishResolved.passes.length === 0) {

@@ -1,9 +1,9 @@
 import type { ChatMessage } from "../services/ai/types.js";
 import type { ChatCommandRequest } from "../types/plugin.js";
-import type { Plan, Placement, Region } from "./schema.js";
+import type { DesignChoiceStep, Plan, Placement, Region } from "./schema.js";
 import type { BlockSample } from "../types/plugin.js";
-import { computePlanCenter, resolvePlacement } from "./placement.js";
 import { collectPromptHints, formatPromptHintsSection } from "./promptHints.js";
+import { buildDesignPhaseMaterialRegistrySection } from "./designMaterialContext.js";
 
 // ---------------------------------------------------------------------------
 // Nearby context card
@@ -92,6 +92,58 @@ export function summarizeLastBuiltPlan(plan: Plan): string {
     parts.push("passes=(none)");
   }
   return parts.join(" — ");
+}
+
+/**
+ * Summarizes the last plan for the **design** step without world coordinates
+ * (footprint size and goals only).
+ *
+ * @param plan Prior successful plan.
+ */
+export function summarizeLastBuiltPlanForDesign(plan: Plan): string {
+  const { min, max } = plan.targetRegion;
+  const dx = max.x - min.x + 1;
+  const dy = max.y - min.y + 1;
+  const dz = max.z - min.z + 1;
+  const passTitles = plan.passes.map((p) => p.name).join(", ");
+  const goalPreview = plan.passes
+    .slice(0, 2)
+    .map((p) => {
+      const g = p.goal.trim();
+      const short = g.length > 100 ? `${g.slice(0, 100)}…` : g;
+      return `${p.name}: ${short}`;
+    })
+    .join(" | ");
+
+  const parts: string[] = [
+    `intent=${plan.intent}`,
+    `prior footprint ${dx}×${dy}×${dz} (local size only; no world position)`,
+  ];
+  if (plan.passes.length > 0) {
+    parts.push(`passes=[${passTitles}]`);
+    if (goalPreview) {
+      parts.push(`goals: ${goalPreview}`);
+    }
+  }
+  return parts.join(" — ");
+}
+
+/**
+ * Block-type counts near the player for the design phase (no coordinates).
+ */
+function buildNearbyMaterialsDetailForDesign(request: ChatCommandRequest): string | undefined {
+  const counts = new Map<string, number>();
+  for (const block of request.localContext.nearbyBlocks) {
+    const type = block.type.toLowerCase().trim();
+    counts.set(type, (counts.get(type) ?? 0) + 1);
+  }
+  if (counts.size === 0) {
+    return undefined;
+  }
+  const lines = [...counts.entries()]
+    .sort(([, a], [, b]) => b - a)
+    .map(([t, c]) => `  ${t} ×${c}`);
+  return ["NEARBY BLOCK TYPES (sampled; no coordinates):", ...lines].join("\n");
 }
 
 /**
@@ -207,77 +259,132 @@ export function hasSolidGroundBelowResolvedAnchor(
 }
 
 /**
- * Minimal user message for step 2 (build): build volume, vertical anchor,
- * optional ground hint (only when {@link hasSolidGroundBelowResolvedAnchor}),
- * and the player’s wording — no coordinates or full plugin JSON.
+ * User message for the **build** step (layer map): volume from merged placement,
+ * design guide from step 2, optional terrain hint — no world coordinates.
  *
  * @param request Original chat request (message, recentMessages).
- * @param placement Locked placement from step 1 (must include `desiredSize`).
- * @param lastPlan Optional prior plan for `last_build` resolution.
- * @param selfNotes Optional notes from placement_choice.
+ * @param mergedPlacement Locked placement with `desiredSize` from the design step.
+ * @param design Validated design_choice (prose + materials).
+ * @param terrainGroundHint When true, mention solid ground below the footprint.
  */
 export function buildPlanPhaseUserContent(
   request: ChatCommandRequest,
-  placement: Placement,
-  lastPlan: Plan | undefined,
-  selfNotes?: string,
+  mergedPlacement: Placement,
+  design: DesignChoiceStep,
+  terrainGroundHint: boolean,
 ): string {
-  const lastCenter = lastPlan !== undefined ? computePlanCenter(lastPlan) : undefined;
-  const anchor = resolvePlacement(placement, request, lastCenter);
-  const showGround = hasSolidGroundBelowResolvedAnchor(request, anchor);
-
-  const ds = placement.desiredSize;
+  const ds = mergedPlacement.desiredSize;
   if (ds === undefined) {
     throw new Error("buildPlanPhaseUserContent requires placement.desiredSize");
   }
 
   const lines: string[] = [
-    "Fill this volume with your layer map (local coordinates; the server places it in the world).",
+    "Fill this volume with your layer map (local coordinates only; the server places it in the world). You do not know world position.",
     "",
     `Volume: ${ds.width} wide × ${ds.depth} deep × ${ds.height} tall (cells).`,
-    `Vertical anchor on that box: ${placement.verticalReference} — top = top face / rim; bottom = bottom face on terrain; middle / flying = vertical centre (flying = same math as middle; use for builds in open air — plan step will use this later).`,
+    `Vertical anchor on that box: ${mergedPlacement.verticalReference} — top = top face / rim; bottom = bottom face on terrain; middle / flying = vertical centre.`,
+    "",
+    "DESIGN SUMMARY (from design step):",
+    design.designSummary,
+    "",
+    "BUILDER GUIDE (from design step):",
+    design.builderGuide,
+    "",
+    "Recommended materials (prefer these in palette chars):",
+    design.recommendedMaterials.join(", "),
+    "",
   ];
-  if (showGround) {
+  if (terrainGroundHint) {
     lines.push(
       "Terrain: sampled blocks show solid ground below this footprint — design resting on or tied to ground, not floating in empty sky.",
+      "",
     );
   }
-  lines.push("", `Build request: ${request.message}`);
+  lines.push(`Build request: ${request.message}`);
   if (request.recentMessages.length > 0) {
     const tail = request.recentMessages.slice(-5);
     lines.push(`Earlier lines: ${tail.join(" → ")}`);
-  }
-  if (selfNotes?.trim()) {
-    lines.push(`Notes from placement step: ${selfNotes.trim()}`);
   }
   return lines.join("\n");
 }
 
 /**
- * Replaces the placement-then-build message history with plan-phase system + minimal user only
- * (no coordinates, no full placement JSON, no initial-scan dump).
+ * Replaces message history with the **build** phase (layer map only). No world
+ * coordinates in the user message; placement is merged server-side for execution.
  *
  * @param messages Mutable message list (cleared and repopulated).
  * @param request Chat request for hints and user text.
- * @param placement Locked placement from step 1.
- * @param lastPlan Optional last successful plan (for last_build anchor resolution).
- * @param selfNotes Optional placement_choice selfNotes.
+ * @param mergedPlacement Placement from step 1 plus `desiredSize` from step 2.
+ * @param design Validated design_choice from step 2.
+ * @param terrainGroundHint When true, user text mentions solid ground below the footprint.
  */
 export function resetMessagesForPlanPhase(
   messages: ChatMessage[],
   request: ChatCommandRequest,
-  placement: Placement,
-  lastPlan: Plan | undefined,
-  selfNotes?: string,
+  mergedPlacement: Placement,
+  design: DesignChoiceStep,
+  terrainGroundHint: boolean,
 ): void {
   messages.length = 0;
   messages.push(
     { role: "system", content: buildPlanPhaseSystemContent(request) },
     {
       role: "user",
-      content: buildPlanPhaseUserContent(request, placement, lastPlan, selfNotes),
+      content: buildPlanPhaseUserContent(request, mergedPlacement, design, terrainGroundHint),
     },
   );
+}
+
+/**
+ * Clears and fills messages for the **design** step (materials + size + prose guide).
+ * Does not include placement cards or world coordinates.
+ *
+ * @param messages Mutable message list.
+ * @param request Current plugin request.
+ * @param lastPlan Optional prior plan for abstract follow-up context.
+ */
+export function resetMessagesForDesignPhase(
+  messages: ChatMessage[],
+  request: ChatCommandRequest,
+  lastPlan: Plan | undefined,
+): void {
+  messages.length = 0;
+  messages.push(
+    { role: "system", content: buildDesignPhaseSystemContent(request) },
+    { role: "user", content: buildDesignPhaseUserContent(request, lastPlan) },
+  );
+}
+
+/**
+ * User text for the design phase (no placement card, no coordinates).
+ *
+ * @param request Current plugin request.
+ * @param lastPlan Optional prior successful plan.
+ */
+export function buildDesignPhaseUserContent(
+  request: ChatCommandRequest,
+  lastPlan: Plan | undefined,
+): string {
+  const lines: string[] = [
+    "Propose materials, aesthetic design, and footprint size (step 2 of 3). You do not know world position — only materials and what to build.",
+    "",
+  ];
+  const detail = buildNearbyMaterialsDetailForDesign(request);
+  if (detail) {
+    lines.push(detail, "");
+  }
+  const historyBlock = formatConversationHistoryForPrompt(request);
+  if (historyBlock) {
+    lines.push(historyBlock, "");
+  }
+  if (lastPlan) {
+    lines.push(
+      "PRIOR BUILD (for follow-ups; no world coordinates):\n" + summarizeLastBuiltPlanForDesign(lastPlan),
+      "",
+    );
+  }
+  lines.push("LATEST PLAYER REQUEST:", request.message);
+  return lines.join("\n");
 }
 
 // ---------------------------------------------------------------------------
@@ -316,6 +423,15 @@ const DESIGN_STEP_GUIDE = {
   },
 };
 
+/** Example shape for phase 2 — must match {@link DesignChoiceStepSchema}. */
+const DESIGN_CHOICE_GUIDE = {
+  action: "design_choice",
+  designSummary: "one-line aesthetic / structure description",
+  builderGuide: "prose instructions for the layer-map builder (step 3)",
+  desiredSize: { width: 16, depth: 16, height: 12 },
+  recommendedMaterials: ["minecraft:oak_planks", "minecraft:glass", "minecraft:air"],
+};
+
 /** Example shape for phase 1 — must match {@link PlacementChoiceStepSchema} (flat `action`, object `placement`). */
 const PLACEMENT_CHOICE_GUIDE = {
   action: "placement_choice",
@@ -323,27 +439,24 @@ const PLACEMENT_CHOICE_GUIDE = {
     ref: "player_view | player_absolute | focus | last_build",
     forward: 8,
     up: 0,
-    desiredSize: { width: 16, depth: 16, height: 12 },
     verticalReference: "top | middle | bottom | flying",
   },
-  selfNotes: "optional — echoed next turn",
 };
 
 // ---------------------------------------------------------------------------
-// System prompts — step 1: placement only; step 2: layer map / plan
+// System prompts — step 1: position; step 2: design; step 3: layer map / plan
 // ---------------------------------------------------------------------------
 
 const JSON_DISCIPLINE = [
   "Reply with exactly one JSON object per turn. No markdown fences; no prose outside JSON.",
 ].join("\n");
 
-/** Placement rules — step 1 (`placement_choice`) and step 2 (`build` carries merged placement). */
+/** Placement rules — step 1 (`placement_choice`) only; size is chosen in step 2 (design). */
 const PLACEMENT_RULES_COMPACT = [
-  "PLACEMENT (user message includes a PLACEMENT REFERENCE card with anchor coords).",
-  "On step 2, `targetRegion.min` is the SW-bottom of your layer map after the server applies placement from step 1.",
+  "PLACEMENT (user message includes a PLACEMENT REFERENCE card with anchor coords). Do NOT choose size here — the design step sets width×depth×height.",
   "ref: player_view (forward/back/left/right) | player_absolute (north/south/east/west) | focus (NSEW or 0 = here) | last_build (follow-ups).",
   "Y baseline: player_view/player_absolute → up:0 = head (feet Y + 1); focus → up:0 = top of looked-at block +1; last_build → prior centre Y.",
-  "Step 1 requires placement.desiredSize {width,depth,height} and verticalReference: top | middle | bottom | flying (anchor on the box: top=surface/in-ground, bottom=on ground, middle=floating/spans, flying=same anchor as middle — reserve for aerial/open-sky builds; plan step will use flying for richer instructions later).",
+  "Step 1 requires placement.verticalReference: top | middle | bottom | flying (how the eventual box will anchor when placed).",
   "Default if vague: {ref:player_view, forward:8}. Never intersect the player's body blocks.",
   "Phrase hints: 'in front of me' → forward; 'to my left' → left; 'above me' → up; '10 blocks NE' → player_absolute north+east; 'here' → focus; 'make it bigger' → last_build; 'a pit under me' → down.",
 ].join("\n");
@@ -362,22 +475,24 @@ const LAYER_MAP_AND_PLAN_COMPACT = [
   "Real 3D needs many slices — one slice = a flat slab. verifyRegion: optional box ~2 blocks past the build for inspection.",
 ].join("\n");
 
-const MATERIALS_AND_CONSTRAINTS_COMPACT = [
-  "=== MATERIALS ===",
-  "Put vanilla `minecraft:` block ids in palettes. Unknown or non-vanilla ids are replaced with minecraft:stone at execution (the player is warned).",
+/** Builder step: palette rules only (full material list was design phase). */
+const BUILDER_PALETTE_RULES_COMPACT = [
+  "=== PALETTE ===",
+  "Use vanilla `minecraft:` block ids in palettes. Prefer ids from the design step's recommendedMaterials.",
+  "Unknown or non-vanilla ids may be replaced with minecraft:stone at execution (the player is warned).",
   "=== CONSTRAINTS ===",
-  "Stay in-world; stay within ~32 blocks of the player unless asked otherwise. Every plan must include at least one executable pass; do not invent world coords.",
+  "Do not invent world coordinates. Layer map must match the given width×depth×height.",
 ].join("\n");
 
 /**
- * Step 1 — placement and size only (no layer-map instructions).
+ * Step 1 — position / anchor only (no size, no materials, no layer map).
  */
 const PLACEMENT_PHASE_SYSTEM_PROMPT = [
   JSON_DISCIPLINE,
   "",
-  "Step 1 of 2: placement and size only. Do not output a Plan, layerMap, or passes.",
+  "Step 1 of 3: placement only (where the structure will go). Do not output size, Plan, layerMap, or passes.",
   "",
-  `Return PLACEMENT_CHOICE ${JSON.stringify(PLACEMENT_CHOICE_GUIDE)} — required: placement.desiredSize, placement.verticalReference, ref, offsets.`,
+  `Return PLACEMENT_CHOICE ${JSON.stringify(PLACEMENT_CHOICE_GUIDE)} — required: placement.verticalReference, ref, offsets. Omit desiredSize (forbidden).`,
   "",
   PLACEMENT_RULES_COMPACT,
   "",
@@ -385,12 +500,27 @@ const PLACEMENT_PHASE_SYSTEM_PROMPT = [
 ].join("\n");
 
 /**
- * Step 2 — layer map / plan; placement comes from the user message.
+ * Step 2 — design: materials, prose guide, footprint size (only step with full material context).
+ */
+const DESIGN_PHASE_SYSTEM_PROMPT = [
+  JSON_DISCIPLINE,
+  "",
+  "Step 2 of 3: design only. Do not output a Plan, layerMap, or placement_choice.",
+  "",
+  `Return DESIGN_CHOICE ${JSON.stringify(DESIGN_CHOICE_GUIDE)}.`,
+  "",
+  buildDesignPhaseMaterialRegistrySection(),
+  "",
+  CONVERSATION_FOLLOWUPS_COMPACT,
+].join("\n");
+
+/**
+ * Step 3 — layer map / plan; volume and materials come from the user message (design + merged placement).
  */
 const PLAN_PHASE_SYSTEM_PROMPT = [
   JSON_DISCIPLINE,
   "",
-  "Step 2 of 2: output the build plan only. The user message gives the build volume and request only — do not send placement or placement_choice.",
+  "Step 3 of 3: output the build plan only. The user message gives volume, design guide, and recommended materials — do not send placement or placement_choice.",
   "",
   `Return build ${JSON.stringify(DESIGN_STEP_GUIDE.build)}.`,
   "Layer map must match the given width×depth×height; align content in local Y using the given vertical anchor.",
@@ -400,7 +530,7 @@ const PLAN_PHASE_SYSTEM_PROMPT = [
   "=== PLAN SCHEMA ===",
   JSON.stringify(PLAN_SCHEMA_GUIDE, null, 2),
   "",
-  MATERIALS_AND_CONSTRAINTS_COMPACT,
+  BUILDER_PALETTE_RULES_COMPACT,
 ].join("\n");
 
 /**
@@ -415,12 +545,15 @@ function buildSharedUserContent(
   request: ChatCommandRequest,
   lastPlan: Plan | undefined,
   introLine: string,
+  options?: { includeNearbyMaterials?: boolean },
 ): string {
   const parts: string[] = [introLine, buildPlacementCard(request)];
 
-  const nearbySummary = buildNearbyContextSummary(request);
-  if (nearbySummary) {
-    parts.push(nearbySummary);
+  if (options?.includeNearbyMaterials === true) {
+    const nearbySummary = buildNearbyContextSummary(request);
+    if (nearbySummary) {
+      parts.push(nearbySummary);
+    }
   }
 
   const historyBlock = formatConversationHistoryForPrompt(request);
@@ -458,7 +591,7 @@ function buildSharedUserContent(
 }
 
 /**
- * Builds the system message for step 1 — placement only (get location and size).
+ * Builds the system message for step 1 — placement only (anchor; no size).
  *
  * @param request Used for optional prompt hints (same keywords as monolithic).
  */
@@ -470,7 +603,19 @@ export function buildPlacementPhaseSystemContent(request: ChatCommandRequest): s
 }
 
 /**
- * Builds the system message for step 2 — layer map / plan (build the thing).
+ * Builds the system message for step 2 — design (materials + size + prose for builder).
+ *
+ * @param request Used for optional prompt hints (see `promptHints.ts`).
+ */
+export function buildDesignPhaseSystemContent(request: ChatCommandRequest): string {
+  const hintSection = formatPromptHintsSection(collectPromptHints(request));
+  return hintSection !== undefined
+    ? `${DESIGN_PHASE_SYSTEM_PROMPT}\n\n${hintSection}`
+    : DESIGN_PHASE_SYSTEM_PROMPT;
+}
+
+/**
+ * Builds the system message for step 3 — layer map / plan (build the thing).
  *
  * @param request Used for optional prompt hints (see `promptHints.ts`).
  */
@@ -482,7 +627,7 @@ export function buildPlanPhaseSystemContent(request: ChatCommandRequest): string
 }
 
 /**
- * Builds first-turn messages for the placement phase (step 1 of 2: location only).
+ * Builds first-turn messages for the placement phase (step 1 of 3: position only).
  *
  * @param request Current plugin request.
  * @param lastPlan Optional prior successful plan for follow-ups.
@@ -494,7 +639,7 @@ export function buildPlacementPhaseMessages(
   const userContent = buildSharedUserContent(
     request,
     lastPlan,
-    "Choose placement, size, and vertical reference for this request (step 1 of 2). No layer map yet.",
+    "Choose placement and vertical reference for this request (step 1 of 3). Do not choose size or materials — no layer map yet.",
   );
   const systemContent = buildPlacementPhaseSystemContent(request);
   return [

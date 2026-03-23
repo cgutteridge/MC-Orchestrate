@@ -27,6 +27,160 @@ export const LAYER_MAP_MAX_VERTICAL = 48;
 
 const BATCH_SET_CHUNK = 512;
 
+/**
+ * Footprint for {@link normalizeLayerMap}: same meaning as the design-step `desiredSize`
+ * (`DesiredSizeSchema`) — width = columns (+X), depth = rows per slice (+Z), height = Y slice count
+ * (layers top→bottom).
+ */
+export type LayerMapClip = {
+  width: number;
+  depth: number;
+  height: number;
+};
+
+/**
+ * Rectangularizes ragged layer maps, fixes palette quirks, and maps unknown
+ * characters to no-op spaces.
+ *
+ * When `clip` is set (from the design-step `desiredSize`), pads with spaces or
+ * truncates so the grid matches that footprint exactly.
+ *
+ * When `clip` is omitted, rectangularizes to a common width/depth/height and
+ * only then applies hard caps {@link LAYER_MAP_MAX_HORIZONTAL} /
+ * {@link LAYER_MAP_MAX_VERTICAL} so parsing still succeeds.
+ *
+ * @param layerMap - Raw AI or repaired layer map.
+ * @param clip - Optional sizing from the design step; when set, overrides intrinsic extent.
+ */
+export function normalizeLayerMap(layerMap: LayerMapData, clip?: LayerMapClip): LayerMapData {
+  const palette: Record<string, string> = { ...layerMap.palette };
+  delete palette[" "];
+
+  const cleanedPalette: Record<string, string> = {};
+  for (const [key, value] of Object.entries(palette)) {
+    if (key.length !== 1) {
+      continue;
+    }
+    cleanedPalette[key] = value;
+  }
+  if (!Object.prototype.hasOwnProperty.call(cleanedPalette, LAYER_MAP_AIR_CHAR)) {
+    cleanedPalette[LAYER_MAP_AIR_CHAR] = "minecraft:air";
+  }
+
+  const paletteChars = new Set(Object.keys(cleanedPalette));
+
+  let layerStrings = [...layerMap.layers];
+  if (layerStrings.length === 0) {
+    return { layers: layerStrings, palette: cleanedPalette };
+  }
+
+  if (!clip && layerStrings.length > LAYER_MAP_MAX_VERTICAL) {
+    layerStrings = layerStrings.slice(0, LAYER_MAP_MAX_VERTICAL);
+  }
+
+  const rowSets: string[][] = [];
+  for (let i = 0; i < layerStrings.length; i++) {
+    let rows = splitLayerRows(layerStrings[i]!);
+    if (rows.length === 0) {
+      rows = [" "];
+    }
+    rowSets.push(rows);
+  }
+
+  let intrinsicW = 0;
+  for (const rows of rowSets) {
+    for (const row of rows) {
+      intrinsicW = Math.max(intrinsicW, [...row].length);
+    }
+  }
+
+  let intrinsicD = 0;
+  for (const rows of rowSets) {
+    intrinsicD = Math.max(intrinsicD, rows.length);
+  }
+
+  intrinsicW = Math.max(1, intrinsicW);
+  intrinsicD = Math.max(1, intrinsicD);
+
+  let maxW: number;
+  let maxD: number;
+  let targetLayerCount: number;
+
+  if (clip) {
+    maxW = clip.width;
+    maxD = clip.depth;
+    targetLayerCount = clip.height;
+  } else {
+    maxW = Math.max(1, Math.min(intrinsicW, LAYER_MAP_MAX_HORIZONTAL));
+    maxD = Math.max(1, Math.min(intrinsicD, LAYER_MAP_MAX_HORIZONTAL));
+    targetLayerCount = Math.min(rowSets.length, LAYER_MAP_MAX_VERTICAL);
+  }
+
+  const padToWidth = (row: string, w: number): string => {
+    const chars = [...row];
+    const slice = chars.slice(0, w);
+    if (slice.length < w) {
+      return slice.join("") + " ".repeat(w - slice.length);
+    }
+    return slice.join("");
+  };
+
+  const cleanRow = (row: string): string => {
+    return [...row]
+      .map((ch) => {
+        if (ch === " ") {
+          return ch;
+        }
+        if (ch === LAYER_MAP_AIR_CHAR) {
+          return ch;
+        }
+        if (paletteChars.has(ch)) {
+          return ch;
+        }
+        return " ";
+      })
+      .join("");
+  };
+
+  /** Rectangularize each layer to intrinsic unified maxW/maxD (ragged fix), then clip to maxW/maxD. */
+  const rectangularLayers: string[][] = [];
+  for (let li = 0; li < rowSets.length; li++) {
+    let rows = rowSets[li]!.map((row) => cleanRow(padToWidth(row, intrinsicW)));
+    rows = rows.slice(0, intrinsicD);
+    while (rows.length < intrinsicD) {
+      rows.push(" ".repeat(intrinsicW));
+    }
+    for (let r = 0; r < rows.length; r++) {
+      rows[r] = cleanRow(padToWidth(rows[r]!, intrinsicW));
+    }
+    rectangularLayers.push(rows);
+  }
+
+  /** Truncate or pad layers to targetLayerCount; each slice to maxD × maxW. */
+  let working = rectangularLayers.slice(0, targetLayerCount);
+  while (working.length < targetLayerCount) {
+    working.push(Array.from({ length: intrinsicD }, () => " ".repeat(intrinsicW)));
+  }
+
+  const normalizedLayers: string[] = [];
+  for (let li = 0; li < working.length; li++) {
+    let rows = working[li]!.map((row) => cleanRow(padToWidth(row, maxW)));
+    rows = rows.slice(0, maxD);
+    while (rows.length < maxD) {
+      rows.push(" ".repeat(maxW));
+    }
+    for (let r = 0; r < rows.length; r++) {
+      rows[r] = cleanRow(padToWidth(rows[r]!, maxW));
+    }
+    normalizedLayers.push(rows.join("\n"));
+  }
+
+  return {
+    layers: normalizedLayers,
+    palette: cleanedPalette,
+  };
+}
+
 export type ParsedLayerGrid = {
   width: number;
   depth: number;
@@ -44,7 +198,7 @@ export type ParsedLayerGrid = {
  * @returns `undefined` when valid, otherwise a human-readable error message.
  */
 export function validateLayerMapShape(layerMap: LayerMapData): string | undefined {
-  const parsed = parseLayerMapGrid(layerMap);
+  const parsed = parseLayerMapGrid(normalizeLayerMap(layerMap));
   return "error" in parsed ? parsed.error : undefined;
 }
 
@@ -56,7 +210,7 @@ export function deriveLayerMapLocalBounds(layerMap: LayerMapData): {
   min: { x: number; y: number; z: number };
   max: { x: number; y: number; z: number };
 } {
-  const p = parseLayerMapGrid(layerMap);
+  const p = parseLayerMapGrid(normalizeLayerMap(layerMap));
   if ("error" in p) {
     return {
       min: { x: 0, y: 0, z: 0 },
@@ -71,10 +225,10 @@ export function deriveLayerMapLocalBounds(layerMap: LayerMapData): {
 }
 
 /**
- * Estimates how many cells a layer map would affect (non–no-op voxels; upper bound for safety).
+ * Estimates how many cells a layer map would affect (non–no-op voxels).
  */
 export function estimateLayerMapBlockCount(layerMap: LayerMapData): number {
-  const p = parseLayerMapGrid(layerMap);
+  const p = parseLayerMapGrid(normalizeLayerMap(layerMap));
   if ("error" in p) {
     return 0;
   }
@@ -102,7 +256,7 @@ export function compileLayerMapToBridgeCommands(
   layerMap: LayerMapData,
   origin: { x: number; y: number; z: number },
 ): BridgeCommand[] {
-  const p = parseLayerMapGrid(layerMap);
+  const p = parseLayerMapGrid(normalizeLayerMap(layerMap));
   if ("error" in p) {
     return [];
   }

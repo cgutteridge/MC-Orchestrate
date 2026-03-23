@@ -86,8 +86,19 @@ function placementChoiceJson(placement: Record<string, unknown>): string {
   });
 }
 
-/** Provider: turn 1 = placement_choice, turn 2+ = build with plan. */
-function twoTurnProvider(plan: Record<string, unknown>): ChatProvider {
+/** Step 2 JSON — valid {@link DesignChoiceStepSchema} for tests. */
+function designChoiceJson(desiredSize: { width: number; depth: number; height: number }): string {
+  return JSON.stringify({
+    action: "design_choice",
+    designSummary: "Fixture design",
+    builderGuide: "Follow the player request and match the given volume.",
+    desiredSize,
+    recommendedMaterials: ["minecraft:glass", "minecraft:stone", "minecraft:air"],
+  });
+}
+
+/** Provider: turn 1 = placement_choice, turn 2 = design_choice, turn 3 = build with plan. */
+function threeTurnProvider(plan: Record<string, unknown>): ChatProvider {
   let turn = 0;
   return {
     name: "test",
@@ -106,9 +117,11 @@ function twoTurnProvider(plan: Record<string, unknown>): ChatProvider {
           west: 0,
           up: 0,
           down: 0,
-          desiredSize: { width: 5, depth: 5, height: 6 },
           verticalReference: "middle",
         });
+      }
+      if (turn === 2) {
+        return designChoiceJson({ width: 5, depth: 5, height: 6 });
       }
       return buildStep(plan);
     },
@@ -121,7 +134,7 @@ function twoTurnProvider(plan: Record<string, unknown>): ChatProvider {
 
 describe("runPlacementThenBuild", () => {
   it("returns a plan after placement_choice then build (merged placement)", async () => {
-    const provider = twoTurnProvider({
+    const provider = threeTurnProvider({
       intent: "build_cylinder",
       targetWorld: "world",
       targetRegion: {
@@ -177,9 +190,11 @@ describe("runPlacementThenBuild", () => {
             west: 0,
             up: 0,
             down: 0,
-            desiredSize: { width: 8, depth: 8, height: 16 },
             verticalReference: "bottom",
           });
+        }
+        if (turn === 2) {
+          return designChoiceJson({ width: 8, depth: 8, height: 16 });
         }
         const user = messages.find((m) => m.role === "user")?.content ?? "";
         if (!user.includes("Earlier lines:")) {
@@ -230,7 +245,7 @@ describe("runPlacementThenBuild", () => {
   });
 
   it("repairs loose layer map objects before validation", async () => {
-    const provider = twoTurnProvider({
+    const provider = threeTurnProvider({
       intent: "unknown",
       passes: [
         {
@@ -255,7 +270,7 @@ describe("runPlacementThenBuild", () => {
   });
 
   it("falls back to unknown when the model omits intent", async () => {
-    const provider = twoTurnProvider({
+    const provider = threeTurnProvider({
       passes: [
         {
           name: "Create tower",
@@ -317,7 +332,7 @@ describe("runPlacementThenBuild", () => {
   });
 
   it("rejects after max steps when passes have no layer map (repair drops them)", async () => {
-    const provider = twoTurnProvider({
+    const provider = threeTurnProvider({
       intent: "unknown",
       passes: [
         {
@@ -343,7 +358,7 @@ describe("runPlacementThenBuild", () => {
   });
 
   it("rejects clarification-only plans with no executable passes", async () => {
-    const provider = twoTurnProvider({
+    const provider = threeTurnProvider({
       intent: "unknown",
       passes: [],
       reply: "I can help with that.",
@@ -364,7 +379,7 @@ describe("runPlacementThenBuild", () => {
   });
 
   it("normalizes generic wool block ids in layer map palettes at execution sanitize", async () => {
-    const provider = twoTurnProvider({
+    const provider = threeTurnProvider({
       intent: "build_tower",
       passes: [
         {
@@ -395,7 +410,7 @@ describe("runPlacementThenBuild", () => {
   });
 
   it("rejects when plan action mismatches the player request (repair drops passes)", async () => {
-    const provider = twoTurnProvider({
+    const provider = threeTurnProvider({
       intent: "build_house",
       targetWorld: "world",
       targetRegion: {
@@ -470,27 +485,26 @@ describe("runPlacementThenBuild", () => {
             west: 0,
             up: 0,
             down: 0,
-            desiredSize: { width: 8, depth: 8, height: 8 },
             verticalReference: "middle",
           });
         }
         if (callCount === 2) {
-          return buildStep({
-            intent: "unknown",
-            passes: [
-              {
-                name: "p",
-                goal: "g",
-                layerMap: {
-                  layers: ["S"],
-                  palette: { S: "minecraft:stone", _: "minecraft:air" },
-                },
-              },
-            ],
-            reply: "done",
-          });
+          return designChoiceJson({ width: 8, depth: 8, height: 8 });
         }
-        return "not json";
+        return buildStep({
+          intent: "unknown",
+          passes: [
+            {
+              name: "p",
+              goal: "g",
+              layerMap: {
+                layers: ["S"],
+                palette: { S: "minecraft:stone", _: "minecraft:air" },
+              },
+            },
+          ],
+          reply: "done",
+        });
       },
     };
 
@@ -503,14 +517,19 @@ describe("runPlacementThenBuild", () => {
       async chat() {
         callCount++;
         if (callCount === 1) {
-          return JSON.stringify({
-            action: "placement_choice",
-            placement: {
-              ref: "player_view",
-              forward: 0,
-              desiredSize: { width: 8, depth: 8, height: 6 },
-              verticalReference: "middle",
-            },
+          return placementChoiceJson({
+            ref: "player_view",
+            forward: 0,
+            back: 0,
+            left: 0,
+            right: 0,
+            north: 0,
+            south: 0,
+            east: 0,
+            west: 0,
+            up: 0,
+            down: 0,
+            verticalReference: "middle",
           });
         }
         return "not json";
@@ -543,9 +562,11 @@ describe("runPlacementThenBuild", () => {
             west: 0,
             up: 0,
             down: 0,
-            desiredSize: { width: 16, depth: 16, height: 12 },
             verticalReference: "middle",
           });
+        }
+        if (turn === 2) {
+          return designChoiceJson({ width: 16, depth: 16, height: 12 });
         }
         const layer = "SSSSS\nSSSSS\nSSSSS\nSSSSS\nSSSSS";
         return JSON.stringify({
