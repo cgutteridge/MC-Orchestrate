@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { ChatProvider } from "../services/ai/types.js";
 import type { ChatCommandRequest } from "../types/plugin.js";
 import type { WorldReader } from "../world/worldReader.js";
-import { runDesignLoop } from "./aiPlanner.js";
+import { runPlacementThenBuild } from "./aiPlanner.js";
+import { sanitizePlanMaterials } from "./materialResolver.js";
 
 // ---------------------------------------------------------------------------
 // Shared fixtures
@@ -51,6 +52,12 @@ const fakeWorldReader: WorldReader = {
   }),
 } as unknown as WorldReader;
 
+/** 5×5 footprint × 6 Y layers — hollow glass ring (fits default cylinder target box). */
+const LAYER_RING_GLASS = {
+  layers: Array.from({ length: 6 }, () => "GGGGG\nG___G\nG___G\nG___G\nGGGGG"),
+  palette: { G: "minecraft:glass", _: "minecraft:air" },
+};
+
 /**
  * Returns a provider that always returns the given build step JSON.
  */
@@ -71,61 +78,78 @@ function buildStep(plan: Record<string, unknown>): string {
   return JSON.stringify({ action: "build", plan });
 }
 
+/** Step 1 JSON — valid {@link PlacementChoiceStepSchema} for tests. */
+function placementChoiceJson(placement: Record<string, unknown>): string {
+  return JSON.stringify({
+    action: "placement_choice",
+    placement,
+  });
+}
+
+/** Provider: turn 1 = placement_choice, turn 2+ = build with plan. */
+function twoTurnProvider(plan: Record<string, unknown>): ChatProvider {
+  let turn = 0;
+  return {
+    name: "test",
+    async chat() {
+      turn++;
+      if (turn === 1) {
+        return placementChoiceJson({
+          ref: "focus",
+          forward: 0,
+          back: 0,
+          left: 0,
+          right: 0,
+          north: 0,
+          south: 0,
+          east: 0,
+          west: 0,
+          up: 0,
+          down: 0,
+          desiredSize: { width: 5, depth: 5, height: 6 },
+          verticalReference: "middle",
+        });
+      }
+      return buildStep(plan);
+    },
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Happy path
 // ---------------------------------------------------------------------------
 
-describe("runDesignLoop", () => {
-  it("returns a plan on the first turn when the AI returns a valid build step", async () => {
-    // arrange
-    const provider = buildProvider(
-      buildStep({
-        intent: "build_cylinder",
-        targetWorld: "world",
-        targetRegion: {
-          world: "world",
-          min: { x: -53, y: 113, z: -19 },
-          max: { x: -49, y: 118, z: -15 },
+describe("runPlacementThenBuild", () => {
+  it("returns a plan after placement_choice then build (merged placement)", async () => {
+    const provider = twoTurnProvider({
+      intent: "build_cylinder",
+      targetWorld: "world",
+      targetRegion: {
+        world: "world",
+        min: { x: -53, y: 113, z: -19 },
+        max: { x: -49, y: 118, z: -15 },
+      },
+      assumptions: [],
+      passes: [
+        {
+          name: "cylinder_pass",
+          goal: "Build a hollow glass cylinder at the target block.",
+          primitives: [],
+          layerMap: LAYER_RING_GLASS,
         },
-        assumptions: [],
-        passes: [
-          {
-            name: "cylinder_pass",
-            goal: "Build a hollow glass cylinder at the target block.",
-            primitives: [
-              {
-                type: "cylinder",
-                center: { x: -51, y: 114, z: -17 },
-                radius: 3,
-                height: 5,
-                block: "minecraft:glass",
-                hollow: true,
-                axis: "y",
-              },
-            ],
-          },
-        ],
-        reply: "Here is your hollow glass cylinder!",
-        needsMoreInfo: false,
-      }),
-    );
+      ],
+      reply: "Here is your hollow glass cylinder!",
+    });
 
-    // act
-    const result = await runDesignLoop(provider, request, fakeWorldReader, undefined);
+    const result = await runPlacementThenBuild(provider, request, fakeWorldReader, undefined);
 
-    // assert
     expect(result.outcome).toBe("plan");
     if (result.outcome !== "plan") {
       return;
     }
+    expect(result.placement.ref).toBe("focus");
     expect(result.plan.passes).toHaveLength(1);
-    expect(result.plan.passes[0]?.primitives[0]).toMatchObject({
-      type: "cylinder",
-      block: "minecraft:glass",
-      hollow: true,
-      radius: 3,
-      height: 5,
-    });
+    expect(result.plan.passes[0]?.layerMap.palette.G).toBe("minecraft:glass");
   });
 
   it("includes prior chat lines in the initial user message for follow-up resolution", async () => {
@@ -135,18 +159,38 @@ describe("runDesignLoop", () => {
       recentMessages: ["build a small stone tower here"],
     };
 
+    const layer3x3 = "SSS\nSSS\nSSS";
+    let turn = 0;
     const provider: ChatProvider = {
       name: "test",
       async chat(messages) {
+        turn++;
+        if (turn === 1) {
+          return placementChoiceJson({
+            ref: "player_view",
+            forward: 0,
+            back: 0,
+            left: 0,
+            right: 0,
+            north: 0,
+            south: 0,
+            east: 0,
+            west: 0,
+            up: 0,
+            down: 0,
+            desiredSize: { width: 8, depth: 8, height: 16 },
+            verticalReference: "bottom",
+          });
+        }
         const user = messages.find((m) => m.role === "user")?.content ?? "";
-        if (!user.includes("CONVERSATION HISTORY")) {
-          throw new Error("Expected conversation history block");
+        if (!user.includes("Earlier lines:")) {
+          throw new Error("Expected earlier-lines follow-up context in plan-phase user message");
         }
         if (!user.includes("build a small stone tower here")) {
           throw new Error("Expected prior message in prompt");
         }
-        if (!user.includes("make it taller")) {
-          throw new Error("Expected current message in payload");
+        if (!user.includes("Build request: make it taller")) {
+          throw new Error("Expected current message in plan-phase user content");
         }
         return buildStep({
           intent: "build_tower",
@@ -161,23 +205,24 @@ describe("runDesignLoop", () => {
             {
               name: "tower",
               goal: "Extend the stone tower upward per the player's follow-up request.",
-              primitives: [
-                {
-                  type: "fill_cuboid",
-                  from: { x: -52, y: 113, z: -19 },
-                  to: { x: -50, y: 125, z: -17 },
-                  block: "minecraft:stone",
-                },
-              ],
+              primitives: [],
+              layerMap: {
+                layers: Array.from({ length: 13 }, () => layer3x3),
+                palette: { S: "minecraft:stone", _: "minecraft:air" },
+              },
             },
           ],
           reply: "Made it taller.",
-          needsMoreInfo: false,
         });
       },
     };
 
-    const result = await runDesignLoop(provider, followUpRequest, fakeWorldReader, undefined);
+    const result = await runPlacementThenBuild(
+      provider,
+      followUpRequest,
+      fakeWorldReader,
+      undefined,
+    );
     expect(result.outcome).toBe("plan");
     if (result.outcome !== "plan") {
       return;
@@ -186,71 +231,55 @@ describe("runDesignLoop", () => {
     expect(result.plan.passes[0]?.goal).toContain("follow-up");
   });
 
-  it("repairs underspecified primitive output and returns a plan", async () => {
-    // arrange — the AI sends a cylinder with no center/radius/height
-    const provider = buildProvider(
-      buildStep({
-        intent: "unknown",
-        passes: [
-          {
-            name: "Create Hollow Glass Cylinder",
-            goal: "Build a hollow glass cylinder at the player's position.",
-            primitives: [{ type: "cylinder" }],
+  it("repairs loose layer map objects before validation", async () => {
+    const provider = twoTurnProvider({
+      intent: "unknown",
+      passes: [
+        {
+          name: "Create Hollow Glass Cylinder",
+          goal: "Build a hollow glass cylinder at the player's position.",
+          primitives: [],
+          layerMap: {
+            layers: LAYER_RING_GLASS.layers,
+            palette: { G: "minecraft:glass", _: "minecraft:air" },
           },
-        ],
-        reply: "I'll create a hollow glass cylinder for you!",
-        needsMoreInfo: false,
-      }),
-    );
+        },
+      ],
+      reply: "I'll create a hollow glass cylinder for you!",
+    });
 
-    // act
-    const result = await runDesignLoop(provider, request, fakeWorldReader, undefined);
+    const result = await runPlacementThenBuild(provider, request, fakeWorldReader, undefined);
 
-    // assert
     expect(result.outcome).toBe("plan");
     if (result.outcome !== "plan") {
       return;
     }
-    expect(result.plan.passes[0]?.primitives[0]).toMatchObject({
-      type: "cylinder",
-      block: "minecraft:glass",
-      hollow: true,
-      axis: "y",
-    });
+    expect(result.plan.passes[0]?.layerMap.layers.length).toBe(6);
   });
 
   it("falls back to unknown when the model omits intent", async () => {
-    // arrange
-    const provider = buildProvider(
-      buildStep({
-        passes: [
-          {
-            name: "Create tower",
-            goal: "Build a tower.",
-            primitives: [
-              {
-                type: "fill_cuboid",
-                from: { x: -51, y: 113, z: -17 },
-                to: { x: -51, y: 117, z: -17 },
-                block: "minecraft:stone",
-              },
-            ],
+    const provider = twoTurnProvider({
+      passes: [
+        {
+          name: "Create tower",
+          goal: "Build a tower.",
+          primitives: [],
+          layerMap: {
+            layers: ["S"],
+            palette: { S: "minecraft:stone", _: "minecraft:air" },
           },
-        ],
-        reply: "Building it.",
-        needsMoreInfo: false,
-      }),
-    );
+        },
+      ],
+      reply: "Building it.",
+    });
 
-    // act
-    const result = await runDesignLoop(
+    const result = await runPlacementThenBuild(
       provider,
       { ...request, message: "make me a tower here" },
       fakeWorldReader,
       undefined,
     );
 
-    // assert
     expect(result.outcome).toBe("plan");
     if (result.outcome !== "plan") {
       return;
@@ -259,41 +288,7 @@ describe("runDesignLoop", () => {
     expect(result.plan.passes).toHaveLength(1);
   });
 
-  it("drops under-specified cuboid primitives and returns needs_more_info when nothing is left", async () => {
-    // arrange — both primitives are missing their from/to fields
-    const provider = buildProvider(
-      buildStep({
-        intent: "unknown",
-        passes: [
-          {
-            name: "Build cottage",
-            goal: "Build a cottage shell.",
-            primitives: [{ type: "fill_cuboid" }, { type: "hollow_cuboid" }],
-          },
-        ],
-        reply: "Your cottage is being built!",
-        needsMoreInfo: false,
-      }),
-    );
-
-    // act
-    const result = await runDesignLoop(
-      provider,
-      { ...request, message: "make me a cottage here" },
-      fakeWorldReader,
-      undefined,
-    );
-
-    // assert — all primitives dropped → needsMoreInfo from repair
-    expect(result.outcome).toBe("plan");
-    if (result.outcome !== "plan") {
-      return;
-    }
-    expect(result.plan.needsMoreInfo).toBe(true);
-    expect(result.plan.passes).toEqual([]);
-  });
-
-  it("drops a partially-specified cylinder when the player did not ask for one", async () => {
+  it("rejects after max steps when assistant keeps returning build in placement phase", async () => {
     const provider = buildProvider(
       buildStep({
         intent: "unknown",
@@ -301,153 +296,97 @@ describe("runDesignLoop", () => {
           {
             name: "mystery",
             goal: "Build something.",
-            primitives: [{ type: "cylinder", radius: 3 }],
+            primitives: [],
+            layerMap: {
+              layers: ["S"],
+              palette: { S: "minecraft:stone", _: "minecraft:air" },
+            },
           },
         ],
         reply: "Building something.",
-        needsMoreInfo: false,
       }),
     );
 
-    const result = await runDesignLoop(
+    const result = await runPlacementThenBuild(
       provider,
       { ...request, message: "make me a cottage here" },
       fakeWorldReader,
       undefined,
     );
 
-    expect(result.outcome).toBe("plan");
-    if (result.outcome !== "plan") {
+    expect(result.outcome).toBe("rejected");
+    if (result.outcome !== "rejected") {
       return;
     }
-    expect(result.plan.passes).toEqual([]);
+    expect(result.reason).toContain("ran out of planning steps");
   });
 
-  it("drops unknown primitive types", async () => {
-    const provider = buildProvider(
-      buildStep({
-        intent: "unknown",
-        passes: [
-          {
-            name: "mystery",
-            goal: "Do something.",
-            primitives: [{ type: "build_magic_house", foo: "bar" }],
-          },
-        ],
-        reply: "Building something strange.",
-        needsMoreInfo: false,
-      }),
-    );
-
-    const result = await runDesignLoop(
-      provider,
-      { ...request, message: "make me a cottage here" },
-      fakeWorldReader,
-      undefined,
-    );
-
-    expect(result.outcome).toBe("plan");
-    if (result.outcome !== "plan") {
-      return;
-    }
-    expect(result.plan.passes).toEqual([]);
-  });
-
-  it("normalizes clarification-only plans to needsMoreInfo when no executable passes remain", async () => {
-    const provider = buildProvider(
-      buildStep({
-        intent: "unknown",
-        passes: [],
-        reply: "I can help with that.",
-        needsMoreInfo: false,
-        clarification: "What size cottage do you want?",
-      }),
-    );
-
-    const result = await runDesignLoop(
-      provider,
-      { ...request, message: "make me a cottage here" },
-      fakeWorldReader,
-      undefined,
-    );
-
-    expect(result.outcome).toBe("plan");
-    if (result.outcome !== "plan") {
-      return;
-    }
-    expect(result.plan.needsMoreInfo).toBe(true);
-    expect(result.plan.clarification).toBe("What size cottage do you want?");
-  });
-
-  it("repairs cuboid primitives that use nested parameters.min/max", async () => {
-    const provider = buildProvider(
-      buildStep({
-        intent: "build_house",
-        passes: [
-          {
-            name: "create_pool",
-            goal: "Build a swimming pool.",
-            primitives: [
-              {
-                type: "hollow_cuboid",
-                parameters: {
-                  min: { x: -127, y: 96, z: -8 },
-                  max: { x: -124, y: 98, z: -4 },
-                  block: "minecraft:water",
-                },
-              },
-            ],
-          },
-        ],
-        reply: "Swimming pool will be built in the specified area.",
-        needsMoreInfo: false,
-      }),
-    );
-
-    const result = await runDesignLoop(
-      provider,
-      { ...request, message: "make me a house with a pool here" },
-      fakeWorldReader,
-      undefined,
-    );
-
-    expect(result.outcome).toBe("plan");
-    if (result.outcome !== "plan") {
-      return;
-    }
-    expect(result.plan.passes).toHaveLength(1);
-    expect(result.plan.passes[0]?.primitives[0]).toEqual({
-      type: "hollow_cuboid",
-      from: { x: -127, y: 96, z: -8 },
-      to: { x: -124, y: 98, z: -4 },
-      block: "minecraft:water",
+  it("rejects after max steps when passes have no layer map (repair drops them)", async () => {
+    const provider = twoTurnProvider({
+      intent: "unknown",
+      passes: [
+        {
+          name: "mystery",
+          goal: "Do something.",
+          primitives: [],
+        },
+      ],
+      reply: "Building something strange.",
     });
-  });
 
-  it("normalizes generic wool block ids from AI output", async () => {
-    const provider = buildProvider(
-      buildStep({
-        intent: "build_tower",
-        passes: [
-          {
-            name: "body",
-            goal: "Build a wool shape.",
-            primitives: [
-              {
-                type: "fill_cuboid",
-                from: { x: 1, y: 2, z: 3 },
-                to: { x: 2, y: 3, z: 4 },
-                block: "minecraft:wool",
-              },
-            ],
-          },
-        ],
-        reply: "Building it.",
-        needsMoreInfo: false,
-      }),
+    const result = await runPlacementThenBuild(
+      provider,
+      { ...request, message: "make me a cottage here" },
+      fakeWorldReader,
+      undefined,
     );
 
-    const result = await runDesignLoop(
+    expect(result.outcome).toBe("rejected");
+    if (result.outcome !== "rejected") {
+      return;
+    }
+    expect(result.reason).toContain("ran out of planning steps");
+  });
+
+  it("rejects clarification-only plans with no executable passes", async () => {
+    const provider = twoTurnProvider({
+      intent: "unknown",
+      passes: [],
+      reply: "I can help with that.",
+    });
+
+    const result = await runPlacementThenBuild(
+      provider,
+      { ...request, message: "make me a cottage here" },
+      fakeWorldReader,
+      undefined,
+    );
+
+    expect(result.outcome).toBe("rejected");
+    if (result.outcome !== "rejected") {
+      return;
+    }
+    expect(result.reason).toContain("ran out of planning steps");
+  });
+
+  it("normalizes generic wool block ids in layer map palettes at execution sanitize", async () => {
+    const provider = twoTurnProvider({
+      intent: "build_tower",
+      passes: [
+        {
+          name: "body",
+          goal: "Build a wool shape.",
+          primitives: [],
+          layerMap: {
+            layers: ["W"],
+            palette: { W: "minecraft:wool", _: "minecraft:air" },
+          },
+        },
+      ],
+      reply: "Building it.",
+    });
+
+    const result = await runPlacementThenBuild(
       provider,
       { ...request, message: "a tower made of wool" },
       fakeWorldReader,
@@ -458,59 +397,53 @@ describe("runDesignLoop", () => {
     if (result.outcome !== "plan") {
       return;
     }
-    expect(result.plan.passes[0]?.primitives[0]).toEqual({
-      type: "fill_cuboid",
-      from: { x: 1, y: 2, z: 3 },
-      to: { x: 2, y: 3, z: 4 },
-      block: "minecraft:white_wool",
-    });
+    const sanitized = sanitizePlanMaterials(result.plan);
+    expect(sanitized.plan.passes[0]?.layerMap.palette.W).toBe("minecraft:white_wool");
   });
 
-  it("forces clarification when plan action mismatches the player request", async () => {
-    const provider = buildProvider(
-      buildStep({
-        intent: "build_house",
-        passes: [
-          {
-            name: "shell",
-            goal: "Build something.",
-            primitives: [
-              {
-                type: "fill_cuboid",
-                from: { x: 0, y: 64, z: 0 },
-                to: { x: 1, y: 65, z: 1 },
-                block: "minecraft:stone",
-              },
-            ],
+  it("rejects when plan action mismatches the player request (repair drops passes)", async () => {
+    const provider = twoTurnProvider({
+      intent: "build_house",
+      targetWorld: "world",
+      targetRegion: {
+        world: "world",
+        min: { x: 0, y: 64, z: 0 },
+        max: { x: 1, y: 65, z: 1 },
+      },
+      assumptions: [],
+      passes: [
+        {
+          name: "shell",
+          goal: "Build something.",
+          primitives: [],
+          layerMap: {
+            layers: ["SS", "SS"],
+            palette: { S: "minecraft:stone", _: "minecraft:air" },
           },
-        ],
-        reply: "Building it.",
-        needsMoreInfo: false,
-      }),
-    );
+        },
+      ],
+      reply: "Building it.",
+    });
 
-    const result = await runDesignLoop(
+    const result = await runPlacementThenBuild(
       provider,
       { ...request, message: "delete this tree" },
       fakeWorldReader,
       undefined,
     );
 
-    expect(result.outcome).toBe("plan");
-    if (result.outcome !== "plan") {
+    expect(result.outcome).toBe("rejected");
+    if (result.outcome !== "rejected") {
       return;
     }
-    expect(result.plan.needsMoreInfo).toBe(true);
-    expect(result.plan.passes).toEqual([]);
-    expect(result.plan.clarification).toContain("wrong kind of operation");
+    expect(result.reason).toContain("ran out of planning steps");
   });
 
   // ---------------------------------------------------------------------------
   // Max turns guard
   // ---------------------------------------------------------------------------
 
-  it("returns needs_more_info when the loop budget is exhausted", async () => {
-    // arrange — provider never returns valid JSON
+  it("rejects after two consecutive replies without usable JSON", async () => {
     const provider: ChatProvider = {
       name: "test",
       async chat() {
@@ -518,13 +451,11 @@ describe("runDesignLoop", () => {
       },
     };
 
-    // act
-    const result = await runDesignLoop(provider, request, fakeWorldReader, undefined);
+    const result = await runPlacementThenBuild(provider, request, fakeWorldReader, undefined);
 
-    // assert
-    expect(result.outcome).toBe("needs_more_info");
-    if (result.outcome === "needs_more_info") {
-      expect(result.clarification).toContain("couldn't lock in a valid build plan");
+    expect(result.outcome).toBe("rejected");
+    if (result.outcome === "rejected") {
+      expect(result.reason).toContain("couldn't lock in a valid build plan");
     }
   });
 
@@ -534,250 +465,124 @@ describe("runDesignLoop", () => {
       name: "test",
       async chat() {
         callCount++;
-        // First call: valid plan so the loop doesn't abort immediately.
-        // Subsequent calls: bad JSON to trigger consecutive parse failures.
         if (callCount === 1) {
+          return placementChoiceJson({
+            ref: "player_view",
+            forward: 0,
+            back: 0,
+            left: 0,
+            right: 0,
+            north: 0,
+            south: 0,
+            east: 0,
+            west: 0,
+            up: 0,
+            down: 0,
+            desiredSize: { width: 8, depth: 8, height: 8 },
+            verticalReference: "middle",
+          });
+        }
+        if (callCount === 2) {
           return buildStep({
             intent: "unknown",
             passes: [
               {
                 name: "p",
                 goal: "g",
-                primitives: [
-                  {
-                    type: "fill_cuboid",
-                    from: { x: 0, y: 64, z: 0 },
-                    to: { x: 1, y: 65, z: 1 },
-                    block: "minecraft:stone",
-                  },
-                ],
+                primitives: [],
+                layerMap: {
+                  layers: ["S"],
+                  palette: { S: "minecraft:stone", _: "minecraft:air" },
+                },
               },
             ],
             reply: "done",
-            needsMoreInfo: false,
           });
         }
         return "not json";
       },
     };
 
-    // First call succeeds and returns a plan.
-    const first = await runDesignLoop(provider, request, fakeWorldReader, undefined);
+    const first = await runPlacementThenBuild(provider, request, fakeWorldReader, undefined);
     expect(first.outcome).toBe("plan");
 
-    // Reset and have two consecutive failures → needs_more_info.
     callCount = 0;
     const alwaysBad: ChatProvider = {
       name: "test",
       async chat() {
         callCount++;
-        // Return a view_request on turn 1 so the loop continues, then bad.
         if (callCount === 1) {
           return JSON.stringify({
-            action: "view_request",
-            region: {
-              world: "world",
-              min: { x: 0, y: 60, z: 0 },
-              max: { x: 10, y: 70, z: 10 },
+            action: "placement_choice",
+            placement: {
+              ref: "player_view",
+              forward: 0,
+              desiredSize: { width: 8, depth: 8, height: 6 },
+              verticalReference: "middle",
             },
-            selfNotes: "I need more context.",
           });
         }
         return "not json";
       },
     };
 
-    const result = await runDesignLoop(alwaysBad, request, fakeWorldReader, undefined);
-    expect(result.outcome).toBe("needs_more_info");
-    if (result.outcome === "needs_more_info") {
-      expect(result.clarification).toContain("couldn't lock in a valid build plan");
+    const result = await runPlacementThenBuild(alwaysBad, request, fakeWorldReader, undefined);
+    expect(result.outcome).toBe("rejected");
+    if (result.outcome === "rejected") {
+      expect(result.reason).toContain("couldn't lock in a valid build plan");
     }
-  });
-
-  // ---------------------------------------------------------------------------
-  // View request fulfillment
-  // ---------------------------------------------------------------------------
-
-  it("fulfils a view_request with the initial plugin payload and continues to a plan", async () => {
-    // arrange
-    const requestWithScan: ChatCommandRequest = {
-      ...request,
-      localContext: {
-        ...request.localContext,
-        nearbyBlocks: [
-          { x: -51, y: 112, z: -17, type: "minecraft:stone" },
-          { x: -52, y: 112, z: -17, type: "minecraft:oak_log" },
-        ],
-      },
-      initialScanRegion: {
-        minX: -58,
-        minY: 110,
-        minZ: -24,
-        maxX: -44,
-        maxY: 118,
-        maxZ: -12,
-      },
-    };
-
-    let turn = 0;
-    const provider: ChatProvider = {
-      name: "test",
-      async chat(messages) {
-        turn++;
-        if (turn === 1) {
-          // First turn: request a view within the initial scan bounds.
-          return JSON.stringify({
-            action: "view_request",
-            region: {
-              world: "world",
-              min: { x: -58, y: 110, z: -24 },
-              max: { x: -44, y: 118, z: -12 },
-            },
-            selfNotes: "Checking what materials are nearby before deciding.",
-          });
-        }
-        // Second turn: verify the scan result is in the user message.
-        const lastUser = messages.filter((m) => m.role === "user").at(-1)?.content ?? "";
-        if (!lastUser.includes("minecraft:stone")) {
-          throw new Error("Expected stone block in view fulfillment");
-        }
-        return buildStep({
-          intent: "build_tower",
-          targetWorld: "world",
-          targetRegion: {
-            world: "world",
-            min: { x: -52, y: 113, z: -19 },
-            max: { x: -50, y: 120, z: -17 },
-          },
-          assumptions: [],
-          passes: [
-            {
-              name: "tower",
-              goal: "Build a stone tower.",
-              primitives: [
-                {
-                  type: "fill_cuboid",
-                  from: { x: -52, y: 113, z: -19 },
-                  to: { x: -50, y: 120, z: -17 },
-                  block: "minecraft:stone",
-                },
-              ],
-            },
-          ],
-          reply: "Built a stone tower.",
-          needsMoreInfo: false,
-        });
-      },
-    };
-
-    // act
-    const result = await runDesignLoop(provider, requestWithScan, fakeWorldReader, undefined);
-
-    // assert
-    expect(result.outcome).toBe("plan");
-    if (result.outcome !== "plan") {
-      return;
-    }
-    expect(result.plan.intent).toBe("build_tower");
-    expect(turn).toBe(2);
-  });
-
-  it("surfaces scan-unavailable when view_request needs disk outside the initial payload", async () => {
-    const requestNoScan: ChatCommandRequest = {
-      ...request,
-      initialScanRegion: undefined,
-    };
-
-    let turn = 0;
-    const provider: ChatProvider = {
-      name: "test",
-      async chat(messages) {
-        turn++;
-        if (turn === 1) {
-          return JSON.stringify({
-            action: "view_request",
-            region: {
-              world: "world",
-              min: { x: 0, y: 60, z: 0 },
-              max: { x: 5, y: 70, z: 5 },
-            },
-            selfNotes: "Need terrain.",
-          });
-        }
-        const lastUser = messages.filter((m) => m.role === "user").at(-1)?.content ?? "";
-        if (!lastUser.includes("On-disk world scan is unavailable")) {
-          throw new Error("Expected scan-unavailable in view fulfillment");
-        }
-        return buildStep({
-          intent: "build_tower",
-          targetWorld: "world",
-          targetRegion: {
-            world: "world",
-            min: { x: -52, y: 113, z: -19 },
-            max: { x: -50, y: 120, z: -17 },
-          },
-          assumptions: [],
-          passes: [
-            {
-              name: "tower",
-              goal: "Build a stone tower.",
-              primitives: [
-                {
-                  type: "fill_cuboid",
-                  from: { x: -52, y: 113, z: -19 },
-                  to: { x: -50, y: 120, z: -17 },
-                  block: "minecraft:stone",
-                },
-              ],
-            },
-          ],
-          reply: "Built.",
-          needsMoreInfo: false,
-        });
-      },
-    };
-
-    const result = await runDesignLoop(provider, requestNoScan, fakeWorldReader, undefined);
-    expect(result.outcome).toBe("plan");
-    if (result.outcome !== "plan") {
-      return;
-    }
-    expect(result.plan.intent).toBe("build_tower");
-    expect(turn).toBe(2);
   });
 
   it("accepts a bare Plan JSON (without action wrapper) by falling back to Plan parsing", async () => {
-    // Some AI models may return a Plan directly. The loop should handle this.
-    const provider = buildProvider(
-      JSON.stringify({
-        intent: "build_house",
-        targetWorld: "world",
-        targetRegion: {
-          world: "world",
-          min: { x: -51, y: 113, z: -19 },
-          max: { x: -47, y: 120, z: -15 },
-        },
-        assumptions: [],
-        passes: [
-          {
-            name: "walls",
-            goal: "Build walls.",
-            primitives: [
-              {
-                type: "hollow_cuboid",
-                from: { x: -51, y: 113, z: -19 },
-                to: { x: -47, y: 120, z: -15 },
-                block: "minecraft:stone",
-              },
-            ],
+    let turn = 0;
+    const provider: ChatProvider = {
+      name: "test",
+      async chat() {
+        turn++;
+        if (turn === 1) {
+          return placementChoiceJson({
+            ref: "player_view",
+            forward: 8,
+            back: 0,
+            left: 0,
+            right: 0,
+            north: 0,
+            south: 0,
+            east: 0,
+            west: 0,
+            up: 0,
+            down: 0,
+            desiredSize: { width: 16, depth: 16, height: 12 },
+            verticalReference: "middle",
+          });
+        }
+        const layer = "SSSSS\nSSSSS\nSSSSS\nSSSSS\nSSSSS";
+        return JSON.stringify({
+          intent: "build_house",
+          targetWorld: "world",
+          targetRegion: {
+            world: "world",
+            min: { x: -51, y: 113, z: -19 },
+            max: { x: -47, y: 120, z: -15 },
           },
-        ],
-        reply: "Here is your house.",
-        needsMoreInfo: false,
-      }),
-    );
+          assumptions: [],
+          passes: [
+            {
+              name: "walls",
+              goal: "Build walls.",
+              primitives: [],
+              layerMap: {
+                layers: Array.from({ length: 8 }, () => layer),
+                palette: { S: "minecraft:stone", _: "minecraft:air" },
+              },
+            },
+          ],
+          reply: "Here is your house.",
+        });
+      },
+    };
 
-    const result = await runDesignLoop(provider, request, fakeWorldReader, undefined);
+    const result = await runPlacementThenBuild(provider, request, fakeWorldReader, undefined);
 
     expect(result.outcome).toBe("plan");
     if (result.outcome !== "plan") {

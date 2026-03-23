@@ -30,16 +30,11 @@ export function parseReplayFixture(raw: unknown): ReplayFixture {
  *
  * @param assistantTurns Raw assistant payloads, one per `chat()` invocation.
  */
-export function createReplayChatProvider(
-  assistantTurns: readonly string[],
-): ChatProvider {
+export function createReplayChatProvider(assistantTurns: readonly string[]): ChatProvider {
   let index = 0;
   return {
     name: "replay",
-    async chat(
-      _messages: ChatMessage[],
-      _options?: ChatCompletionOptions,
-    ): Promise<string> {
+    async chat(_messages: ChatMessage[], _options?: ChatCompletionOptions): Promise<string> {
       if (index >= assistantTurns.length) {
         throw new Error(
           `Replay provider exhausted at turn ${index} (only ${assistantTurns.length} assistant payload(s) recorded).`,

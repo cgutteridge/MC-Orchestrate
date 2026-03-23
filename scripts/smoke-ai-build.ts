@@ -1,20 +1,21 @@
 /**
- * Smoke: **step 1 (location)** — one API call with `buildPlacementPhaseMessages`
- * (placement and size only). For step 2 (plan after placement lock) use:
- *   `npx tsx scripts/smoke-ai-build.ts`
+ * Smoke: **step 2 (build) only** — layer-map `build` with minimal user
+ * context (same path as production after `resetMessagesForPlanPhase`).
+ *
+ * Uses a fixed locked placement fixture; does not call step 1.
  *
  * Usage:
- *   npx tsx scripts/smoke-ai-prompt.ts "your message here"
- *   npm run smoke:ai:prompt
+ *   npx tsx scripts/smoke-ai-build.ts "a cottage with a door"
  *
- * Requires AZURE_OPENAI_* (or whatever createChatProvider needs) in the environment.
- * If requests abort with a timeout, set AZURE_OPENAI_CHAT_TIMEOUT_MS (default 900000 ms).
+ * Requires the same AI env as the app (see `.env.example`).
  */
 import { loadConfig } from "../src/config/env.js";
-import { buildPlacementPhaseMessages } from "../src/planner/prompt.js";
+import type { ChatMessage } from "../src/services/ai/types.js";
+import { resetMessagesForPlanPhase } from "../src/planner/prompt.js";
 import { createChatProvider } from "../src/services/ai/provider.js";
 import {
   createSmokeChatRequest,
+  DEFAULT_LOCKED_PLACEMENT,
   formatMessagesForStdout,
   printLayerMapPreviewFromAssistantText,
 } from "./smoke/shared.js";
@@ -34,9 +35,14 @@ async function main(): Promise<void> {
   }
 
   const request = createSmokeChatRequest(message);
-  const messages = buildPlacementPhaseMessages(request, undefined);
+  const messages: ChatMessage[] = [];
+  resetMessagesForPlanPhase(messages, request, DEFAULT_LOCKED_PLACEMENT, undefined);
+
   process.stdout.write(formatMessagesForStdout(messages));
-  process.stdout.write(`--- Calling ${provider.name} (temperature 0.2)…\n\n`);
+  process.stdout.write(
+    `--- Locked placement fixture: ${JSON.stringify(DEFAULT_LOCKED_PLACEMENT)}\n`,
+  );
+  process.stdout.write(`--- Calling ${provider.name} (temperature 0.2) — build step…\n\n`);
 
   const raw = await provider.chat(messages, { temperature: 0.2 });
   process.stdout.write(raw);

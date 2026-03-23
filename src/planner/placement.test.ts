@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ChatCommandRequest } from "../types/plugin.js";
-import { resolvePlacement, shiftPlan } from "./placement.js";
+import { computePlacementAlignmentPoint, resolvePlacement, shiftPlan } from "./placement.js";
 import type { Placement, Plan } from "./schema.js";
 
 // ---------------------------------------------------------------------------
@@ -15,8 +15,13 @@ function makeRequest(
   return {
     requestId: "test",
     player: {
-      uuid: "u1", name: "Player", world: "world",
-      position, yaw: 0, pitch: 0, lookVector,
+      uuid: "u1",
+      name: "Player",
+      world: "world",
+      position,
+      yaw: 0,
+      pitch: 0,
+      lookVector,
     },
     message: "",
     recentMessages: [],
@@ -26,8 +31,18 @@ function makeRequest(
 }
 
 const defaultPlacement: Placement = {
-  ref: "player_view", forward: 0, back: 0, left: 0, right: 0,
-  north: 0, south: 0, east: 0, west: 0, up: 0, down: 0,
+  ref: "player_view",
+  forward: 0,
+  back: 0,
+  left: 0,
+  right: 0,
+  north: 0,
+  south: 0,
+  east: 0,
+  west: 0,
+  up: 0,
+  down: 0,
+  verticalReference: "middle",
 };
 
 // ---------------------------------------------------------------------------
@@ -101,13 +116,19 @@ describe("resolvePlacement — player_view", () => {
 describe("resolvePlacement — player_absolute", () => {
   it("north:10 → z decreases by 10", () => {
     const req = makeRequest({ x: 0, y: 64, z: 0 }, { x: 0, y: 0, z: 1 });
-    const result = resolvePlacement({ ...defaultPlacement, ref: "player_absolute", north: 10 }, req);
+    const result = resolvePlacement(
+      { ...defaultPlacement, ref: "player_absolute", north: 10 },
+      req,
+    );
     expect(result).toEqual({ x: 0, y: 65, z: -10 });
   });
 
   it("east:8, north:8 → NE diagonal", () => {
     const req = makeRequest({ x: 0, y: 64, z: 0 }, { x: 0, y: 0, z: 1 });
-    const result = resolvePlacement({ ...defaultPlacement, ref: "player_absolute", north: 8, east: 8 }, req);
+    const result = resolvePlacement(
+      { ...defaultPlacement, ref: "player_absolute", north: 8, east: 8 },
+      req,
+    );
     expect(result).toEqual({ x: 8, y: 65, z: -8 });
   });
 
@@ -176,6 +197,57 @@ describe("resolvePlacement — last_build", () => {
 });
 
 // ---------------------------------------------------------------------------
+// computePlacementAlignmentPoint
+// ---------------------------------------------------------------------------
+
+describe("computePlacementAlignmentPoint", () => {
+  const plan: Plan = {
+    intent: "t",
+    targetWorld: "world",
+    targetRegion: {
+      world: "world",
+      min: { x: 0, y: 10, z: 0 },
+      max: { x: 4, y: 14, z: 4 },
+    },
+    assumptions: [],
+    passes: [],
+    reply: "",
+  };
+
+  it("middle uses XZ centre and vertical centre Y", () => {
+    const p = computePlacementAlignmentPoint(plan, {
+      ...defaultPlacement,
+      verticalReference: "middle",
+    });
+    expect(p).toEqual({ x: 2, y: 12, z: 2 });
+  });
+
+  it("flying uses the same alignment as middle (vertical centre Y)", () => {
+    const p = computePlacementAlignmentPoint(plan, {
+      ...defaultPlacement,
+      verticalReference: "flying",
+    });
+    expect(p).toEqual({ x: 2, y: 12, z: 2 });
+  });
+
+  it("top uses max Y", () => {
+    const p = computePlacementAlignmentPoint(plan, {
+      ...defaultPlacement,
+      verticalReference: "top",
+    });
+    expect(p).toEqual({ x: 2, y: 14, z: 2 });
+  });
+
+  it("bottom uses min Y", () => {
+    const p = computePlacementAlignmentPoint(plan, {
+      ...defaultPlacement,
+      verticalReference: "bottom",
+    });
+    expect(p).toEqual({ x: 2, y: 10, z: 2 });
+  });
+});
+
+// ---------------------------------------------------------------------------
 // shiftPlan
 // ---------------------------------------------------------------------------
 
@@ -188,26 +260,20 @@ const basePlan: Plan = {
     {
       name: "walls",
       goal: "Build walls.",
-      primitives: [
-        { type: "hollow_cuboid", from: { x: -2, y: 0, z: -2 }, to: { x: 2, y: 8, z: 2 }, block: "minecraft:stone" },
-        { type: "set_block", x: 0, y: 4, z: 0, block: "minecraft:torch" },
-        { type: "cylinder", center: { x: 0, y: 9, z: 0 }, radius: 3, height: 2, block: "minecraft:stone", hollow: false, axis: "y" },
-      ],
+      primitives: [],
+      layerMap: {
+        layers: ["SSSSS", "SSSSS", "SSSSS", "SSSSS", "SSSSS"],
+        palette: { S: "minecraft:stone", _: "minecraft:air" },
+      },
     },
   ],
   reply: "Built.",
-  needsMoreInfo: false,
 };
 
 describe("shiftPlan", () => {
-  it("shifts all primitive coordinates by the offset", () => {
+  it("shifts targetRegion by the offset and preserves layer map data", () => {
     const shifted = shiftPlan(basePlan, { x: 10, y: 64, z: 20 });
-    const [pass] = shifted.passes;
-    const [hollow, setBlock, cylinder] = pass!.primitives;
-
-    expect(hollow).toMatchObject({ type: "hollow_cuboid", from: { x: 8, y: 64, z: 18 }, to: { x: 12, y: 72, z: 22 } });
-    expect(setBlock).toMatchObject({ type: "set_block", x: 10, y: 68, z: 20 });
-    expect(cylinder).toMatchObject({ type: "cylinder", center: { x: 10, y: 73, z: 20 } });
+    expect(shifted.passes[0]?.layerMap).toEqual(basePlan.passes[0]?.layerMap);
   });
 
   it("shifts targetRegion by the offset", () => {

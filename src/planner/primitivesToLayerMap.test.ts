@@ -46,9 +46,7 @@ describe("primitivesToLayerMapData", () => {
       return;
     }
     const { layers, palette } = result.layerMap;
-    const stone = Object.entries(palette).find(
-      ([, id]) => id === "minecraft:stone_bricks",
-    )?.[0];
+    const stone = Object.entries(palette).find(([, id]) => id === "minecraft:stone_bricks")?.[0];
     expect(stone).toBeDefined();
     const air = "_";
     for (const layer of layers) {

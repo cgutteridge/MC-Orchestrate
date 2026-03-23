@@ -41,6 +41,49 @@ function buildStep(plan: Record<string, unknown>): string {
   return JSON.stringify({ action: "build", plan });
 }
 
+/** Design loop step 1 — matches production `buildPlacementPhaseMessages` system prompt. */
+function placementChoiceStep(): string {
+  return JSON.stringify({
+    action: "placement_choice",
+    placement: {
+      ref: "player_view",
+      forward: 8,
+      back: 0,
+      left: 0,
+      right: 0,
+      north: 0,
+      south: 0,
+      east: 0,
+      west: 0,
+      up: 0,
+      down: 0,
+      desiredSize: { width: 16, depth: 16, height: 12 },
+      verticalReference: "middle",
+    },
+  });
+}
+
+/** True when the system prompt is placement phase (full or minimal prompt mode). */
+function isPlacementPhaseSystem(sys: string): boolean {
+  return sys.includes("Step 1 of 2") || sys.toLowerCase().includes("step 1/2");
+}
+
+/**
+ * Provider that answers placement phase then returns the given plan (two AI turns per request).
+ */
+function twoTurnProvider(plan: Record<string, unknown>): ChatProvider {
+  return {
+    name: "test",
+    async chat(messages) {
+      const sys = messages.find((m) => m.role === "system")?.content ?? "";
+      if (isPlacementPhaseSystem(sys)) {
+        return placementChoiceStep();
+      }
+      return buildStep(plan);
+    },
+  };
+}
+
 class FakeBridge {
   public readonly commands: BridgeCommand[] = [];
   public failOnCallNumber?: number;
@@ -75,7 +118,10 @@ const fakeWorldReader: WorldReader = {
 // Helper to build a standard Orchestrator with fakes
 // ---------------------------------------------------------------------------
 
-function makeOrchestrator(provider: ChatProvider): { orchestrator: Orchestrator; bridge: FakeBridge } {
+function makeOrchestrator(provider: ChatProvider): {
+  orchestrator: Orchestrator;
+  bridge: FakeBridge;
+} {
   const bridge = new FakeBridge();
   const orchestrator = new Orchestrator(bridge as never, fakeWorldReader, provider);
   return { orchestrator, bridge };
@@ -86,13 +132,13 @@ function makeOrchestrator(provider: ChatProvider): { orchestrator: Orchestrator;
 // ---------------------------------------------------------------------------
 
 describe("Orchestrator", () => {
-  it("returns needs_more_info immediately when no AI provider is configured", async () => {
+  it("returns rejected immediately when no AI provider is configured", async () => {
     const bridge = new FakeBridge();
     const orchestrator = new Orchestrator(bridge as never, fakeWorldReader);
 
     const response = await orchestrator.handleChatCommand(request);
 
-    expect(response.status).toBe("needs_more_info");
+    expect(response.status).toBe("rejected");
     expect(response.reply).toContain("No AI builder is configured");
     // No bridge commands except none (the Thinking... say fires but FakeBridge
     // records all commands — it should be empty here since no provider fires it).
@@ -100,50 +146,42 @@ describe("Orchestrator", () => {
   });
 
   it("sends a Thinking message before running the AI loop", async () => {
-    const provider: ChatProvider = {
-      name: "test",
-      async chat() {
-        return buildStep({
-          intent: "build_house",
-          targetWorld: "world",
-          targetRegion: {
-            world: "world",
-            min: { x: 0, y: 64, z: 0 },
-            max: { x: 4, y: 68, z: 4 },
-          },
-          assumptions: [],
-          passes: [
-            {
-              name: "walls",
-              goal: "Build it.",
-              primitives: [
-                {
-                  type: "fill_cuboid",
-                  from: { x: 0, y: 64, z: 0 },
-                  to: { x: 4, y: 68, z: 4 },
-                  block: "minecraft:stone",
-                },
-              ],
-            },
-          ],
-          reply: "Built a house.",
-          needsMoreInfo: false,
-        });
+    const layer5 = "SSSSS\nSSSSS\nSSSSS\nSSSSS\nSSSSS";
+    const provider = twoTurnProvider({
+      intent: "build_house",
+      targetWorld: "world",
+      targetRegion: {
+        world: "world",
+        min: { x: 0, y: 64, z: 0 },
+        max: { x: 4, y: 68, z: 4 },
       },
-    };
+      assumptions: [],
+      passes: [
+        {
+          name: "walls",
+          goal: "Build it.",
+          primitives: [],
+          layerMap: {
+            layers: Array.from({ length: 5 }, () => layer5),
+            palette: { S: "minecraft:stone", _: "minecraft:air" },
+          },
+        },
+      ],
+      reply: "Built a house.",
+    });
 
     const { orchestrator, bridge } = makeOrchestrator(provider);
     await orchestrator.handleChatCommand(request);
 
     const sayCommands = bridge.commands.filter((c) => c.kind === "say");
     expect(sayCommands.length).toBeGreaterThanOrEqual(1);
-    const thinkingMessage = sayCommands.find((c) =>
-      c.kind === "say" && c.message.includes("Thinking"),
+    const thinkingMessage = sayCommands.find(
+      (c) => c.kind === "say" && c.message.includes("Thinking"),
     );
     expect(thinkingMessage).toBeDefined();
   });
 
-  it("returns needs_more_info when the AI plan loses all executable primitives", async () => {
+  it("returns rejected when the AI plan never validates (no executable layer maps after repair)", async () => {
     const provider: ChatProvider = {
       name: "test",
       async chat() {
@@ -153,104 +191,10 @@ describe("Orchestrator", () => {
             {
               name: "cottage",
               goal: "Build a cottage.",
-              primitives: [{ type: "fill_cuboid" }],
+              primitives: [],
             },
           ],
           reply: "Your cottage is being built!",
-          needsMoreInfo: false,
-        });
-      },
-    };
-    const { orchestrator, bridge } = makeOrchestrator(provider);
-
-    const response = await orchestrator.handleChatCommand(request);
-
-    expect(response.status).toBe("needs_more_info");
-    expect(response.reply).toContain("couldn't turn that into placeable blocks");
-    const fillCommands = bridge.commands.filter((c) => c.kind === "fill");
-    expect(fillCommands).toEqual([]);
-  });
-
-  it("returns needs_more_info when plan materials cannot be resolved safely", async () => {
-    const provider: ChatProvider = {
-      name: "test",
-      async chat() {
-        return buildStep({
-          intent: "build_tower",
-          passes: [
-            {
-              name: "mystery",
-              goal: "Build something.",
-              primitives: [
-                {
-                  type: "fill_cuboid",
-                  from: { x: 0, y: 64, z: 0 },
-                  to: { x: 0, y: 65, z: 0 },
-                  block: "sheep fluff",
-                },
-              ],
-            },
-          ],
-          reply: "Building it.",
-          needsMoreInfo: false,
-        });
-      },
-    };
-    const { orchestrator, bridge } = makeOrchestrator(provider);
-
-    const response = await orchestrator.handleChatCommand({
-      ...request,
-      message: "build something fluffy",
-      recentMessages: ["make me a tower"],
-    });
-
-    // "sheep fluff" is either rejected by material resolution or dropped by
-    // repair (leaving empty passes). Either way status must be needs_more_info.
-    expect(response.status).toBe("needs_more_info");
-    const fillCommands = bridge.commands.filter((c) => c.kind === "fill");
-    expect(fillCommands).toEqual([]);
-  });
-
-  it("rejects a plan that would undo its own earlier build steps", async () => {
-    const provider: ChatProvider = {
-      name: "test",
-      async chat() {
-        return buildStep({
-          intent: "build_house",
-          targetWorld: "world",
-          targetRegion: {
-            world: "world",
-            min: { x: 0, y: 64, z: 0 },
-            max: { x: 6, y: 70, z: 6 },
-          },
-          assumptions: [],
-          passes: [
-            {
-              name: "build",
-              goal: "Build walls.",
-              primitives: [
-                {
-                  type: "fill_cuboid",
-                  from: { x: 0, y: 64, z: 0 },
-                  to: { x: 6, y: 70, z: 6 },
-                  block: "minecraft:stone",
-                },
-              ],
-            },
-            {
-              name: "undo",
-              goal: "Clear the same region.",
-              primitives: [
-                {
-                  type: "clear_region",
-                  from: { x: 0, y: 64, z: 0 },
-                  to: { x: 6, y: 70, z: 6 },
-                },
-              ],
-            },
-          ],
-          reply: "Done.",
-          needsMoreInfo: false,
         });
       },
     };
@@ -259,47 +203,133 @@ describe("Orchestrator", () => {
     const response = await orchestrator.handleChatCommand(request);
 
     expect(response.status).toBe("rejected");
-    expect(response.reply).toContain("Plan check");
-    const fillCommands = bridge.commands.filter((c) => c.kind === "fill");
-    expect(fillCommands).toEqual([]);
+    expect(response.reply).toContain("ran out of planning steps");
+    const batchSets = bridge.commands.filter((c) => c.kind === "batchSet");
+    expect(batchSets).toEqual([]);
+  });
+
+  it("replaces invalid block ids with stone, notifies the player, and still executes", async () => {
+    const provider = twoTurnProvider({
+      intent: "build_wall",
+      targetWorld: "world",
+      targetRegion: {
+        world: "world",
+        min: { x: 0, y: 64, z: 0 },
+        max: { x: 0, y: 65, z: 0 },
+      },
+      assumptions: [],
+      passes: [
+        {
+          name: "mystery",
+          goal: "Build something.",
+          primitives: [],
+          layerMap: {
+            layers: ["F", "F"],
+            palette: { F: "sheep fluff", _: "minecraft:air" },
+          },
+        },
+      ],
+      reply: "Building it.",
+    });
+    const { orchestrator, bridge } = makeOrchestrator(provider);
+
+    const response = await orchestrator.handleChatCommand({
+      ...request,
+      message: "build something fluffy",
+      recentMessages: ["make me a wall"],
+    });
+
+    expect(response.status).toBe("executed");
+    const batchSets = bridge.commands.filter((c) => c.kind === "batchSet");
+    expect(batchSets.some((c) => c.blocks.some((b) => b.type === "minecraft:stone"))).toBe(true);
+    const says = bridge.commands.filter((c) => c.kind === "say").map((c) => c.message);
+    expect(says.some((m) => m.includes("Invalid block id") && m.includes("stone"))).toBe(true);
+  });
+
+  it("rejects plans with more than two layer-map passes (semantics)", async () => {
+    const layer3 = "SSS\nSSS\nSSS";
+    const provider = twoTurnProvider({
+      intent: "build_house",
+      targetWorld: "world",
+      targetRegion: {
+        world: "world",
+        min: { x: 0, y: 64, z: 0 },
+        max: { x: 2, y: 66, z: 2 },
+      },
+      assumptions: [],
+      passes: [
+        {
+          name: "a",
+          goal: "First slice.",
+          primitives: [],
+          layerMap: {
+            layers: [layer3],
+            palette: { S: "minecraft:stone", _: "minecraft:air" },
+          },
+        },
+        {
+          name: "b",
+          goal: "Second slice.",
+          primitives: [],
+          layerMap: {
+            layers: [layer3],
+            palette: { S: "minecraft:stone", _: "minecraft:air" },
+          },
+        },
+        {
+          name: "c",
+          goal: "Third slice.",
+          primitives: [],
+          layerMap: {
+            layers: [layer3],
+            palette: { S: "minecraft:stone", _: "minecraft:air" },
+          },
+        },
+      ],
+      reply: "Done.",
+    });
+    const { orchestrator, bridge } = makeOrchestrator(provider);
+
+    const response = await orchestrator.handleChatCommand(request);
+
+    expect(response.status).toBe("rejected");
+    expect(response.reply).toContain("more than two layer-map passes");
+    const batchSets = bridge.commands.filter((c) => c.kind === "batchSet");
+    expect(batchSets).toEqual([]);
   });
 
   it("reports the failed execution step back to Minecraft instead of masking it", async () => {
-    const provider: ChatProvider = {
-      name: "test",
-      async chat() {
-        return buildStep({
-          intent: "build_house",
-          targetWorld: "world",
-          targetRegion: {
-            world: "world",
-            min: { x: 1, y: 64, z: 1 },
-            max: { x: 2, y: 64, z: 1 },
-          },
-          assumptions: [],
-          passes: [
-            {
-              name: "step_1",
-              goal: "Lay first block.",
-              primitives: [
-                { type: "set_block", x: 1, y: 64, z: 1, block: "minecraft:stone" },
-              ],
-            },
-            {
-              name: "step_2",
-              goal: "Lay second block.",
-              primitives: [
-                { type: "set_block", x: 2, y: 64, z: 1, block: "minecraft:stone" },
-              ],
-            },
-          ],
-          reply: "Done building.",
-          needsMoreInfo: false,
-        });
-      },
+    const oneStone = {
+      layers: ["S"],
+      palette: { S: "minecraft:stone", _: "minecraft:air" },
     };
+    const provider = twoTurnProvider({
+      intent: "wall_patch",
+      targetWorld: "world",
+      targetRegion: {
+        world: "world",
+        min: { x: 1, y: 64, z: 1 },
+        max: { x: 2, y: 64, z: 1 },
+      },
+      assumptions: [],
+      passes: [
+        {
+          name: "step_1",
+          goal: "Lay first block.",
+          primitives: [],
+          layerMap: oneStone,
+        },
+        {
+          name: "step_2",
+          goal: "Lay second block.",
+          primitives: [],
+          layerMap: oneStone,
+        },
+      ],
+      reply: "Done building.",
+    });
     const bridge = new FakeBridge();
-    // 1 Thinking, 2 Placement, 3 Building… (N ops), 4 setBlock 1, 5 setBlock 2 fails.
+    // 1 Thinking, 2 Placement, 3 Building… (2 ops), 4 batchSet 1, 5 batchSet 2 fails.
     bridge.failOnCallNumber = 5;
     const orchestrator = new Orchestrator(bridge as never, fakeWorldReader, provider);
 
@@ -312,10 +342,9 @@ describe("Orchestrator", () => {
     expect(response.status).toBe("error");
     expect(response.reply).toContain("Execution stopped");
     expect(response.reply).toContain("step 2 of 2");
-    // Coordinates are shifted by placement resolution; assert shape of the summary.
-    expect(response.reply).toMatch(/set_block at \(-?\d+, -?\d+, -?\d+\)/);
+    expect(response.reply).toMatch(/batch_set 1 block\(s\)/);
     expect(response.executedActions).toBe(1);
-    expect(response.failedCommandSummary).toMatch(/set_block at \(-?\d+, -?\d+, -?\d+\)/);
+    expect(response.failedCommandSummary).toMatch(/batch_set 1 block\(s\)/);
     const sayCommands = bridge.commands.filter((c) => c.kind === "say");
     const errorSay = sayCommands.find(
       (c) => c.kind === "say" && c.message.includes("Execution stopped"),
@@ -324,72 +353,68 @@ describe("Orchestrator", () => {
   });
 
   it("announces bridge operation count before execution", async () => {
-    const provider: ChatProvider = {
-      name: "test",
-      async chat() {
-        return buildStep({
-          intent: "build_house",
-          targetWorld: "world",
-          targetRegion: {
-            world: "world",
-            min: { x: 1, y: 64, z: 1 },
-            max: { x: 2, y: 64, z: 1 },
-          },
-          assumptions: [],
-          passes: [
-            {
-              name: "wall",
-              goal: "Tiny wall.",
-              primitives: [
-                { type: "set_block", x: 1, y: 64, z: 1, block: "minecraft:stone" },
-                { type: "set_block", x: 2, y: 64, z: 1, block: "minecraft:stone" },
-              ],
-            },
-          ],
-          reply: "Done building.",
-          needsMoreInfo: false,
-        });
-      },
+    const oneStone = {
+      layers: ["S"],
+      palette: { S: "minecraft:stone", _: "minecraft:air" },
     };
+    const provider = twoTurnProvider({
+      intent: "wall_patch",
+      targetWorld: "world",
+      targetRegion: {
+        world: "world",
+        min: { x: 1, y: 64, z: 1 },
+        max: { x: 2, y: 64, z: 1 },
+      },
+      assumptions: [],
+      passes: [
+        {
+          name: "wall",
+          goal: "Tiny wall.",
+          primitives: [],
+          layerMap: oneStone,
+        },
+        {
+          name: "wall_b",
+          goal: "Second block.",
+          primitives: [],
+          layerMap: oneStone,
+        },
+      ],
+      reply: "Done building.",
+    });
     const { orchestrator, bridge } = makeOrchestrator(provider);
     await orchestrator.handleChatCommand(request);
 
     const buildingSay = bridge.commands.find(
       (c) =>
-        c.kind === "say" &&
-        c.message.includes("Building") &&
-        c.message.includes("2 operations"),
+        c.kind === "say" && c.message.includes("Building") && c.message.includes("2 operations"),
     );
     expect(buildingSay).toBeDefined();
   });
 
   it("returns cancelled when the abort signal is already set", async () => {
-    const provider: ChatProvider = {
-      name: "test",
-      async chat() {
-        return buildStep({
-          intent: "build_house",
-          targetWorld: "world",
-          targetRegion: {
-            world: "world",
-            min: { x: 0, y: 64, z: 0 },
-            max: { x: 1, y: 64, z: 0 },
-          },
-          assumptions: [],
-          passes: [
-            {
-              name: "a",
-              goal: "Block.",
-              primitives: [
-                { type: "set_block", x: 0, y: 64, z: 0, block: "minecraft:stone" },
-              ],
-            },
-          ],
-          reply: "Done.",
-          needsMoreInfo: false,
-        });
+    const provider = twoTurnProvider({
+      intent: "build_house",
+      targetWorld: "world",
+      targetRegion: {
+        world: "world",
+        min: { x: 0, y: 64, z: 0 },
+        max: { x: 1, y: 64, z: 0 },
       },
-    };
+      assumptions: [],
+      passes: [
+        {
+          name: "a",
+          goal: "Block.",
+          primitives: [],
+          layerMap: {
+            layers: ["S"],
+            palette: { S: "minecraft:stone", _: "minecraft:air" },
+          },
+        },
+      ],
+      reply: "Done.",
+    });
     const { orchestrator } = makeOrchestrator(provider);
     const ac = new AbortController();
     ac.abort();
@@ -407,13 +432,18 @@ describe("Orchestrator", () => {
     const provider: ChatProvider = {
       name: "test",
       async chat(messages) {
-        // Check only the `message` field in the first user message to avoid
-        // false matches against recentMessages history.
+        const sys = messages.find((m) => m.role === "system")?.content ?? "";
+        if (isPlacementPhaseSystem(sys)) {
+          return placementChoiceStep();
+        }
+        // Placement phase embeds `message` in JSON; plan phase uses `Build request:`.
         const userContent = messages.find((m) => m.role === "user")?.content ?? "";
-        const currentMessageMatch = /"message"\s*:\s*"([^"]*)"/.exec(userContent);
-        const currentMessage = currentMessageMatch?.[1] ?? "";
+        const buildRequestMatch = /Build request:\s*([^\n]+)/.exec(userContent);
+        const jsonMessageMatch = /"message"\s*:\s*"([^"]*)"/.exec(userContent);
+        const currentMessage = (buildRequestMatch?.[1] ?? jsonMessageMatch?.[1] ?? "").trim();
 
         if (currentMessage.includes("delete this tree")) {
+          const air3 = "___\n___\n___";
           return buildStep({
             intent: "remove_tree",
             targetWorld: "world",
@@ -426,20 +456,15 @@ describe("Orchestrator", () => {
             passes: [
               {
                 name: "remove_logs",
-                goal: "Remove logs.",
-                primitives: [
-                  {
-                    type: "replace_in_region",
-                    from: { x: 0, y: 64, z: 0 },
-                    to: { x: 2, y: 72, z: 2 },
-                    fromBlock: "minecraft:oak_log",
-                    toBlock: "minecraft:air",
-                  },
-                ],
+                goal: "Clear volume to air.",
+                primitives: [],
+                layerMap: {
+                  layers: Array.from({ length: 9 }, () => air3),
+                  palette: { _: "minecraft:air" },
+                },
               },
             ],
             reply: "Removing that tree.",
-            needsMoreInfo: false,
           });
         }
         if (currentMessage.includes("taller") && towerBuilt) {
@@ -456,18 +481,14 @@ describe("Orchestrator", () => {
               {
                 name: "extension",
                 goal: "Extend tower upward.",
-                primitives: [
-                  {
-                    type: "fill_cuboid",
-                    from: { x: 0, y: 69, z: 0 },
-                    to: { x: 0, y: 70, z: 0 },
-                    block: "minecraft:white_wool",
-                  },
-                ],
+                primitives: [],
+                layerMap: {
+                  layers: ["W", "W"],
+                  palette: { W: "minecraft:white_wool", _: "minecraft:air" },
+                },
               },
             ],
             reply: "Extended by 2 blocks.",
-            needsMoreInfo: false,
           });
         }
         towerBuilt = true;
@@ -484,18 +505,14 @@ describe("Orchestrator", () => {
             {
               name: "tower_column",
               goal: "Build the tower shaft.",
-              primitives: [
-                {
-                  type: "fill_cuboid",
-                  from: { x: 0, y: 64, z: 0 },
-                  to: { x: 0, y: 68, z: 0 },
-                  block: "minecraft:white_wool",
-                },
-              ],
+              primitives: [],
+              layerMap: {
+                layers: Array.from({ length: 5 }, () => "W"),
+                palette: { W: "minecraft:white_wool", _: "minecraft:air" },
+              },
             },
           ],
           reply: "Building a 5-block tower.",
-          needsMoreInfo: false,
         });
       },
     };
@@ -528,11 +545,11 @@ describe("Orchestrator", () => {
     expect(taller.status).toBe("executed");
     expect(taller.reply).toContain("2 blocks");
 
-    const fillCommands = bridge.commands.filter((c) => c.kind === "fill");
-    expect(fillCommands.length).toBeGreaterThanOrEqual(2);
+    const batchSets = bridge.commands.filter((c) => c.kind === "batchSet");
+    expect(batchSets.length).toBeGreaterThanOrEqual(2);
   });
 
-  it("returns needs_more_info when the loop budget is exhausted (no valid JSON)", async () => {
+  it("returns rejected when the assistant never returns usable JSON", async () => {
     const provider: ChatProvider = {
       name: "test",
       async chat() {
@@ -543,7 +560,7 @@ describe("Orchestrator", () => {
 
     const response = await orchestrator.handleChatCommand(request);
 
-    expect(response.status).toBe("needs_more_info");
+    expect(response.status).toBe("rejected");
   });
 
   it("uses orchestrator-side recent history on subsequent requests", async () => {
@@ -551,8 +568,13 @@ describe("Orchestrator", () => {
     const provider: ChatProvider = {
       name: "test",
       async chat(messages) {
+        const sys = messages.find((m) => m.role === "system")?.content ?? "";
+        if (isPlacementPhaseSystem(sys)) {
+          return placementChoiceStep();
+        }
         // Capture the full user content so we can check for remembered messages.
         seenUserContent = messages.find((m) => m.role === "user")?.content ?? "";
+        const layer5 = "SSSSS\nSSSSS\nSSSSS\nSSSSS\nSSSSS";
         return buildStep({
           intent: "build_house",
           targetWorld: "world",
@@ -566,18 +588,14 @@ describe("Orchestrator", () => {
             {
               name: "walls",
               goal: "Build it.",
-              primitives: [
-                {
-                  type: "fill_cuboid",
-                  from: { x: 0, y: 64, z: 0 },
-                  to: { x: 4, y: 68, z: 4 },
-                  block: "minecraft:stone",
-                },
-              ],
+              primitives: [],
+              layerMap: {
+                layers: Array.from({ length: 5 }, () => layer5),
+                palette: { S: "minecraft:stone", _: "minecraft:air" },
+              },
             },
           ],
           reply: "Built.",
-          needsMoreInfo: false,
         });
       },
     };

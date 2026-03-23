@@ -4,22 +4,16 @@ import { extractJsonValue, parseJsonStrict } from "../services/ai/json.js";
 import type { ChatCommandRequest } from "../types/plugin.js";
 import type { BlockSample } from "../types/plugin.js";
 import { escapeRegex } from "../utils/regex.js";
-import { normalizeBlockId, parseRequestedBlock } from "./materialPalette.js";
-import type { DesignLoopLogger } from "./designLoopLogger.js";
+import type { PlacementBuildLogger } from "./placementBuildLogger.js";
 import type { PlannerLogger } from "./planLogger.js";
 import {
   appendVerifyFulfillment,
-  appendViewRequestFulfillment,
-  buildInitialMessages,
+  buildPlacementPhaseMessages,
+  resetMessagesForPlanPhase,
 } from "./prompt.js";
+import { defaultRegion } from "./requestContext.js";
 import {
-  anchorPoint,
-  defaultRegion,
-  parseRequestedHeight,
-  structureAnchorPoint,
-} from "./requestContext.js";
-import {
-  ViewRequestSchema,
+  PlacementChoiceStepSchema,
   PlanSchema,
   PlacementSchema,
   type Plan,
@@ -27,42 +21,41 @@ import {
   type Region,
 } from "./schema.js";
 import type { WorldReader } from "../world/worldReader.js";
-import {
-  CLARIFICATION_ACTION_MISMATCH,
-  designLoopFailureMessage,
-} from "./playerRefusalMessages.js";
+import { aiPlanFailureMessage } from "./playerRefusalMessages.js";
 import { deriveLayerMapLocalBounds } from "./layerMap.js";
-import { isLayerMapOnlyBuildMode } from "./planMode.js";
 
-/** Default when {@link DesignLoopOptions.maxTurns} is omitted (orchestrator passes config). */
-export const DEFAULT_DESIGN_LOOP_MAX_TURNS = 10;
+/** Default when {@link PlacementThenBuildOptions.maxSteps} is omitted (orchestrator passes config). */
+export const DEFAULT_AI_PLAN_MAX_STEPS = 10;
 
 // ---------------------------------------------------------------------------
 // Public types
 // ---------------------------------------------------------------------------
 
 /**
- * Result of a completed design loop.
+ * Result of placement-then-build planning: (1) lock location and size, (2) emit a plan.
  *
  * When `outcome` is `"plan"`, `placement` carries the semantic anchor+offset
  * the AI specified. The orchestrator resolves this to a world-space point and
  * shifts all primitive coordinates before validation and execution.
  *
- * `cancelled` is returned when {@link DesignLoopOptions.signal} aborts before a
+ * `rejected` is returned when the step budget is exhausted or the assistant
+ * fails twice in a row; `reason` is player-facing text for the HTTP response.
+ *
+ * `cancelled` is returned when {@link PlacementThenBuildOptions.signal} aborts before a
  * valid plan is produced.
  */
-export type DesignLoopResult =
+export type PlacementThenBuildResult =
   | { outcome: "plan"; plan: Plan; placement: Placement }
-  | { outcome: "needs_more_info"; clarification: string }
+  | { outcome: "rejected"; reason: string }
   | { outcome: "cancelled" };
 
-/** Optional controls for {@link runDesignLoop} (e.g. HTTP client disconnect). */
-export type DesignLoopOptions = {
+/** Optional controls for {@link runPlacementThenBuild} (e.g. HTTP client disconnect). */
+export type PlacementThenBuildOptions = {
   signal?: AbortSignal;
-  /** Max AI iterations (clamped 1–50). Defaults to {@link DEFAULT_DESIGN_LOOP_MAX_TURNS}. */
-  maxTurns?: number;
-  /** Plain-text progress log (see `logs/design-loop.log`). */
-  designLoopLogger?: DesignLoopLogger;
+  /** Max AI calls including correction retries (clamped 1–50). Defaults to {@link DEFAULT_AI_PLAN_MAX_STEPS}. */
+  maxSteps?: number;
+  /** Plain-text progress log (e.g. `logs/ai-plan.log`). */
+  planProgressLogger?: PlacementBuildLogger;
 };
 
 // ---------------------------------------------------------------------------
@@ -70,39 +63,38 @@ export type DesignLoopOptions = {
 // ---------------------------------------------------------------------------
 
 /**
- * Runs the multi-turn AI design loop for a single player request. Each turn
- * the AI may request a world view or return a build plan. The loop:
+ * Two-step build for one player request: **get the location**, then **build the thing**.
  *
- * 1. Sends the initial context to the AI.
- * 2. If the AI returns `view_request`, fulfils the scan (from the initial
- *    plugin payload or WorldReader disk reads) and loops.
- * 3. If the AI returns `build` or a bare Plan, repairs and validates it.
- * 4. Aborts with `needs_more_info` after the configured max turns or two
- *    consecutive parse/validation failures.
+ * 1. **Location** — placement-phase prompt; the model returns `placement_choice`
+ *    (locks placement, size, vertical anchor).
+ * 2. **Build** — plan-phase prompt; the model returns `build` with a `plan` only;
+ *    placement is merged from step 1.
+ * 3. Repairs and validates the plan against {@link PlanSchema}.
+ * 4. Returns `rejected` after too many AI calls or two consecutive parse/validation failures.
  *
  * @param provider AI chat provider.
  * @param request The validated player request.
- * @param worldReader For pre-build view scans and post-build verify reads.
+ * @param worldReader Reserved for API symmetry with verify passes; this function does not read the world.
  * @param lastPlan The last successfully built plan for this player (follow-up context).
- * @param plannerLogger Optional structured logger for each loop stage.
+ * @param plannerLogger Optional structured logger for each stage.
  * @param placedBlocks Optional map of blocks placed by the bridge this session.
- * @param options Optional abort signal, max turns, and design-loop text logger.
+ * @param options Optional abort signal, max AI steps, and text progress logger.
  */
-export async function runDesignLoop(
+export async function runPlacementThenBuild(
   provider: ChatProvider,
   request: ChatCommandRequest,
-  worldReader: WorldReader,
+  _worldReader: WorldReader,
   lastPlan: Plan | undefined,
   plannerLogger?: PlannerLogger,
   placedBlocks?: ReadonlyMap<string, string>,
-  options?: DesignLoopOptions,
-): Promise<DesignLoopResult> {
-  const maxTurns = clampDesignLoopMaxTurns(
-    options?.maxTurns ?? DEFAULT_DESIGN_LOOP_MAX_TURNS,
-  );
-  const dl = options?.designLoopLogger;
+  options?: PlacementThenBuildOptions,
+): Promise<PlacementThenBuildResult> {
+  const maxSteps = clampAiPlanMaxSteps(options?.maxSteps ?? DEFAULT_AI_PLAN_MAX_STEPS);
+  const dl = options?.planProgressLogger;
 
-  const messages: ChatMessage[] = buildInitialMessages(request, lastPlan);
+  const messages: ChatMessage[] = buildPlacementPhaseMessages(request, lastPlan);
+  /** When set, placement was chosen in phase 1 and merged into the next build response. */
+  let splitPlanPlacement: Placement | undefined;
   let consecutiveParseFailures = 0;
   /** Set when two assistant turns in a row could not yield a usable structured response. */
   let abortedAfterRepeatedAssistantErrors = false;
@@ -110,18 +102,18 @@ export async function runDesignLoop(
   await dl?.line(
     request.requestId,
     -1,
-    maxTurns,
-    "design_loop_start",
-    `maxTurns=${maxTurns}; msg=${truncateOneLine(request.message)}`,
+    maxSteps,
+    "placement_then_build_start",
+    `maxSteps=${maxSteps}; msg=${truncateOneLine(request.message)}`,
   );
 
-  for (let turn = 0; turn < maxTurns; turn++) {
+  for (let step = 0; step < maxSteps; step++) {
     if (options?.signal?.aborted) {
-      await dl?.line(request.requestId, turn, maxTurns, "exit", "cancelled (signal)");
+      await dl?.line(request.requestId, step, maxSteps, "exit", "cancelled (signal)");
       return { outcome: "cancelled" };
     }
 
-    await dl?.line(request.requestId, turn, maxTurns, "turn_start", "calling AI provider");
+    await dl?.line(request.requestId, step, maxSteps, "call_start", "calling AI provider");
 
     const rawResponse = await provider.chat(messages, { temperature: 0.2 });
 
@@ -129,7 +121,7 @@ export async function runDesignLoop(
       timestamp: new Date().toISOString(),
       requestId: request.requestId,
       stage: "raw_response",
-      payload: { provider: provider.name, turn, response: rawResponse },
+      payload: { provider: provider.name, step, response: rawResponse },
     });
 
     const jsonText = extractJsonValue(rawResponse);
@@ -137,8 +129,8 @@ export async function runDesignLoop(
       consecutiveParseFailures++;
       await dl?.line(
         request.requestId,
-        turn,
-        maxTurns,
+        step,
+        maxSteps,
         "json_missing",
         "no JSON object in assistant reply",
       );
@@ -146,7 +138,7 @@ export async function runDesignLoop(
         timestamp: new Date().toISOString(),
         requestId: request.requestId,
         stage: "json_missing",
-        payload: { turn, response: rawResponse },
+        payload: { step, response: rawResponse },
       });
       if (consecutiveParseFailures >= 2) {
         abortedAfterRepeatedAssistantErrors = true;
@@ -174,8 +166,8 @@ export async function runDesignLoop(
       consecutiveParseFailures++;
       await dl?.line(
         request.requestId,
-        turn,
-        maxTurns,
+        step,
+        maxSteps,
         "json_parse_error",
         err instanceof Error ? err.message.slice(0, 120) : "parse error",
       );
@@ -183,7 +175,7 @@ export async function runDesignLoop(
         timestamp: new Date().toISOString(),
         requestId: request.requestId,
         stage: "json_parse_error",
-        payload: { turn, jsonText },
+        payload: { step, jsonText },
       });
       if (consecutiveParseFailures >= 2) {
         abortedAfterRepeatedAssistantErrors = true;
@@ -193,44 +185,39 @@ export async function runDesignLoop(
         { role: "assistant", content: rawResponse },
         {
           role: "user",
-          content: "Your JSON was malformed and could not be parsed. Return only a single valid JSON object with no trailing commas, unescaped quotes, or truncation.",
+          content:
+            "Your JSON was malformed and could not be parsed. Return only a single valid JSON object with no trailing commas, unescaped quotes, or truncation.",
         },
       );
       continue;
     }
 
-    await dl?.line(
-      request.requestId,
-      turn,
-      maxTurns,
-      "json_ok",
-      summarizeLooseParsed(looseParsed),
-    );
+    looseParsed = normalizeLooseDesignStepResponse(looseParsed);
+
+    await dl?.line(request.requestId, step, maxSteps, "json_ok", summarizeLooseParsed(looseParsed));
 
     await plannerLogger?.log({
       timestamp: new Date().toISOString(),
       requestId: request.requestId,
       stage: "json_parsed",
-      payload: { turn, looseParsed },
+      payload: { step, looseParsed },
     });
 
     // ------------------------------------------------------------------
     // Dispatch on action type
     // ------------------------------------------------------------------
-    const action =
-      typeof looseParsed.action === "string" ? looseParsed.action : undefined;
+    const action = typeof looseParsed.action === "string" ? looseParsed.action : undefined;
 
-    // view_request — validate strictly, no repair.
-    if (action === "view_request") {
-      const viewResult = ViewRequestSchema.safeParse(looseParsed);
-      if (!viewResult.success) {
+    // placement_choice — phase 1 → phase 2 transition
+    if (action === "placement_choice") {
+      if (splitPlanPlacement) {
         consecutiveParseFailures++;
         await dl?.line(
           request.requestId,
-          turn,
-          maxTurns,
-          "view_request_invalid",
-          viewResult.error.message.slice(0, 160),
+          step,
+          maxSteps,
+          "placement_choice_twice",
+          "placement already locked",
         );
         if (consecutiveParseFailures >= 2) {
           abortedAfterRepeatedAssistantErrors = true;
@@ -240,67 +227,132 @@ export async function runDesignLoop(
           { role: "assistant", content: jsonText },
           {
             role: "user",
-            content: `The view_request was invalid: ${viewResult.error.message.slice(0, 200)}. Ensure region has world/min/max and selfNotes is present.`,
+            content:
+              'Placement is already locked. Return action: "build" with a "plan" field only (omit placement).',
           },
         );
         continue;
       }
 
-      const { region, selfNotes } = viewResult.data;
-
-      await dl?.line(
-        request.requestId,
-        turn,
-        maxTurns,
-        "view_request",
-        summarizeRegion(region),
-      );
-
-      await plannerLogger?.log({
-        timestamp: new Date().toISOString(),
-        requestId: request.requestId,
-        stage: "view_request",
-        payload: { turn, region },
-      });
-
-      if (options?.signal?.aborted) {
-        await dl?.line(request.requestId, -1, maxTurns, "exit", "cancelled (signal) before view scan");
-        return { outcome: "cancelled" };
+      const pcResult = PlacementChoiceStepSchema.safeParse(looseParsed);
+      if (!pcResult.success) {
+        consecutiveParseFailures++;
+        await dl?.line(
+          request.requestId,
+          step,
+          maxSteps,
+          "placement_choice_invalid",
+          pcResult.error.message.slice(0, 160),
+        );
+        if (consecutiveParseFailures >= 2) {
+          abortedAfterRepeatedAssistantErrors = true;
+          break;
+        }
+        messages.push(
+          { role: "assistant", content: jsonText },
+          {
+            role: "user",
+            content: `The placement_choice was invalid: ${pcResult.error.message.slice(0, 200)}. Ensure action is placement_choice, placement includes desiredSize (width, depth, height), verticalReference, ref, and offsets.`,
+          },
+        );
+        continue;
       }
 
-      const viewFulfillment = await fulfillViewRequest(region, request, worldReader);
-
+      const { placement: chosenPlacement, selfNotes } = pcResult.data;
+      splitPlanPlacement = chosenPlacement;
+      resetMessagesForPlanPhase(messages, request, chosenPlacement, lastPlan, selfNotes);
       await dl?.line(
         request.requestId,
-        turn,
-        maxTurns,
-        "view_scan_fulfilled",
-        viewFulfillment.kind === "disk_unavailable"
-          ? `scan_unavailable (${viewFulfillment.reason ?? "unknown"})`
-          : `blocks=${viewFulfillment.blocks.length}`,
+        step,
+        maxSteps,
+        "split_placement_locked",
+        "transition to plan phase",
       );
-
       await plannerLogger?.log({
         timestamp: new Date().toISOString(),
         requestId: request.requestId,
-        stage: "view_fulfilled",
-        payload: {
-          turn,
-          region,
-          blockCount:
-            viewFulfillment.kind === "disk_unavailable" ? 0 : viewFulfillment.blocks.length,
-          scanUnavailable: viewFulfillment.kind === "disk_unavailable",
+        stage: "split_placement_locked",
+        payload: { step, placement: chosenPlacement },
+      });
+      consecutiveParseFailures = 0;
+      continue;
+    }
+
+    // build rejected in phase 1 (placement-only)
+    if (!splitPlanPlacement && action === "build") {
+      consecutiveParseFailures++;
+      await dl?.line(
+        request.requestId,
+        step,
+        maxSteps,
+        "build_in_placement_phase",
+        "expected placement_choice",
+      );
+      if (consecutiveParseFailures >= 2) {
+        abortedAfterRepeatedAssistantErrors = true;
+        break;
+      }
+      messages.push(
+        { role: "assistant", content: jsonText },
+        {
+          role: "user",
+          content:
+            "This phase is placement only. Return placement_choice with a placement object — not a full plan yet.",
         },
-      });
+      );
+      continue;
+    }
 
-      if (viewFulfillment.kind === "disk_unavailable") {
-        appendViewRequestFulfillment(messages, jsonText, selfNotes, region, undefined, {
-          scanUnavailable: true,
-          reason: viewFulfillment.reason,
-        });
-      } else {
-        appendViewRequestFulfillment(messages, jsonText, selfNotes, region, viewFulfillment.blocks);
+    // bare Plan (no action) rejected in placement phase
+    if (!splitPlanPlacement && action !== "build") {
+      const looksLikePlan =
+        typeof looseParsed.intent === "string" || Array.isArray(looseParsed.passes);
+      if (looksLikePlan) {
+        consecutiveParseFailures++;
+        await dl?.line(
+          request.requestId,
+          step,
+          maxSteps,
+          "bare_plan_in_placement_phase",
+          "expected placement_choice",
+        );
+        if (consecutiveParseFailures >= 2) {
+          abortedAfterRepeatedAssistantErrors = true;
+          break;
+        }
+        messages.push(
+          { role: "assistant", content: jsonText },
+          {
+            role: "user",
+            content:
+              'This phase is placement only. Return JSON with action "placement_choice", not a full plan.',
+          },
+        );
+        continue;
       }
+    }
+
+    if (action === "view_request") {
+      consecutiveParseFailures++;
+      await dl?.line(
+        request.requestId,
+        step,
+        maxSteps,
+        "view_request_unsupported",
+        "action not supported",
+      );
+      if (consecutiveParseFailures >= 2) {
+        abortedAfterRepeatedAssistantErrors = true;
+        break;
+      }
+      messages.push(
+        { role: "assistant", content: jsonText },
+        {
+          role: "user",
+          content:
+            'The action "view_request" is not supported. Return action "placement_choice" on step 1, or action "build" with a plan after placement is locked.',
+        },
+      );
       continue;
     }
 
@@ -311,12 +363,13 @@ export async function runDesignLoop(
         ? (looseParsed.plan as Record<string, unknown>)
         : looseParsed;
 
-    // Extract placement intent. Default to player_feet with no offsets when
-    // absent so backward-compatible bare-Plan responses still work.
+    // Extract placement intent. Split loop phase 2 uses placement from phase 1.
     const rawPlacement = action === "build" ? looseParsed.placement : undefined;
-    const placement = PlacementSchema.catch(PlacementSchema.parse({})).parse(
-      isRecord(rawPlacement) ? rawPlacement : {},
-    );
+    const placement = splitPlanPlacement
+      ? splitPlanPlacement
+      : PlacementSchema.catch(PlacementSchema.parse({})).parse(
+          isRecord(rawPlacement) ? rawPlacement : {},
+        );
 
     const repairedPlan = repairLoosePlanCandidate(planCandidate, request);
 
@@ -324,7 +377,7 @@ export async function runDesignLoop(
       timestamp: new Date().toISOString(),
       requestId: request.requestId,
       stage: "plan_repaired",
-      payload: { turn, placement, repairedPlan },
+      payload: { step, placement, repairedPlan },
     });
 
     const planResult = PlanSchema.safeParse(repairedPlan);
@@ -332,8 +385,8 @@ export async function runDesignLoop(
       consecutiveParseFailures++;
       await dl?.line(
         request.requestId,
-        turn,
-        maxTurns,
+        step,
+        maxSteps,
         "plan_invalid",
         planResult.error.message.slice(0, 200),
       );
@@ -341,7 +394,7 @@ export async function runDesignLoop(
         timestamp: new Date().toISOString(),
         requestId: request.requestId,
         stage: "plan_invalid",
-        payload: { turn, error: planResult.error.message },
+        payload: { step, error: planResult.error.message },
       });
       if (consecutiveParseFailures >= 2) {
         abortedAfterRepeatedAssistantErrors = true;
@@ -357,16 +410,20 @@ export async function runDesignLoop(
       continue;
     }
 
-    consecutiveParseFailures = 0;
-
     await plannerLogger?.log({
       timestamp: new Date().toISOString(),
       requestId: request.requestId,
       stage: "plan_validated",
-      payload: { turn, validatedPlan: planResult.data, placement },
+      payload: { step, validatedPlan: planResult.data, placement },
     });
 
-    await dl?.line(request.requestId, turn, maxTurns, "success", "validated plan ready for execution");
+    await dl?.line(
+      request.requestId,
+      step,
+      maxSteps,
+      "success",
+      "validated plan ready for execution",
+    );
 
     return { outcome: "plan", plan: planResult.data, placement };
   }
@@ -375,32 +432,32 @@ export async function runDesignLoop(
     await dl?.line(
       request.requestId,
       -1,
-      maxTurns,
+      maxSteps,
       "exit",
-      "needs_more_info: repeated assistant or validation failures",
+      "rejected: repeated assistant or validation failures",
     );
     return {
-      outcome: "needs_more_info",
-      clarification: designLoopFailureMessage("assistant_failed_twice", request),
+      outcome: "rejected",
+      reason: aiPlanFailureMessage("assistant_failed_twice", request),
     };
   }
 
-  await dl?.line(request.requestId, -1, maxTurns, "exit", "needs_more_info: max turns exhausted");
+  await dl?.line(request.requestId, -1, maxSteps, "exit", "rejected: max ai steps exhausted");
   return {
-    outcome: "needs_more_info",
-    clarification: designLoopFailureMessage("max_turns", request),
+    outcome: "rejected",
+    reason: aiPlanFailureMessage("max_steps", request),
   };
 }
 
 /**
- * Runs a single verify + optional polish turn after a build plan has been
+ * Runs a single verify + optional polish pass after a build plan has been
  * executed. The orchestrator calls this when the AI's build step included a
  * `verifyRegion`. Returns a polish Plan when the AI requests changes, or
  * `undefined` when the AI is satisfied or on any error.
  *
  * @param provider AI chat provider.
  * @param request The original player request.
- * @param priorMessages The message history from the completed design loop.
+ * @param priorMessages The message history from completed placement-then-build planning.
  * @param priorJson The raw JSON the AI returned for the build step.
  * @param verifyRegion The region to inspect.
  * @param worldReader For disk-based reads when the region extends beyond placed blocks.
@@ -417,17 +474,13 @@ export async function runVerifyPass(
   worldReader: WorldReader,
   plannerLogger?: PlannerLogger,
   placedBlocks?: ReadonlyMap<string, string>,
-  options?: DesignLoopOptions,
+  options?: PlacementThenBuildOptions,
 ): Promise<Plan | undefined> {
   if (options?.signal?.aborted) {
     return undefined;
   }
 
-  const verifyBlocks = await resolveVerifyBlocks(
-    verifyRegion,
-    placedBlocks,
-    worldReader,
-  );
+  const verifyBlocks = await resolveVerifyBlocks(verifyRegion, placedBlocks, worldReader);
 
   if (!verifyBlocks || verifyBlocks.length === 0) {
     return undefined;
@@ -455,8 +508,7 @@ export async function runVerifyPass(
   }
 
   const looseParsed = parseJsonStrict<Record<string, unknown>>(jsonText);
-  const action =
-    typeof looseParsed.action === "string" ? looseParsed.action : undefined;
+  const action = typeof looseParsed.action === "string" ? looseParsed.action : undefined;
 
   const planCandidate: Record<string, unknown> =
     action === "build" && isRecord(looseParsed.plan)
@@ -470,9 +522,6 @@ export async function runVerifyPass(
   }
 
   const polishPlan = planResult.data;
-  if (polishPlan.needsMoreInfo || polishPlan.passes.length === 0) {
-    return undefined;
-  }
 
   await plannerLogger?.log({
     timestamp: new Date().toISOString(),
@@ -482,56 +531,6 @@ export async function runVerifyPass(
   });
 
   return polishPlan;
-}
-
-// ---------------------------------------------------------------------------
-// View request fulfillment
-// ---------------------------------------------------------------------------
-
-type ViewRequestFulfillment =
-  | { kind: "initial_slice"; blocks: BlockSample[] }
-  | { kind: "disk_ok"; blocks: BlockSample[] }
-  | { kind: "disk_unavailable"; reason: string };
-
-/**
- * Resolves block data for an AI view_request. Prefers the initial plugin
- * payload (zero I/O) when the requested region falls within `initialScanRegion`,
- * then falls back to WorldReader disk reads.
- */
-async function fulfillViewRequest(
-  region: Region,
-  request: ChatCommandRequest,
-  worldReader: WorldReader,
-): Promise<ViewRequestFulfillment> {
-  const scan = request.initialScanRegion;
-  if (
-    scan &&
-    region.min.x >= scan.minX &&
-    region.min.y >= scan.minY &&
-    region.min.z >= scan.minZ &&
-    region.max.x <= scan.maxX &&
-    region.max.y <= scan.maxY &&
-    region.max.z <= scan.maxZ
-  ) {
-    return {
-      kind: "initial_slice",
-      blocks: request.localContext.nearbyBlocks.filter(
-        (b) =>
-          b.x >= region.min.x &&
-          b.x <= region.max.x &&
-          b.y >= region.min.y &&
-          b.y <= region.max.y &&
-          b.z >= region.min.z &&
-          b.z <= region.max.z,
-      ),
-    };
-  }
-
-  const outcome = await worldReader.readRegionBlocksOutcome(region, request.player.world);
-  if (!outcome.ok) {
-    return { kind: "disk_unavailable", reason: outcome.reason };
-  }
-  return { kind: "disk_ok", blocks: outcome.blocks };
 }
 
 /**
@@ -584,8 +583,11 @@ async function resolveVerifyBlocks(
 
 /**
  * Tolerates common LLM omissions and type mismatches in a loosely-parsed Plan
- * object. Applied to every Plan candidate before Zod validation. Returns a
- * record that should satisfy `PlanSchema`.
+ * object. Applied to every Plan candidate before Zod validation.
+ *
+ * May set `passes` to an empty array when nothing executable remains or when
+ * the plan's implied action mismatches the player's request — that fails
+ * {@link PlanSchema} validation (`passes.min(1)`).
  */
 export function repairLoosePlanCandidate(
   candidate: Record<string, unknown>,
@@ -596,57 +598,30 @@ export function repairLoosePlanCandidate(
         .map((pass) => repairPass(pass, request))
         .filter((pass) => {
           const hasLayer =
-            isRecord(pass.layerMap) &&
-            Array.isArray((pass.layerMap as { layers: unknown }).layers);
-          if (isLayerMapOnlyBuildMode()) {
-            return hasLayer;
-          }
-          return (
-            (Array.isArray(pass.primitives) && pass.primitives.length > 0) ||
-            hasLayer
-          );
+            isRecord(pass.layerMap) && Array.isArray((pass.layerMap as { layers: unknown }).layers);
+          return hasLayer;
         })
     : [];
 
-  let clarification =
-    typeof candidate.clarification === "string"
-      ? candidate.clarification
-      : undefined;
-
   const rawIntent = normalizeIntentLabel(candidate.intent) ?? "unknown";
-  let needsMoreInfo =
-    candidate.needsMoreInfo === true || candidatePasses.length === 0;
 
-  if (!needsMoreInfo && shouldClarifyByAction(candidatePasses, request)) {
-    needsMoreInfo = true;
-    clarification = CLARIFICATION_ACTION_MISMATCH;
-  }
+  const targetWorld =
+    typeof candidate.targetWorld === "string" ? candidate.targetWorld : request.player.world;
 
-  const targetWorld = needsMoreInfo
-    ? request.player.world
-    : typeof candidate.targetWorld === "string"
-      ? candidate.targetWorld
-      : request.player.world;
+  let targetRegion: Record<string, unknown> = isRecord(candidate.targetRegion)
+    ? candidate.targetRegion
+    : defaultRegion(request);
 
-  let targetRegion: Record<string, unknown> = needsMoreInfo
-    ? defaultRegion(request)
-    : isRecord(candidate.targetRegion)
-      ? candidate.targetRegion
-      : defaultRegion(request);
-
-  if (
-    !needsMoreInfo &&
-    candidatePasses.length > 0 &&
-    !isRecord(candidate.targetRegion)
-  ) {
+  if (candidatePasses.length > 0 && !isRecord(candidate.targetRegion)) {
     const lmPass = candidatePasses.find(
-      (p) =>
-        isRecord(p.layerMap) &&
-        Array.isArray((p.layerMap as { layers: unknown }).layers),
+      (p) => isRecord(p.layerMap) && Array.isArray((p.layerMap as { layers: unknown }).layers),
     );
     if (lmPass && isRecord(lmPass.layerMap)) {
       const bounds = deriveLayerMapLocalBounds(
-        lmPass.layerMap as { layers: string[]; palette: Record<string, string> },
+        lmPass.layerMap as {
+          layers: string[];
+          palette: Record<string, string>;
+        },
       );
       targetRegion = {
         world: targetWorld,
@@ -656,165 +631,41 @@ export function repairLoosePlanCandidate(
     }
   }
 
+  let passes = candidatePasses;
+  if (passes.length === 0 || shouldClarifyByAction(candidatePasses, request)) {
+    passes = [];
+  }
+
   return {
-    intent: needsMoreInfo ? "unknown" : rawIntent,
+    intent: rawIntent,
     targetWorld,
     targetRegion,
     assumptions: Array.isArray(candidate.assumptions) ? candidate.assumptions : [],
-    passes: needsMoreInfo ? [] : candidatePasses,
-    reply:
-      typeof candidate.reply === "string" ? candidate.reply : "Working on it.",
-    needsMoreInfo,
-    clarification,
+    passes,
+    reply: typeof candidate.reply === "string" ? candidate.reply : "Working on it.",
   };
 }
 
-function repairPass(
-  pass: unknown,
-  request: ChatCommandRequest,
-): Record<string, unknown> {
+function repairPass(pass: unknown, _request: ChatCommandRequest): Record<string, unknown> {
   const record = isRecord(pass) ? pass : {};
   const layerRaw = record.layerMap;
   if (layerRaw && isRecord(layerRaw) && Array.isArray(layerRaw.layers)) {
     return {
       name: typeof record.name === "string" ? record.name : "build_pass",
-      goal:
-        typeof record.goal === "string" ? record.goal : "Apply layer map build.",
+      goal: typeof record.goal === "string" ? record.goal : "Apply layer map build.",
       primitives: [],
       layerMap: {
         layers: layerRaw.layers as string[],
-        palette: (isRecord(layerRaw.palette)
-          ? layerRaw.palette
-          : {}) as Record<string, string>,
+        palette: (isRecord(layerRaw.palette) ? layerRaw.palette : {}) as Record<string, string>,
       },
     };
   }
 
-  if (isLayerMapOnlyBuildMode()) {
-    return {
-      name: typeof record.name === "string" ? record.name : "build_pass",
-      goal:
-        typeof record.goal === "string" ? record.goal : "Apply layer map build.",
-      primitives: [],
-    };
-  }
-
-  const primitives = Array.isArray(record.primitives)
-    ? record.primitives
-        .map((p) => repairPrimitive(p, request))
-        .filter((p): p is Record<string, unknown> => !!p)
-    : [];
-
   return {
     name: typeof record.name === "string" ? record.name : "build_pass",
-    goal:
-      typeof record.goal === "string" ? record.goal : "Apply build primitives.",
-    primitives,
+    goal: typeof record.goal === "string" ? record.goal : "Apply layer map build.",
+    primitives: [],
   };
-}
-
-function repairPrimitive(
-  primitive: unknown,
-  request: ChatCommandRequest,
-): Record<string, unknown> | undefined {
-  const record = isRecord(primitive) ? primitive : {};
-  const parameters = isRecord(record.parameters) ? record.parameters : undefined;
-  const type = typeof record.type === "string" ? record.type : undefined;
-  const anchor = anchorPoint(request, 4);
-  const structureAnchor = structureAnchorPoint(request, 4);
-  const height = parseRequestedHeight(request.message) ?? 5;
-  const block = normalizeBlockId(
-    parseRequestedBlock(request.message) ?? "minecraft:stone",
-  );
-  const lowerMessage = request.message.toLowerCase();
-
-  switch (type) {
-    case "cylinder": {
-      const cylinderCenter = asPointRecord(record.center ?? parameters?.center);
-      const cylinderRadius = record.radius ?? parameters?.radius;
-      const cylinderHeight = record.height ?? parameters?.height;
-      const fullySpecified =
-        cylinderCenter &&
-        typeof cylinderRadius === "number" &&
-        typeof cylinderHeight === "number";
-      if (!lowerMessage.includes("cylinder") && !fullySpecified) {
-        return undefined;
-      }
-      return {
-        type,
-        center: cylinderCenter ?? structureAnchor,
-        radius: asInt(cylinderRadius, 2),
-        height: asInt(cylinderHeight, height),
-        block:
-          typeof (record.block ?? parameters?.block) === "string"
-            ? normalizeBlockId(String(record.block ?? parameters?.block))
-            : block,
-        hollow:
-          typeof (record.hollow ?? parameters?.hollow) === "boolean"
-            ? Boolean(record.hollow ?? parameters?.hollow)
-            : lowerMessage.includes("hollow"),
-        axis:
-          record.axis === "x" || record.axis === "y" || record.axis === "z"
-            ? record.axis
-            : parameters?.axis === "x" ||
-                parameters?.axis === "y" ||
-                parameters?.axis === "z"
-              ? parameters.axis
-              : "y",
-      };
-    }
-    case "fill_cuboid":
-    case "hollow_cuboid":
-    case "clear_region":
-      if (
-        !asPointRecord(record.from ?? parameters?.from ?? parameters?.min) ||
-        !asPointRecord(record.to ?? parameters?.to ?? parameters?.max)
-      ) {
-        return undefined;
-      }
-      return {
-        type,
-        from: asPointRecord(record.from ?? parameters?.from ?? parameters?.min),
-        to: asPointRecord(record.to ?? parameters?.to ?? parameters?.max),
-        ...(type === "clear_region"
-          ? {}
-          : {
-              block:
-                typeof (record.block ?? parameters?.block) === "string"
-                  ? normalizeBlockId(String(record.block ?? parameters?.block))
-                  : block,
-            }),
-      };
-    case "replace_in_region":
-      if (
-        !asPointRecord(record.from ?? parameters?.from ?? parameters?.min) ||
-        !asPointRecord(record.to ?? parameters?.to ?? parameters?.max) ||
-        typeof (record.fromBlock ?? parameters?.fromBlock) !== "string" ||
-        typeof (record.toBlock ?? parameters?.toBlock) !== "string"
-      ) {
-        return undefined;
-      }
-      return {
-        type,
-        from: asPointRecord(record.from ?? parameters?.from ?? parameters?.min),
-        to: asPointRecord(record.to ?? parameters?.to ?? parameters?.max),
-        fromBlock: String(record.fromBlock ?? parameters?.fromBlock),
-        toBlock: String(record.toBlock ?? parameters?.toBlock),
-      };
-    case "set_block":
-      return {
-        type,
-        x: asInt(record.x, anchor.x),
-        y: asInt(record.y, anchor.y),
-        z: asInt(record.z, anchor.z),
-        block:
-          typeof record.block === "string"
-            ? normalizeBlockId(record.block)
-            : block,
-      };
-    default:
-      return undefined;
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -822,14 +673,7 @@ function repairPrimitive(
 // ---------------------------------------------------------------------------
 
 const BUILD_ACTION_TOKENS = ["build", "make", "create", "construct", "place"];
-const REMOVE_ACTION_TOKENS = [
-  "remove",
-  "delete",
-  "clear",
-  "destroy",
-  "chop",
-  "cut",
-];
+const REMOVE_ACTION_TOKENS = ["remove", "delete", "clear", "destroy", "chop", "cut"];
 
 function shouldClarifyByAction(
   passes: Array<Record<string, unknown>>,
@@ -845,14 +689,10 @@ function shouldClarifyByAction(
 }
 
 function containsKeyword(message: string, keywords: string[]): boolean {
-  return keywords.some((keyword) =>
-    new RegExp(`\\b${escapeRegex(keyword)}\\b`, "i").test(message),
-  );
+  return keywords.some((keyword) => new RegExp(`\\b${escapeRegex(keyword)}\\b`, "i").test(message));
 }
 
-function classifyRequestAction(
-  message: string,
-): "build" | "remove" | "unknown" {
+function classifyRequestAction(message: string): "build" | "remove" | "unknown" {
   const hasBuild = containsKeyword(message, BUILD_ACTION_TOKENS);
   const hasRemove = containsKeyword(message, REMOVE_ACTION_TOKENS);
   if (hasBuild && !hasRemove) {
@@ -868,44 +708,13 @@ function classifyPlanAction(
   passes: Array<Record<string, unknown>>,
 ): "build" | "remove" | "unknown" {
   let buildSignals = 0;
-  let removeSignals = 0;
-
   for (const pass of passes) {
     if (isRecord(pass.layerMap)) {
       buildSignals++;
-      continue;
-    }
-    const primitives = Array.isArray(pass.primitives) ? pass.primitives : [];
-    for (const primitive of primitives) {
-      if (!isRecord(primitive) || typeof primitive.type !== "string") {
-        continue;
-      }
-      switch (primitive.type) {
-        case "set_block":
-        case "fill_cuboid":
-        case "hollow_cuboid":
-        case "cylinder":
-          buildSignals++;
-          break;
-        case "clear_region":
-          removeSignals++;
-          break;
-        case "replace_in_region":
-          if (primitive.toBlock === "minecraft:air") {
-            removeSignals++;
-          } else {
-            buildSignals++;
-          }
-          break;
-      }
     }
   }
-
-  if (buildSignals > 0 && removeSignals === 0) {
+  if (buildSignals > 0) {
     return "build";
-  }
-  if (removeSignals > 0 && buildSignals === 0) {
-    return "remove";
   }
   return "unknown";
 }
@@ -914,7 +723,74 @@ function classifyPlanAction(
 // Shared helpers
 // ---------------------------------------------------------------------------
 
-function clampDesignLoopMaxTurns(n: number): number {
+/**
+ * Unwraps mistaken nested `{ placement_choice: { action, placement } }` replies
+ * and coerces string `placement` values from legacy prompt shapes into objects.
+ *
+ * @param loose Parsed top-level JSON from the assistant.
+ * @returns Possibly rewritten object for schema dispatch.
+ */
+function normalizeLooseDesignStepResponse(loose: Record<string, unknown>): Record<string, unknown> {
+  let out = loose;
+  const nested = loose.placement_choice;
+  if (isRecord(nested) && nested.action === "placement_choice") {
+    out = { ...nested } as Record<string, unknown>;
+  }
+  const pl = out.placement;
+  if (typeof pl === "string") {
+    const coerced = coercePlacementFromModelString(pl);
+    if (coerced) {
+      out = { ...out, placement: coerced };
+    }
+  }
+  return out;
+}
+
+/**
+ * Parses pseudo-JSON placement strings such as `{ ref:player_view, forward:8 }`.
+ *
+ * @param s Raw `placement` string from the model.
+ * @returns A record suitable for {@link PlacementSchema} parsing, or `undefined`.
+ */
+function coercePlacementFromModelString(s: string): Record<string, unknown> | undefined {
+  const trimmed = s.trim();
+  if (trimmed.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(trimmed) as unknown;
+      if (isRecord(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      // fall through — model often omits quotes (invalid JSON)
+    }
+  }
+  const inner = trimmed.replace(/^\{/, "").replace(/\}$/, "").trim();
+  const out: Record<string, unknown> = {};
+  const refM = inner.match(/\bref\s*:\s*([a-z_]+)/i);
+  if (refM) {
+    out.ref = refM[1];
+  }
+  for (const key of [
+    "forward",
+    "back",
+    "left",
+    "right",
+    "north",
+    "south",
+    "east",
+    "west",
+    "up",
+    "down",
+  ] as const) {
+    const km = inner.match(new RegExp(`\\b${key}\\s*:\\s*(-?\\d+)`));
+    if (km) {
+      out[key] = Number(km[1]);
+    }
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+function clampAiPlanMaxSteps(n: number): number {
   return Math.min(50, Math.max(1, Math.round(n)));
 }
 
@@ -925,8 +801,8 @@ function truncateOneLine(s: string, max = 160): string {
 
 function summarizeLooseParsed(loose: Record<string, unknown>): string {
   const action = typeof loose.action === "string" ? loose.action : undefined;
-  if (action === "view_request") {
-    return "action=view_request";
+  if (action === "placement_choice") {
+    return "action=placement_choice";
   }
   if (action === "build") {
     return "action=build";
@@ -935,10 +811,6 @@ function summarizeLooseParsed(loose: Record<string, unknown>): string {
     return "bare_plan";
   }
   return "unknown_shape";
-}
-
-function summarizeRegion(region: Region): string {
-  return `world=${region.world} min=(${region.min.x},${region.min.y},${region.min.z}) max=(${region.max.x},${region.max.y},${region.max.z})`;
 }
 
 function normalizeIntentLabel(value: unknown): string | undefined {
@@ -955,14 +827,4 @@ function normalizeIntentLabel(value: unknown): string | undefined {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
-}
-
-function asPointRecord(value: unknown): Record<string, unknown> | undefined {
-  return isRecord(value) ? value : undefined;
-}
-
-function asInt(value: unknown, fallback: number): number {
-  return typeof value === "number" && Number.isFinite(value)
-    ? Math.round(value)
-    : fallback;
 }

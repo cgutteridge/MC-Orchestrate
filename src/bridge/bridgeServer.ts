@@ -74,9 +74,7 @@ export class BridgeServer {
     await new Promise<void>((resolve, reject) => {
       this.server.once("error", reject);
       this.server.listen(this.options.port, this.options.host, () => {
-        process.stdout.write(
-          `TCP Server is running on port ${this.options.port}.\n`,
-        );
+        process.stdout.write(`TCP Server is running on port ${this.options.port}.\n`);
         resolve();
       });
     });
@@ -85,7 +83,7 @@ export class BridgeServer {
   /**
    * Returns a read-only view of every block the bridge has placed this session,
    * keyed by `"x y z"` coordinate string and valued by the block type string
-   * (e.g. `"minecraft:stone"`). Used by the design loop to provide the AI with
+   * (e.g. `"minecraft:stone"`). Used by placement-then-build planning to give the AI
    * a zero-I/O view of the region it just built for post-build verification.
    */
   getPlacedBlocks(): ReadonlyMap<string, string> {
@@ -107,10 +105,7 @@ export class BridgeServer {
       }
       this.scheduleBlockUpdates(1);
     } else if (command.kind === "setBlock") {
-      this.blocksToSet.set(
-        `${command.x} ${command.y} ${command.z}`,
-        command.block,
-      );
+      this.blocksToSet.set(`${command.x} ${command.y} ${command.z}`, command.block);
       this.scheduleBlockUpdates(1);
     } else {
       for (const line of serializeBridgeCommand(command)) {
@@ -130,9 +125,7 @@ export class BridgeServer {
   }
 
   private handleConnection(socket: Socket): void {
-    process.stdout.write(
-      `CONNECTED: ${socket.remoteAddress}:${socket.remotePort}\n`,
-    );
+    process.stdout.write(`CONNECTED: ${socket.remoteAddress}:${socket.remotePort}\n`);
     socket.write("WELCOME TO MCORCH\n");
     socket.write(`$SERVER_READY=${this.serverReady}\n`);
     this.sockets.add(socket);
@@ -146,9 +139,7 @@ export class BridgeServer {
 
     socket.on("close", () => {
       this.sockets.delete(socket);
-      process.stdout.write(
-        `CLOSED: ${socket.remoteAddress} ${socket.remotePort}\n`,
-      );
+      process.stdout.write(`CLOSED: ${socket.remoteAddress} ${socket.remotePort}\n`);
     });
   }
 
@@ -258,14 +249,10 @@ export class BridgeServer {
   }
 
   private spawnMinecraft(): ChildProcessWithoutNullStreams {
-    return spawn(
-      this.resolveJavaBin(),
-      ["-jar", this.options.minecraftJar, "nogui"],
-      {
-        cwd: path.resolve(process.cwd(), this.options.minecraftDir),
-        stdio: ["pipe", "pipe", "pipe"],
-      },
-    );
+    return spawn(this.resolveJavaBin(), ["-jar", this.options.minecraftJar, "nogui"], {
+      cwd: path.resolve(process.cwd(), this.options.minecraftDir),
+      stdio: ["pipe", "pipe", "pipe"],
+    });
   }
 
   private resolveJavaBin(): string {
@@ -275,9 +262,7 @@ export class BridgeServer {
       "java",
     ].filter(Boolean) as string[];
     return (
-      javaCandidates.find(
-        (candidate) => candidate === "java" || existsSync(candidate),
-      ) ?? "java"
+      javaCandidates.find((candidate) => candidate === "java" || existsSync(candidate)) ?? "java"
     );
   }
 

@@ -1,23 +1,15 @@
-import {
-  SEMANTICS_PASS_ORDER,
-  semanticsDegenerateStructureMessage,
-} from "./playerRefusalMessages.js";
-import { normalizeCuboid, normalizeRegion } from "./requestContext.js";
-import type { Plan, Point, Primitive } from "./schema.js";
+import { semanticsDegenerateStructureMessage } from "./playerRefusalMessages.js";
+import { normalizeRegion } from "./requestContext.js";
+import type { Plan } from "./schema.js";
 
 /**
- * Validates that the plan is semantically coherent: pass ordering is valid and
- * the structure has non-degenerate dimensions for its stated intent.
+ * Validates that the plan is semantically coherent: layer-map pass count and
+ * non-degenerate structure dimensions for the stated intent.
  *
  * Returns a player-facing rejection reason when a violation is found, or
  * `undefined` when the plan is safe to compile and execute.
  */
 export function validatePlanSemantics(plan: Plan): string | undefined {
-  const orderViolation = detectPassOrderViolation(plan);
-  if (orderViolation) {
-    return orderViolation;
-  }
-
   const layerPassCount = plan.passes.filter((p) => p.layerMap).length;
   if (layerPassCount > 2) {
     return (
@@ -68,22 +60,12 @@ function detectDegenerateStructure(plan: Plan): string | undefined {
   if (!STRUCTURE_INTENTS.has(plan.intent)) {
     return undefined;
   }
-  if (plan.needsMoreInfo || plan.passes.length === 0) {
+  if (plan.passes.length === 0) {
     return undefined;
   }
 
-  // set_block-only plans are deliberate point placements, not structures.
-  const hasFillPrimitive = plan.passes.some(
-    (pass) =>
-      pass.layerMap !== undefined ||
-      pass.primitives.some(
-        (p) =>
-          p.type === "fill_cuboid" ||
-          p.type === "hollow_cuboid" ||
-          p.type === "cylinder",
-      ),
-  );
-  if (!hasFillPrimitive) {
+  const hasLayerFill = plan.passes.some((pass) => pass.layerMap !== undefined);
+  if (!hasLayerFill) {
     return undefined;
   }
 
@@ -98,82 +80,4 @@ function detectDegenerateStructure(plan: Plan): string | undefined {
   }
 
   return undefined;
-}
-
-/**
- * Detects plans where a destructive primitive (clear or replace-with-air)
- * would completely undo the work of an earlier build primitive by operating
- * on a region that contains or equals the earlier build region.
- *
- * Hollowing is not flagged: a clear that is strictly smaller than and inside
- * a prior fill is a legitimate interior-clear pattern.
- */
-function detectPassOrderViolation(plan: Plan): string | undefined {
-  const buildRegions: Array<{ from: Point; to: Point }> = [];
-
-  for (const pass of plan.passes) {
-    for (const primitive of pass.primitives) {
-      if (isDestructivePrimitive(primitive)) {
-        const dest = normalizeCuboid(primitive.from, primitive.to);
-        for (const build of buildRegions) {
-          const b = normalizeCuboid(build.from, build.to);
-          if (regionContains(dest, b)) {
-            return SEMANTICS_PASS_ORDER;
-          }
-        }
-      } else if (isBuildPrimitive(primitive)) {
-        buildRegions.push({ from: primitive.from, to: primitive.to });
-      }
-    }
-  }
-
-  return undefined;
-}
-
-function isDestructivePrimitive(
-  primitive: Primitive,
-): primitive is Extract<
-  Primitive,
-  { type: "clear_region" | "replace_in_region" }
-> {
-  if (primitive.type === "clear_region") {
-    return true;
-  }
-  if (
-    primitive.type === "replace_in_region" &&
-    primitive.toBlock === "minecraft:air"
-  ) {
-    return true;
-  }
-  return false;
-}
-
-function isBuildPrimitive(
-  primitive: Primitive,
-): primitive is Extract<
-  Primitive,
-  { type: "fill_cuboid" | "hollow_cuboid"; from: Point; to: Point }
-> {
-  return (
-    primitive.type === "fill_cuboid" || primitive.type === "hollow_cuboid"
-  );
-}
-
-/**
- * Returns `true` when `outer` contains or equals `inner` in all three axes.
- * A destructive outer region that fully contains a prior build region means
- * the build was pointless — the plan is self-contradictory.
- */
-function regionContains(
-  outer: { from: Point; to: Point },
-  inner: { from: Point; to: Point },
-): boolean {
-  return (
-    outer.from.x <= inner.from.x &&
-    outer.to.x >= inner.to.x &&
-    outer.from.y <= inner.from.y &&
-    outer.to.y >= inner.to.y &&
-    outer.from.z <= inner.from.z &&
-    outer.to.z >= inner.to.z
-  );
 }

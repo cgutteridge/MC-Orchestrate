@@ -1,12 +1,12 @@
 # Azure planner baseline (task 16)
 
-This folder describes how we validate the **Azure OpenAI → design loop** path and keep **offline regression** fixtures when credentials are unavailable (CI, forks).
+This folder describes how we validate the **Azure OpenAI → placement-then-build** path and keep **offline regression** fixtures when credentials are unavailable (CI, forks).
 
 ## What is checked in
 
 - `benchmark/fixtures/azure-baseline/*.json` — **replay fixtures** (`version`, `description`, `assistantTurns`).
 - `src/services/ai/replayChatProvider.ts` — `createReplayChatProvider()` + `parseReplayFixture()`.
-- `tests/benchmark/azureBaselineReplay.test.ts` — runs `runDesignLoop` against the fixture (no network).
+- `tests/benchmark/azureBaselineReplay.test.ts` — runs `runPlacementThenBuild` against the fixture (no network).
 
 ## Live baseline (with Azure)
 

@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
-import type { ChatMessage } from "../services/ai/types.js";
 import type { ChatCommandRequest } from "../types/plugin.js";
-import { appendViewRequestFulfillment, buildInitialMessages, summarizeLastBuiltPlan } from "./prompt.js";
-import type { Region } from "./schema.js";
+import {
+  buildPlacementPhaseMessages,
+  buildPlanPhaseSystemContent,
+  buildPlanPhaseUserContent,
+  hasSolidGroundBelowResolvedAnchor,
+  summarizeLastBuiltPlan,
+} from "./prompt.js";
 
 const request: ChatCommandRequest = {
   requestId: "req-1",
@@ -29,15 +33,15 @@ const request: ChatCommandRequest = {
   },
 };
 
-describe("buildInitialMessages", () => {
+describe("buildPlacementPhaseMessages (step 1)", () => {
   it("uses a short experimental prompt when MCORCH_MINIMAL_INITIAL_PROMPT is enabled", () => {
     const prev = process.env.MCORCH_MINIMAL_INITIAL_PROMPT;
     process.env.MCORCH_MINIMAL_INITIAL_PROMPT = "true";
     try {
-      const messages = buildInitialMessages(request);
-      expect(messages[0]?.content.length).toBeLessThan(6000);
-      expect(messages[0]?.content).toContain("Minecraft builder");
-      expect(messages[0]?.content).toContain("Example plan shape:");
+      const messages = buildPlacementPhaseMessages(request);
+      expect(messages[0]?.content.length).toBeLessThan(4000);
+      expect(messages[0]?.content).toContain("step 1/2");
+      expect(messages[0]?.content).toContain("placement_choice");
       expect(messages[1]?.content).toContain("five by five");
       expect(messages[1]?.content).not.toContain("PLACEMENT REFERENCE");
     } finally {
@@ -50,49 +54,18 @@ describe("buildInitialMessages", () => {
   });
 
   it("includes recent player prompts for clarification follow-ups", () => {
-    const messages = buildInitialMessages(request);
+    const messages = buildPlacementPhaseMessages(request);
 
-    // System message should reference recentMessages in its instructions.
-    expect(messages[0]?.content).toContain("recentMessages");
-    // System message should list symbolic material slots.
-    expect(messages[0]?.content).toContain("material:wall");
-    // User message should contain the serialized request including recentMessages.
-    expect(messages[1]?.content).toContain("\"recentMessages\"");
+    expect(messages[0]?.content).toContain("lastBuiltStructureSummary");
+    const planSystem = buildPlanPhaseSystemContent(request);
+    expect(planSystem).toContain("minecraft:stone");
+    expect(messages[1]?.content).toContain('"recentMessages"');
     expect(messages[1]?.content).toContain("make me a cottage");
     expect(messages[1]?.content).toContain("actually smaller");
   });
 
-  it("lists layerMap (not primitive ops) in the plan schema guide", () => {
-    const messages = buildInitialMessages(request);
-    const system = messages[0]?.content ?? "";
-
-    expect(system).toContain("\"layerMap\"");
-    expect(system).toContain("\"layers\"");
-    expect(system).toContain("LAYER MAPS ONLY");
-    expect(system).not.toContain("\"fill_cuboid\"");
-  });
-
-  it("instructs the model to prefer symbolic slots over free-form block names", () => {
-    const messages = buildInitialMessages(request);
-    const system = messages[0]?.content ?? "";
-
-    expect(system).toContain("symbolic material slots");
-    expect(system).not.toContain("Prefer concrete modern block ids");
-  });
-
-  it("explains the agentic loop actions (view_request and build)", () => {
-    const messages = buildInitialMessages(request);
-    const system = messages[0]?.content ?? "";
-
-    expect(system).toContain("view_request");
-    expect(system).toContain("verifyRegion");
-    expect(system).toContain("selfNotes");
-    expect(system).toContain("VIEW_REQUEST");
-    expect(system).toContain("BUILD");
-  });
-
   it("injects a nearby material context card when structural blocks are present", () => {
-    const messages = buildInitialMessages({
+    const messages = buildPlacementPhaseMessages({
       ...request,
       localContext: {
         ...request.localContext,
@@ -116,7 +89,7 @@ describe("buildInitialMessages", () => {
   });
 
   it("omits the nearby context card when only terrain blocks are present", () => {
-    const messages = buildInitialMessages({
+    const messages = buildPlacementPhaseMessages({
       ...request,
       localContext: {
         ...request.localContext,
@@ -141,12 +114,21 @@ describe("buildInitialMessages", () => {
         max: { x: 3, y: 72, z: 3 },
       },
       assumptions: [],
-      passes: [],
+      passes: [
+        {
+          name: "main",
+          goal: "Tower column.",
+          primitives: [],
+          layerMap: {
+            layers: ["SSS", "SSS", "SSS"],
+            palette: { S: "minecraft:stone", _: "minecraft:air" },
+          },
+        },
+      ],
       reply: "Built a tower.",
-      needsMoreInfo: false,
     };
 
-    const messages = buildInitialMessages(request, lastPlan as never);
+    const messages = buildPlacementPhaseMessages(request, lastPlan as never);
     const userContent = messages[1]?.content ?? "";
 
     expect(userContent).toContain("LAST BUILD SUMMARY");
@@ -156,7 +138,7 @@ describe("buildInitialMessages", () => {
   });
 
   it("includes a conversation history block when recentMessages is non-empty", () => {
-    const messages = buildInitialMessages({
+    const messages = buildPlacementPhaseMessages({
       ...request,
       message: "make it taller",
       recentMessages: ["build a stone cottage"],
@@ -181,18 +163,14 @@ describe("buildInitialMessages", () => {
         {
           name: "walls",
           goal: "Raise the east wall using stone bricks.",
-          primitives: [
-            {
-              type: "fill_cuboid",
-              from: { x: 0, y: 64, z: 0 },
-              to: { x: 9, y: 70, z: 0 },
-              block: "minecraft:stone_bricks",
-            },
-          ],
+          primitives: [],
+          layerMap: {
+            layers: ["BBBBBBBBBB"],
+            palette: { B: "minecraft:stone_bricks", _: "minecraft:air" },
+          },
         },
       ],
       reply: "Done.",
-      needsMoreInfo: false,
     });
     expect(line).toContain("intent=build_wall");
     expect(line).toContain("size=10×7×1");
@@ -201,15 +179,15 @@ describe("buildInitialMessages", () => {
   });
 
   it("sets lastBuiltStructure and lastBuiltStructureSummary to null when no previous plan is provided", () => {
-    const messages = buildInitialMessages(request);
+    const messages = buildPlacementPhaseMessages(request);
     const userContent = messages[1]?.content ?? "";
 
-    expect(userContent).toContain("\"lastBuiltStructure\": null");
-    expect(userContent).toContain("\"lastBuiltStructureSummary\": null");
+    expect(userContent).toContain('"lastBuiltStructure": null');
+    expect(userContent).toContain('"lastBuiltStructureSummary": null');
   });
 
   it("system prompt contains placement ref enum and offset vocabulary", () => {
-    const messages = buildInitialMessages(request);
+    const messages = buildPlacementPhaseMessages(request);
     const system = messages[0]?.content ?? "";
 
     expect(system).toContain("player_view");
@@ -222,7 +200,7 @@ describe("buildInitialMessages", () => {
   });
 
   it("system prompt instructs the model to treat recentMessages as conversation context", () => {
-    const messages = buildInitialMessages(request);
+    const messages = buildPlacementPhaseMessages(request);
     const system = messages[0]?.content ?? "";
 
     expect(system).toContain("CONVERSATION AND FOLLOW-UPS");
@@ -230,7 +208,7 @@ describe("buildInitialMessages", () => {
   });
 
   it("system prompt maps common directional phrases to placement fields", () => {
-    const messages = buildInitialMessages(request);
+    const messages = buildPlacementPhaseMessages(request);
     const system = messages[0]?.content ?? "";
 
     expect(system).toContain("in front of me");
@@ -241,13 +219,13 @@ describe("buildInitialMessages", () => {
   });
 
   it("user message contains a pre-computed placement reference card", () => {
-    const messages = buildInitialMessages(request);
+    const messages = buildPlacementPhaseMessages(request);
     const userContent = messages[1]?.content ?? "";
     expect(userContent).toContain("PLACEMENT REFERENCE");
   });
 
   it("includes initialScanRegion when present", () => {
-    const messages = buildInitialMessages({
+    const messages = buildPlacementPhaseMessages({
       ...request,
       initialScanRegion: { minX: -7, minY: 61, minZ: -7, maxX: 7, maxY: 69, maxZ: 7 },
     });
@@ -258,28 +236,110 @@ describe("buildInitialMessages", () => {
   });
 });
 
-describe("appendViewRequestFulfillment", () => {
-  const region: Region = {
-    world: "world",
-    min: { x: 0, y: 60, z: 0 },
-    max: { x: 1, y: 61, z: 1 },
-  };
+describe("buildPlanPhaseSystemContent (step 2)", () => {
+  it("lists layerMap (not primitive ops) in the plan schema guide", () => {
+    const system = buildPlanPhaseSystemContent(request);
 
-  it("explains scan-unavailable when on-disk read cannot be used", () => {
-    const messages: ChatMessage[] = [];
-    appendViewRequestFulfillment(
-      messages,
-      '{"action":"view_request"}',
-      "notes",
-      region,
-      undefined,
-      {
-        scanUnavailable: true,
-        reason: "World region directory is missing or not readable.",
+    expect(system).toContain('"layerMap"');
+    expect(system).toContain('"layers"');
+    expect(system).toContain("LAYER MAPS ONLY");
+    expect(system).not.toContain('"fill_cuboid"');
+  });
+
+  it("instructs the model to use concrete minecraft ids and mentions stone fallback", () => {
+    const system = buildPlanPhaseSystemContent(request);
+
+    expect(system).toContain("minecraft:");
+    expect(system).toContain("minecraft:stone");
+  });
+
+  it("describes the build step and verifyRegion", () => {
+    const system = buildPlanPhaseSystemContent(request);
+
+    expect(system).toContain("verifyRegion");
+    expect(system).toContain("Step 2 of 2");
+    expect(system).toContain('"action":"build"');
+  });
+});
+
+describe("plan phase user content (step 2)", () => {
+  it("hasSolidGroundBelowResolvedAnchor is true when solid exists within 6 blocks below anchor", () => {
+    const r = {
+      ...request,
+      localContext: {
+        ...request.localContext,
+        nearbyBlocks: [{ x: 0, y: 63, z: 0, type: "minecraft:grass_block" }],
       },
+    };
+    expect(hasSolidGroundBelowResolvedAnchor(r, { x: 0, y: 65, z: 0 })).toBe(true);
+  });
+
+  it("hasSolidGroundBelowResolvedAnchor is false when only air below anchor in sample", () => {
+    const r = {
+      ...request,
+      localContext: {
+        ...request.localContext,
+        nearbyBlocks: [
+          { x: 0, y: 63, z: 0, type: "minecraft:air" },
+          { x: 0, y: 62, z: 0, type: "minecraft:air" },
+        ],
+      },
+    };
+    expect(hasSolidGroundBelowResolvedAnchor(r, { x: 0, y: 65, z: 0 })).toBe(false);
+  });
+
+  it("buildPlanPhaseUserContent omits terrain line when in air", () => {
+    const text = buildPlanPhaseUserContent(
+      { ...request, message: "a hut" },
+      {
+        ref: "player_view",
+        forward: 0,
+        back: 0,
+        left: 0,
+        right: 0,
+        north: 0,
+        south: 0,
+        east: 0,
+        west: 0,
+        up: 20,
+        down: 0,
+        verticalReference: "bottom",
+        desiredSize: { width: 8, depth: 8, height: 6 },
+      },
+      undefined,
     );
-    const user = messages.find((m) => m.role === "user")?.content ?? "";
-    expect(user).toContain("On-disk world scan is unavailable");
-    expect(user).toContain("World region directory is missing");
+    expect(text).toContain("Volume:");
+    expect(text).toContain("a hut");
+    expect(text).not.toContain("Terrain:");
+  });
+
+  it("buildPlanPhaseUserContent includes terrain line when solid is below anchor", () => {
+    const text = buildPlanPhaseUserContent(
+      {
+        ...request,
+        message: "a hut",
+        localContext: {
+          ...request.localContext,
+          nearbyBlocks: [{ x: 0, y: 63, z: 0, type: "minecraft:grass_block" }],
+        },
+      },
+      {
+        ref: "player_view",
+        forward: 0,
+        back: 0,
+        left: 0,
+        right: 0,
+        north: 0,
+        south: 0,
+        east: 0,
+        west: 0,
+        up: 0,
+        down: 0,
+        verticalReference: "bottom",
+        desiredSize: { width: 8, depth: 8, height: 6 },
+      },
+      undefined,
+    );
+    expect(text).toContain("Terrain:");
   });
 });

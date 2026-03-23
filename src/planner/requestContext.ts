@@ -43,10 +43,7 @@ export function parseRequestedHeight(message: string): number | undefined {
 /**
  * Computes a block anchor in front of the player based on their current look vector.
  */
-export function anchorPoint(
-  request: ChatCommandRequest,
-  distance: number,
-): Point {
+export function anchorPoint(request: ChatCommandRequest, distance: number): Point {
   const direction = horizontalDirection(request);
   return {
     x: Math.round(request.player.position.x + direction.x * distance),
@@ -58,20 +55,14 @@ export function anchorPoint(
 /**
  * Picks a grounded anchor for structures, preferring the looked-at block when present.
  */
-export function structureAnchorPoint(
-  request: ChatCommandRequest,
-  distance: number,
-): Point {
+export function structureAnchorPoint(request: ChatCommandRequest, distance: number): Point {
   return structureCenterPoint(request, distance);
 }
 
 /**
  * Picks a centered anchor for structures, preferring the looked-at block when present.
  */
-export function structureCenterPoint(
-  request: ChatCommandRequest,
-  distance: number,
-): Point {
+export function structureCenterPoint(request: ChatCommandRequest, distance: number): Point {
   const targetBlock = request.localContext.targetBlock;
   if (targetBlock && targetBlock.type !== "minecraft:air") {
     const yOffset = isReplaceableTargetBlock(targetBlock.type) ? 0 : 1;
@@ -103,10 +94,7 @@ export function structureFootprintOrigin(
 ): Point {
   const center = structureCenterPoint(
     request,
-    Math.max(
-      clearance + Math.ceil(width / 2),
-      clearance + Math.ceil(depth / 2),
-    ),
+    Math.max(clearance + Math.ceil(width / 2), clearance + Math.ceil(depth / 2)),
   );
 
   return {
@@ -142,7 +130,10 @@ export function defaultRegion(request: ChatCommandRequest): Region {
 /**
  * Reorders cuboid corners so `from` is always the minimum point and `to` the maximum point.
  */
-export function normalizeCuboid(from: Point, to: Point): {
+export function normalizeCuboid(
+  from: Point,
+  to: Point,
+): {
   from: Point;
   to: Point;
 } {

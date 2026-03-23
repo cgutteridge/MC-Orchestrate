@@ -52,9 +52,10 @@ export function validateLayerMapShape(layerMap: LayerMapData): string | undefine
  * Returns local-space bounding box min/max for a layer map with origin at the
  * bottom-south-west corner (min x, min y, min z) and extent `width × height × depth`.
  */
-export function deriveLayerMapLocalBounds(
-  layerMap: LayerMapData,
-): { min: { x: number; y: number; z: number }; max: { x: number; y: number; z: number } } {
+export function deriveLayerMapLocalBounds(layerMap: LayerMapData): {
+  min: { x: number; y: number; z: number };
+  max: { x: number; y: number; z: number };
+} {
   const p = parseLayerMapGrid(layerMap);
   if ("error" in p) {
     return {
@@ -131,9 +132,7 @@ export function compileLayerMapToBridgeCommands(
   return commands;
 }
 
-function parseLayerMapGrid(
-  layerMap: LayerMapData,
-): { grid: ParsedLayerGrid } | { error: string } {
+function parseLayerMapGrid(layerMap: LayerMapData): { grid: ParsedLayerGrid } | { error: string } {
   const { layers, palette } = layerMap;
   if (layers.length === 0) {
     return { error: "layerMap.layers must be non-empty" };

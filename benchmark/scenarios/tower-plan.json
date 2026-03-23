@@ -11,16 +11,21 @@
     {
       "name": "tower_column",
       "goal": "Build tower.",
-      "primitives": [
-        {
-          "type": "fill_cuboid",
-          "from": { "x": -1, "y": 64, "z": -1 },
-          "to": { "x": 1, "y": 71, "z": 1 },
-          "block": "minecraft:stone"
-        }
-      ]
+      "primitives": [],
+      "layerMap": {
+        "layers": [
+          "SSS\nSSS\nSSS",
+          "SSS\nSSS\nSSS",
+          "SSS\nSSS\nSSS",
+          "SSS\nSSS\nSSS",
+          "SSS\nSSS\nSSS",
+          "SSS\nSSS\nSSS",
+          "SSS\nSSS\nSSS",
+          "SSS\nSSS\nSSS"
+        ],
+        "palette": { "S": "minecraft:stone", "_": "minecraft:air" }
+      }
     }
   ],
-  "reply": "Built.",
-  "needsMoreInfo": false
+  "reply": "Built."
 }

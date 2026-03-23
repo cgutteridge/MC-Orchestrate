@@ -47,9 +47,7 @@ describe("requestContext", () => {
   it("parses requested build hints from the user message", () => {
     expect(parseRequestedHeight("make a 12 block tower")).toBe(12);
     expect(parseRequestedBlock("build a glass tower")).toBe("minecraft:glass");
-    expect(parseRequestedBlock("build a sheep statue from wool")).toBe(
-      "minecraft:white_wool",
-    );
+    expect(parseRequestedBlock("build a sheep statue from wool")).toBe("minecraft:white_wool");
     expect(normalizeBlockId("minecraft:wool")).toBe("minecraft:white_wool");
   });
 
@@ -78,9 +76,7 @@ describe("requestContext", () => {
   });
 
   it("normalizes cuboids and regions with reversed coordinates", () => {
-    expect(
-      normalizeCuboid({ x: 5, y: 10, z: -2 }, { x: 1, y: 7, z: 4 }),
-    ).toEqual({
+    expect(normalizeCuboid({ x: 5, y: 10, z: -2 }, { x: 1, y: 7, z: 4 })).toEqual({
       from: { x: 1, y: 7, z: -2 },
       to: { x: 5, y: 10, z: 4 },
     });

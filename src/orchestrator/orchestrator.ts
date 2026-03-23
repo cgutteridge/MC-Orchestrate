@@ -3,28 +3,23 @@ import { BridgeServer } from "../bridge/bridgeServer.js";
 import type { BridgeCommand } from "../bridge/types.js";
 import type { ChatProvider } from "../services/ai/types.js";
 import type { ChatCommandRequest, ChatCommandResponse } from "../types/plugin.js";
-import { runDesignLoop, runVerifyPass } from "../planner/aiPlanner.js";
+import { runPlacementThenBuild, runVerifyPass } from "../planner/aiPlanner.js";
 import { compilePlanToBridgeCommands } from "../planner/compilePlan.js";
-import type { DesignLoopLogger } from "../planner/designLoopLogger.js";
+import type { PlacementBuildLogger } from "../planner/placementBuildLogger.js";
 import type { PlannerLogger } from "../planner/planLogger.js";
+import { sanitizePlanMaterials } from "../planner/materialResolver.js";
 import {
-  isMaterialResolutionFailure,
-  resolvePlanMaterials,
-} from "../planner/materialResolver.js";
-import { resolvePlacement, shiftPlan, computePlanCenter } from "../planner/placement.js";
+  computePlacementAlignmentPoint,
+  computePlanCenter,
+  resolvePlacement,
+  shiftPlan,
+} from "../planner/placement.js";
 import { validatePlanSafety } from "../planner/safety.js";
 import { validatePlanSemantics } from "../planner/semantics.js";
 import type { Plan } from "../planner/schema.js";
-import {
-  compilePlanToDig,
-  type DesignIntentGraph,
-} from "../planner/dig.js";
 import { WorldReader } from "../world/worldReader.js";
 import type { ChatMessage } from "../services/ai/types.js";
-import {
-  orchestratorEmptyPlanMessage,
-  orchestratorUnexpectedErrorMessage,
-} from "../planner/playerRefusalMessages.js";
+import { orchestratorUnexpectedErrorMessage } from "../planner/playerRefusalMessages.js";
 
 /** Minimum bridge operations before mid-run percentage announcements. */
 const PROGRESS_ANNOUNCE_MIN_OPS = 20;
@@ -33,10 +28,7 @@ const PROGRESS_ANNOUNCE_MIN_OPS = 20;
  * When {@link PROGRESS_ANNOUNCE_MIN_OPS} is met, returns 25 / 50 / 75 when
  * `completed` matches the first step count for that percentage (inclusive).
  */
-function progressPercentMilestone(
-  completed: number,
-  total: number,
-): 25 | 50 | 75 | undefined {
+function progressPercentMilestone(completed: number, total: number): 25 | 50 | 75 | undefined {
   if (total < PROGRESS_ANNOUNCE_MIN_OPS) {
     return undefined;
   }
@@ -68,44 +60,32 @@ type BridgeExecutionResult =
     };
 
 /**
- * Coordinates chat requests, AI design loop planning, safety checks, and
- * bridge execution. All build decisions are delegated to the AI — there is no
- * heuristic fallback.
+ * Coordinates chat requests, AI placement-then-build planning, safety checks, and
+ * bridge execution. Block ids are validated against the pinned vanilla registry;
+ * invalid ids become stone and the player is notified.
  */
 export class Orchestrator {
   private readonly recentMessagesByPlayer = new Map<string, string[]>();
   private readonly lastBuiltStructurePlanByPlayer = new Map<string, Plan>();
-  /** DIG store — persists alongside the Plan store for follow-up refinement. */
-  private readonly lastDigByPlayer = new Map<string, DesignIntentGraph>();
   /**
-   * Message history from the last completed design loop per player. Used by
-   * the verify pass so it can inspect the full AI context.
+   * Message history from the last completed placement-then-build run per player.
+   * Used by the verify pass so it can inspect the full AI context.
    */
-  private readonly lastLoopMessagesByPlayer = new Map<string, ChatMessage[]>();
-  /**
-   * After one material-resolution pushback (`needs_more_info`), the next plan
-   * for this player uses stone for any remaining invalid block codes instead of
-   * asking again.
-   */
-  private readonly pendingMaterialStoneFallbackByPlayer = new Map<
-    string,
-    boolean
-  >();
-
+  private readonly lastAiPlanMessagesByPlayer = new Map<string, ChatMessage[]>();
   constructor(
     private readonly bridge: BridgeServer,
     private readonly worldReader: WorldReader,
     private readonly provider?: ChatProvider,
     private readonly plannerLogger?: PlannerLogger,
-    private readonly designLoopMaxTurns: number = 10,
-    private readonly designLoopLogger?: DesignLoopLogger,
+    private readonly aiPlanMaxSteps: number = 10,
+    private readonly planProgressLogger?: PlacementBuildLogger,
   ) {}
 
   /**
    * Handles a single in-game chat command from the plugin boundary.
    *
    * Immediately broadcasts a "Thinking…" acknowledgement so the player knows
-   * the request was received. Then runs the multi-turn AI design loop,
+   * the request was received. Then runs AI placement (location) and build planning,
    * validates and executes the resulting plan, and optionally performs a
    * post-build verify + polish pass when the AI requests one.
    *
@@ -132,7 +112,7 @@ export class Orchestrator {
     // No AI provider configured — fail fast with a clear message.
     if (!this.provider) {
       return {
-        status: "needs_more_info",
+        status: "rejected",
         reply:
           "No AI builder is configured on this orchestrator (missing chat provider / Azure OpenAI settings). " +
           "An admin needs to set the provider environment variables before I can design or place blocks.",
@@ -160,9 +140,9 @@ export class Orchestrator {
 
     try {
       // -----------------------------------------------------------------------
-      // Run the AI design loop
+      // AI: get location (placement), then build the thing (plan)
       // -----------------------------------------------------------------------
-      const loopResult = await runDesignLoop(
+      const planningResult = await runPlacementThenBuild(
         this.provider,
         planningRequest,
         this.worldReader,
@@ -171,12 +151,12 @@ export class Orchestrator {
         this.bridge.getPlacedBlocks(),
         {
           signal,
-          maxTurns: this.designLoopMaxTurns,
-          designLoopLogger: this.designLoopLogger,
+          maxSteps: this.aiPlanMaxSteps,
+          planProgressLogger: this.planProgressLogger,
         },
       );
 
-      if (loopResult.outcome === "cancelled") {
+      if (planningResult.outcome === "cancelled") {
         return {
           status: "error",
           reply: "Request was cancelled.",
@@ -186,31 +166,36 @@ export class Orchestrator {
         };
       }
 
-      if (loopResult.outcome === "needs_more_info") {
-        // Do not carry material-retry state across unrelated AI pushbacks.
-        this.pendingMaterialStoneFallbackByPlayer.delete(request.player.uuid);
+      if (planningResult.outcome === "rejected") {
         return {
-          status: "needs_more_info",
-          reply: loopResult.clarification,
+          status: "rejected",
+          reply: planningResult.reason,
           requestId: request.requestId,
           intent: "unknown",
         };
       }
 
       // Resolve the placement intent to a world-space anchor and reposition
-      // the plan's centre to that anchor. The AI's shape (primitive dimensions
-      // and relative layout) is preserved; only the position is replaced.
+      // the plan's centre to that anchor. Layer-map geometry (local layout) is
+      // preserved; only the region anchor is shifted.
       // This is safe because the AI correctly expresses INTENT (verified via
       // the debug message below) but gets the look-vector rotation wrong when
       // computing absolute world coordinates itself.
       const lastBuiltPlan = this.lastBuiltStructurePlanByPlayer.get(request.player.uuid);
       const lastBuildCenter = lastBuiltPlan ? computePlanCenter(lastBuiltPlan) : undefined;
-      const intentAnchor = resolvePlacement(loopResult.placement, planningRequest, lastBuildCenter);
-      const aiCenter = computePlanCenter(loopResult.plan);
+      const intentAnchor = resolvePlacement(
+        planningResult.placement,
+        planningRequest,
+        lastBuildCenter,
+      );
+      const aiAlignment = computePlacementAlignmentPoint(
+        planningResult.plan,
+        planningResult.placement,
+      );
       const reanchorOffset = {
-        x: intentAnchor.x - aiCenter.x,
-        y: intentAnchor.y - aiCenter.y,
-        z: intentAnchor.z - aiCenter.z,
+        x: intentAnchor.x - aiAlignment.x,
+        y: intentAnchor.y - aiAlignment.y,
+        z: intentAnchor.z - aiAlignment.z,
       };
 
       // Broadcast the resolved placement so the player can verify it.
@@ -218,28 +203,27 @@ export class Orchestrator {
         await this.bridge.executeCommand(
           {
             kind: "say",
-            message: `[Bot] Placement: ${describePlacement(loopResult.placement)} → world (${intentAnchor.x},${intentAnchor.y},${intentAnchor.z})`,
+            message: `[Bot] Placement: ${describePlacement(planningResult.placement)} → world (${intentAnchor.x},${intentAnchor.y},${intentAnchor.z})`,
           },
-          { requestId: request.requestId, playerUuid: request.player.uuid, playerName: request.player.name },
+          {
+            requestId: request.requestId,
+            playerUuid: request.player.uuid,
+            playerName: request.player.name,
+          },
         );
-      } catch { /* non-fatal */ }
-
-      let plan = shiftPlan(loopResult.plan, reanchorOffset);
-
-      // -----------------------------------------------------------------------
-      // Material resolution and safety/semantic validation
-      // -----------------------------------------------------------------------
-      const useMaterialStoneFallback =
-        this.pendingMaterialStoneFallbackByPlayer.get(request.player.uuid) ===
-        true;
-      plan = resolvePlanMaterials(plan, planningRequest, {
-        fallbackInvalidBlocksToStone: useMaterialStoneFallback,
-      });
-      if (useMaterialStoneFallback) {
-        this.pendingMaterialStoneFallbackByPlayer.delete(request.player.uuid);
+      } catch {
+        /* non-fatal */
       }
-      if (!plan.needsMoreInfo && plan.passes.length > 0) {
-        this.pendingMaterialStoneFallbackByPlayer.delete(request.player.uuid);
+
+      let plan = shiftPlan(planningResult.plan, reanchorOffset);
+
+      // -----------------------------------------------------------------------
+      // Material validation (invalid ids → stone; always continue to safety checks)
+      // -----------------------------------------------------------------------
+      const sanitized = sanitizePlanMaterials(plan);
+      plan = sanitized.plan;
+      if (sanitized.replacedIds.length > 0) {
+        await this.notifyInvalidMaterialsReplaced(request, sanitized.replacedIds);
       }
 
       const unsafeReason = validatePlanSafety(planningRequest, plan);
@@ -262,32 +246,11 @@ export class Orchestrator {
         };
       }
 
-      if (plan.needsMoreInfo || plan.passes.length === 0) {
-        if (isMaterialResolutionFailure(plan)) {
-          this.pendingMaterialStoneFallbackByPlayer.set(request.player.uuid, true);
-        }
-        return {
-          status: "needs_more_info",
-          reply:
-            plan.clarification ??
-            (plan.passes.length === 0
-              ? orchestratorEmptyPlanMessage(planningRequest)
-              : plan.reply),
-          requestId: request.requestId,
-          intent: plan.intent,
-        };
-      }
-
       // -----------------------------------------------------------------------
       // Execute the plan
       // -----------------------------------------------------------------------
       const commands = compilePlanToBridgeCommands(plan);
-      const execution = await this.executeBridgeCommands(
-        commands,
-        request,
-        signal,
-        true,
-      );
+      const execution = await this.executeBridgeCommands(commands, request, signal, true);
 
       if (!execution.ok) {
         if (execution.reason === "cancelled") {
@@ -323,8 +286,7 @@ export class Orchestrator {
 
         const failedCommand = commands[execution.failedIndex]!;
         const summary = describeBridgeCommand(failedCommand);
-        const detail =
-          execution.detail;
+        const detail = execution.detail;
         const reply =
           `Execution stopped: step ${execution.failedIndex + 1} of ${execution.total} failed (${summary}): ${detail}. ` +
           `Earlier steps may already have changed the world — say what you see and we can fix or undo manually.`;
@@ -358,10 +320,10 @@ export class Orchestrator {
       // -----------------------------------------------------------------------
       // Post-build verify + optional polish pass
       // -----------------------------------------------------------------------
-      // The design loop signals a verify request by setting verifyRegion on the
-      // build step. We recover the raw build JSON from the planner logger in
-      // production; for now we reconstruct from the plan. The loop messages are
-      // tracked so the verify pass has full context.
+      // The build step can signal a verify request via verifyRegion on the plan.
+      // We recover the raw build JSON from the planner logger in production;
+      // for now we reconstruct from the plan. AI message history is tracked so
+      // the verify pass has full context.
       const loopPlan = plan;
       await this.tryVerifyAndPolish(planningRequest, loopPlan, signal);
 
@@ -379,10 +341,6 @@ export class Orchestrator {
 
       if (isBuiltStructurePlan(plan)) {
         this.lastBuiltStructurePlanByPlayer.set(request.player.uuid, plan);
-        this.lastDigByPlayer.set(
-          request.player.uuid,
-          compilePlanToDig(plan, request.player.uuid),
-        );
       }
 
       return {
@@ -393,8 +351,7 @@ export class Orchestrator {
         executedActions: commands.length,
       };
     } catch (error) {
-      const detail =
-        error instanceof Error ? error.message : String(error);
+      const detail = error instanceof Error ? error.message : String(error);
       return {
         status: "error",
         reply: orchestratorUnexpectedErrorMessage(detail),
@@ -415,6 +372,52 @@ export class Orchestrator {
   // ---------------------------------------------------------------------------
 
   /**
+   * Logs invalid block ids that were substituted with stone and tells the player in-game.
+   *
+   * @param request Current chat request (for ids and bridge context).
+   * @param replacedIds Distinct raw ids from the model that failed validation.
+   */
+  private async notifyInvalidMaterialsReplaced(
+    request: ChatCommandRequest,
+    replacedIds: string[],
+  ): Promise<void> {
+    if (replacedIds.length === 0) {
+      return;
+    }
+    const detail = replacedIds.join(", ");
+    await this.plannerLogger?.log({
+      timestamp: new Date().toISOString(),
+      requestId: request.requestId,
+      stage: "material_sanitized",
+      payload: { replacedIds },
+    });
+    await this.planProgressLogger?.line(
+      request.requestId,
+      -1,
+      1,
+      "material_sanitized",
+      `replaced invalid ids with stone — ${detail}`,
+    );
+    const maxLen = 220;
+    const truncated = detail.length <= maxLen ? detail : `${detail.slice(0, maxLen - 1)}…`;
+    try {
+      await this.bridge.executeCommand(
+        {
+          kind: "say",
+          message: `[Bot] Invalid block id(s) in the plan were replaced with stone: ${truncated}`,
+        },
+        {
+          requestId: request.requestId,
+          playerUuid: request.player.uuid,
+          playerName: request.player.name,
+        },
+      );
+    } catch {
+      /* non-fatal */
+    }
+  }
+
+  /**
    * Attempts a post-build verify + polish pass. Runs silently — errors are
    * swallowed so they do not break the primary execution response.
    *
@@ -431,7 +434,7 @@ export class Orchestrator {
       return;
     }
     try {
-      const priorMessages = this.lastLoopMessagesByPlayer.get(request.player.uuid);
+      const priorMessages = this.lastAiPlanMessagesByPlayer.get(request.player.uuid);
       if (!priorMessages || priorMessages.length === 0) {
         return;
       }
@@ -460,23 +463,20 @@ export class Orchestrator {
         return;
       }
 
-      const polishResolved = resolvePlanMaterials(polishPlan, request, {
-        fallbackInvalidBlocksToStone: true,
-      });
+      const polishSanitized = sanitizePlanMaterials(polishPlan);
+      const polishResolved = polishSanitized.plan;
+      if (polishSanitized.replacedIds.length > 0) {
+        await this.notifyInvalidMaterialsReplaced(request, polishSanitized.replacedIds);
+      }
       if (validatePlanSafety(request, polishResolved) || validatePlanSemantics(polishResolved)) {
         return;
       }
-      if (polishResolved.needsMoreInfo || polishResolved.passes.length === 0) {
+      if (polishResolved.passes.length === 0) {
         return;
       }
 
       const polishCommands = compilePlanToBridgeCommands(polishResolved);
-      const polishExec = await this.executeBridgeCommands(
-        polishCommands,
-        request,
-        signal,
-        false,
-      );
+      const polishExec = await this.executeBridgeCommands(polishCommands, request, signal, false);
       if (!polishExec.ok) {
         return;
       }
@@ -536,8 +536,7 @@ export class Orchestrator {
           playerName: request.player.name,
         });
       } catch (error) {
-        const detail =
-          error instanceof Error ? error.message : String(error);
+        const detail = error instanceof Error ? error.message : String(error);
         return {
           ok: false,
           reason: "bridge_error",
@@ -581,14 +580,8 @@ export class Orchestrator {
     return { ...request, recentMessages: merged };
   }
 
-  private rememberMessage(
-    playerUuid: string,
-    recentMessages: string[],
-    message: string,
-  ): void {
-    const next = [...recentMessages, message.trim()]
-      .filter((entry) => entry.length > 0)
-      .slice(-10);
+  private rememberMessage(playerUuid: string, recentMessages: string[], message: string): void {
+    const next = [...recentMessages, message.trim()].filter((entry) => entry.length > 0).slice(-10);
     this.recentMessagesByPlayer.set(playerUuid, next);
   }
 }
@@ -600,38 +593,35 @@ export class Orchestrator {
  * Example: "player_view → forward:8, left:3, up:5"
  */
 function describePlacement(p: import("../planner/schema.js").Placement): string {
-  const parts: string[] = [];
-
-  if (p.ref === "player_view") {
-    if (p.forward)  parts.push(`forward:${p.forward}`);
-    if (p.back)     parts.push(`back:${p.back}`);
-    if (p.left)     parts.push(`left:${p.left}`);
-    if (p.right)    parts.push(`right:${p.right}`);
-  } else {
-    if (p.north)    parts.push(`north:${p.north}`);
-    if (p.south)    parts.push(`south:${p.south}`);
-    if (p.east)     parts.push(`east:${p.east}`);
-    if (p.west)     parts.push(`west:${p.west}`);
+  const meta: string[] = [];
+  if (p.desiredSize) {
+    meta.push(`size ${p.desiredSize.width}×${p.desiredSize.depth}×${p.desiredSize.height}`);
   }
-  if (p.up)   parts.push(`up:${p.up}`);
-  if (p.down) parts.push(`down:${p.down}`);
+  if (p.verticalReference && p.verticalReference !== "middle") {
+    meta.push(`vertical:${p.verticalReference}`);
+  }
 
-  const offsets = parts.length > 0 ? ` → ${parts.join(", ")}` : " → at origin";
-  return `${p.ref}${offsets}`;
+  const offsets: string[] = [];
+  if (p.ref === "player_view") {
+    if (p.forward) offsets.push(`forward:${p.forward}`);
+    if (p.back) offsets.push(`back:${p.back}`);
+    if (p.left) offsets.push(`left:${p.left}`);
+    if (p.right) offsets.push(`right:${p.right}`);
+  } else {
+    if (p.north) offsets.push(`north:${p.north}`);
+    if (p.south) offsets.push(`south:${p.south}`);
+    if (p.east) offsets.push(`east:${p.east}`);
+    if (p.west) offsets.push(`west:${p.west}`);
+  }
+  if (p.up) offsets.push(`up:${p.up}`);
+  if (p.down) offsets.push(`down:${p.down}`);
+
+  const pieces = [...meta, ...offsets];
+  const tail = pieces.length > 0 ? ` → ${pieces.join(", ")}` : " → at origin";
+  return `${p.ref}${tail}`;
 }
 
+/** True when at least one pass carries a layer map (what we execute as structure). */
 function isBuiltStructurePlan(plan: Plan): boolean {
-  for (const pass of plan.passes) {
-    for (const primitive of pass.primitives) {
-      if (
-        primitive.type === "set_block" ||
-        primitive.type === "fill_cuboid" ||
-        primitive.type === "hollow_cuboid" ||
-        primitive.type === "cylinder"
-      ) {
-        return true;
-      }
-    }
-  }
-  return false;
+  return plan.passes.some((pass) => pass.layerMap !== undefined);
 }

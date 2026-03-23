@@ -1,5 +1,5 @@
 import type { ChatCommandRequest } from "../types/plugin.js";
-import type { Plan, Placement, Point, Primitive, BuildPass } from "./schema.js";
+import type { Plan, Placement, Point, BuildPass } from "./schema.js";
 
 // ---------------------------------------------------------------------------
 // Anchor resolution
@@ -68,10 +68,10 @@ export function resolvePlacement(
     case "player_view": {
       // Forward and backward along look vector; left/right perpendicular.
       // Right direction: clockwise 90° from (nhx, nhz) → (−nhz, nhx) in XZ.
-      const fx = nhx * (placement.forward - placement.back)
-               - nhz * (placement.right - placement.left);
-      const fz = nhz * (placement.forward - placement.back)
-               + nhx * (placement.right - placement.left);
+      const fx =
+        nhx * (placement.forward - placement.back) - nhz * (placement.right - placement.left);
+      const fz =
+        nhz * (placement.forward - placement.back) + nhx * (placement.right - placement.left);
       baseX = Math.round(pos.x + fx);
       baseZ = Math.round(pos.z + fz);
       break;
@@ -111,8 +111,7 @@ export function resolvePlacement(
       verticalBaseY = tb ? Math.round(tb.y) + 1 : headY;
       break;
     case "last_build":
-      verticalBaseY =
-        lastBuildCenter !== undefined ? Math.round(lastBuildCenter.y) : headY;
+      verticalBaseY = lastBuildCenter !== undefined ? Math.round(lastBuildCenter.y) : headY;
       break;
     default:
       verticalBaseY = headY;
@@ -123,16 +122,34 @@ export function resolvePlacement(
   return { x: baseX, y: resolvedY, z: baseZ };
 }
 
+/**
+ * Computes the point on the plan's `targetRegion` box that should align with
+ * the semantic anchor from {@link resolvePlacement}. Horizontal XZ uses the
+ * region centre; Y uses {@link Placement.verticalReference} so in-ground
+ * builds (anchor at surface) vs on-ground builds (anchor at floor) align.
+ *
+ * @param plan Validated plan with `targetRegion`.
+ * @param placement Semantic placement including `verticalReference` (`flying` aligns like `middle`).
+ */
+export function computePlacementAlignmentPoint(plan: Plan, placement: Placement): Point {
+  const { min, max } = plan.targetRegion;
+  const cx = Math.round((min.x + max.x) / 2);
+  const cz = Math.round((min.z + max.z) / 2);
+  const v = placement.verticalReference;
+  // `flying` uses the same Y as `middle` (vertical centre); semantics differ in prompts only.
+  const cy = v === "top" ? max.y : v === "bottom" ? min.y : Math.round((min.y + max.y) / 2);
+  return { x: cx, y: cy, z: cz };
+}
+
 // ---------------------------------------------------------------------------
 // Plan coordinate shifting
 // ---------------------------------------------------------------------------
 
 /**
- * Returns a new Plan with every primitive coordinate shifted by `offset`.
+ * Returns a new Plan with `targetRegion` shifted by `offset`.
  *
- * The AI designs in local space with (0,0,0) as the structure origin; this
- * function translates all primitives and the targetRegion into world space
- * using the resolved placement anchor.
+ * Layer-map content stays in local space; the region anchor moves with the
+ * resolved placement.
  */
 export function shiftPlan(plan: Plan, offset: Point): Plan {
   return {
@@ -146,32 +163,11 @@ export function shiftPlan(plan: Plan, offset: Point): Plan {
   };
 }
 
-function shiftPass(pass: BuildPass, offset: Point): BuildPass {
-  if (pass.layerMap) {
-    return {
-      ...pass,
-      primitives: [],
-    };
-  }
+function shiftPass(pass: BuildPass, _offset: Point): BuildPass {
   return {
     ...pass,
-    primitives: pass.primitives.map((p) => shiftPrimitive(p, offset)),
+    primitives: [],
   };
-}
-
-function shiftPrimitive(primitive: Primitive, offset: Point): Primitive {
-  switch (primitive.type) {
-    case "set_block":
-      return { ...primitive, x: primitive.x + offset.x, y: primitive.y + offset.y, z: primitive.z + offset.z };
-    case "fill_cuboid":
-    case "hollow_cuboid":
-    case "clear_region":
-      return { ...primitive, from: addPoint(primitive.from, offset), to: addPoint(primitive.to, offset) };
-    case "replace_in_region":
-      return { ...primitive, from: addPoint(primitive.from, offset), to: addPoint(primitive.to, offset) };
-    case "cylinder":
-      return { ...primitive, center: addPoint(primitive.center, offset) };
-  }
 }
 
 function addPoint(p: Point, offset: Point): Point {
@@ -184,7 +180,8 @@ function addPoint(p: Point, offset: Point): Point {
 
 /**
  * Returns the centre of a plan's targetRegion, used as the anchor for
- * `last_build` placement references on the next request.
+ * `last_build` placement references on the next request and for legacy
+ * centre-to-centre alignment when not using {@link computePlacementAlignmentPoint}.
  */
 export function computePlanCenter(plan: Plan): Point {
   const { min, max } = plan.targetRegion;

@@ -8,9 +8,7 @@ export function serializeBridgeCommand(command: BridgeCommand): string[] {
     case "say":
       return [`say ${command.message}`];
     case "setBlock":
-      return [
-        `setBlock ${command.x} ${command.y} ${command.z} ${command.block}`,
-      ];
+      return [`setBlock ${command.x} ${command.y} ${command.z} ${command.block}`];
     case "fill":
       return [
         `fill ${command.from.x} ${command.from.y} ${command.from.z} ${command.to.x} ${command.to.y} ${command.to.z} ${command.block}`,

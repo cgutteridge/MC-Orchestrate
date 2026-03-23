@@ -1,0 +1,10 @@
+dist
+node_modules
+package-lock.json
+src/generated
+spigot-plugin
+minecraft-server
+.m2
+tasks
+skills
+benchmark

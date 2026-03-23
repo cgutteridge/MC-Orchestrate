@@ -42,7 +42,6 @@ describe("validatePlanSafety", () => {
       assumptions: [],
       passes: [],
       reply: "nope",
-      needsMoreInfo: false,
     };
 
     // act
@@ -64,7 +63,6 @@ describe("validatePlanSafety", () => {
       assumptions: [],
       passes: [],
       reply: "nope",
-      needsMoreInfo: false,
     };
 
     const result = validatePlanSafety(request, plan);
@@ -72,10 +70,10 @@ describe("validatePlanSafety", () => {
     expect(result).toBeTruthy();
   });
 
-  it("rejects a cylinder whose block count exceeds the per-request limit even when the declared region is small", () => {
-    // The AI declares a 5×5×5 targetRegion (passes region checks) but produces
-    // a solid cylinder at radius=10, height=32 ≈ 10,053 blocks — over the 8192 cap.
-    // This tests the primitive block-count guard that the bounding-box check misses.
+  it("rejects a layer map whose estimated block count exceeds the per-request limit", () => {
+    const row = "S".repeat(21);
+    const layer = Array.from({ length: 21 }, () => row).join("\n");
+    const layers = Array.from({ length: 21 }, () => layer);
     const plan: Plan = {
       intent: "build_tower",
       targetWorld: "world",
@@ -88,22 +86,15 @@ describe("validatePlanSafety", () => {
       passes: [
         {
           name: "column",
-          goal: "Oversized solid cylinder.",
-          primitives: [
-            {
-              type: "cylinder",
-              center: { x: 0, y: 64, z: 0 },
-              radius: 10,
-              height: 32,
-              block: "minecraft:stone",
-              hollow: false,
-              axis: "y",
-            },
-          ],
+          goal: "Oversized solid layer map.",
+          primitives: [],
+          layerMap: {
+            layers,
+            palette: { S: "minecraft:stone", _: "minecraft:air" },
+          },
         },
       ],
       reply: "Building it.",
-      needsMoreInfo: false,
     };
 
     const result = validatePlanSafety(request, plan);
@@ -124,7 +115,6 @@ describe("validatePlanSafety", () => {
       assumptions: [],
       passes: [],
       reply: "ok",
-      needsMoreInfo: false,
     };
 
     // act

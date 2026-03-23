@@ -20,11 +20,7 @@ export type RegionBlocksOutcome =
 const MAX_SCAN_BLOCKS = 4096;
 
 /** Block names treated as empty space in scan results. */
-const AIR_BLOCKS = new Set([
-  "minecraft:air",
-  "minecraft:cave_air",
-  "minecraft:void_air",
-]);
+const AIR_BLOCKS = new Set(["minecraft:air", "minecraft:cave_air", "minecraft:void_air"]);
 
 /**
  * Provides read-only access to world metadata, region listings, and block data
@@ -44,13 +40,11 @@ export class WorldReader {
   /**
    * Reads a summarized view of a player's NBT metadata file when available.
    */
-  async readPlayerMetadata(playerUuid: string, worldName = "world"): Promise<NbtSummary | undefined> {
-    const filePath = path.join(
-      this.minecraftDir,
-      worldName,
-      "playerdata",
-      `${playerUuid}.dat`,
-    );
+  async readPlayerMetadata(
+    playerUuid: string,
+    worldName = "world",
+  ): Promise<NbtSummary | undefined> {
+    const filePath = path.join(this.minecraftDir, worldName, "playerdata", `${playerUuid}.dat`);
     return readNbtSummary(filePath);
   }
 
@@ -71,16 +65,13 @@ export class WorldReader {
    * Reads non-air blocks within the given region from Minecraft world files on
    * disk. Parses `.mca` Anvil region files using the 1.18+ chunk NBT format
    * (palette-based block states). Returns `undefined` on any I/O or parse
-   * error so callers can fail gracefully without disrupting the design loop.
+   * error so callers can fail gracefully without disrupting AI planning.
    *
    * COMPATIBILITY: Designed for Minecraft 1.18+. The 1.21.x chunk NBT layout
    * uses the same palette format. If parsing fails for any reason the method
    * returns `undefined` rather than throwing.
    */
-  async readRegionBlocks(
-    region: Region,
-    worldName = "world",
-  ): Promise<BlockSample[] | undefined> {
+  async readRegionBlocks(region: Region, worldName = "world"): Promise<BlockSample[] | undefined> {
     const outcome = await this.readRegionBlocksOutcome(region, worldName);
     return outcome.ok ? outcome.blocks : undefined;
   }
@@ -88,18 +79,12 @@ export class WorldReader {
   /**
    * Reads non-air blocks from `.mca` files and distinguishes an empty-but-valid
    * scan from a failed scan (missing world, unreadable chunks, unsupported
-   * compression). Prefer this for `view_request` fulfillment when the region
-   * is outside the initial plugin payload.
+   * compression). Use when the region is outside any in-memory block map and
+   * you need authoritative terrain from disk.
    */
-  async readRegionBlocksOutcome(
-    region: Region,
-    worldName = "world",
-  ): Promise<RegionBlocksOutcome> {
+  async readRegionBlocksOutcome(region: Region, worldName = "world"): Promise<RegionBlocksOutcome> {
     try {
-      return await readBlocksFromRegion(
-        path.join(this.minecraftDir, worldName, "region"),
-        region,
-      );
+      return await readBlocksFromRegion(path.join(this.minecraftDir, worldName, "region"), region);
     } catch {
       return {
         ok: false,
@@ -245,10 +230,7 @@ async function extractChunkBlocks(
     // Chunk data: 4-byte length (big-endian) + 1-byte compression type.
     const dataLength = regionData.readUInt32BE(dataStart);
     const compressionType = regionData[dataStart + 4]!;
-    const compressedData = regionData.subarray(
-      dataStart + 5,
-      dataStart + 4 + dataLength,
-    );
+    const compressedData = regionData.subarray(dataStart + 5, dataStart + 4 + dataLength);
 
     let rawNbt: Buffer;
     if (compressionType === 1) {
@@ -284,9 +266,7 @@ async function parseChunkNbtAndExtract(
 
   // prismarine-nbt wraps the root compound under an empty-string key.
   const rawRoot = parsed.parsed.value as Record<string, unknown>;
-  const root = isRecord(rawRoot[""])
-    ? (rawRoot[""] as Record<string, unknown>)
-    : rawRoot;
+  const root = isRecord(rawRoot[""]) ? (rawRoot[""] as Record<string, unknown>) : rawRoot;
 
   // 1.18+ format: `sections` is at the top level.
   // Pre-1.18 format: data lives under a `Level` key.
@@ -433,11 +413,7 @@ function emitSectionBlocks(
  * Unpacks a packed big-endian long array into palette indices. Uses the
  * 1.16+ "no-spanning" format where entries never straddle long boundaries.
  */
-function unpackLongArray(
-  longs: bigint[],
-  bitsPerEntry: number,
-  count: number,
-): number[] {
+function unpackLongArray(longs: bigint[], bitsPerEntry: number, count: number): number[] {
   const mask = (1n << BigInt(bitsPerEntry)) - 1n;
   const entriesPerLong = Math.floor(64 / bitsPerEntry);
   const indices: number[] = new Array<number>(count).fill(0);

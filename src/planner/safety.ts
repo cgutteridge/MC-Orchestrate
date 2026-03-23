@@ -7,9 +7,9 @@ import {
   safetyVolumeExceededMessage,
   safetyWrongWorldMessage,
 } from "./playerRefusalMessages.js";
-import { normalizeCuboid, normalizeRegion } from "./requestContext.js";
+import { normalizeRegion } from "./requestContext.js";
 import { estimateLayerMapBlockCount } from "./layerMap.js";
-import type { Plan, Primitive } from "./schema.js";
+import type { Plan } from "./schema.js";
 
 export const MAX_BLOCKS_PER_REQUEST = 8192;
 export const MAX_REGION_WIDTH = 32;
@@ -19,10 +19,7 @@ export const MAX_PLAYER_DISTANCE = 32;
 /**
  * Enforces the v1 safety envelope for size, distance, and world locality.
  */
-export function validatePlanSafety(
-  request: ChatCommandRequest,
-  plan: Plan,
-): string | undefined {
+export function validatePlanSafety(request: ChatCommandRequest, plan: Plan): string | undefined {
   const targetRegion = normalizeRegion(plan.targetRegion);
 
   if (targetRegion.world !== plan.targetWorld) {
@@ -36,18 +33,8 @@ export function validatePlanSafety(
   const widthX = targetRegion.max.x - targetRegion.min.x + 1;
   const widthY = targetRegion.max.y - targetRegion.min.y + 1;
   const widthZ = targetRegion.max.z - targetRegion.min.z + 1;
-  if (
-    widthX > MAX_REGION_WIDTH ||
-    widthY > MAX_REGION_HEIGHT ||
-    widthZ > MAX_REGION_WIDTH
-  ) {
-    return safetyRegionTooLargeMessage(
-      widthX,
-      widthY,
-      widthZ,
-      MAX_REGION_WIDTH,
-      MAX_REGION_HEIGHT,
-    );
+  if (widthX > MAX_REGION_WIDTH || widthY > MAX_REGION_HEIGHT || widthZ > MAX_REGION_WIDTH) {
+    return safetyRegionTooLargeMessage(widthX, widthY, widthZ, MAX_REGION_WIDTH, MAX_REGION_HEIGHT);
   }
 
   const volume = widthX * widthY * widthZ;
@@ -61,10 +48,7 @@ export function validatePlanSafety(
   // large cylinders cannot bypass the limit.
   const primitiveBlockCount = estimatePlanBlockCount(plan);
   if (primitiveBlockCount > MAX_BLOCKS_PER_REQUEST) {
-    return safetyPrimitiveVolumeExceededMessage(
-      primitiveBlockCount,
-      MAX_BLOCKS_PER_REQUEST,
-    );
+    return safetyPrimitiveVolumeExceededMessage(primitiveBlockCount, MAX_BLOCKS_PER_REQUEST);
   }
 
   const dx = Math.abs(
@@ -82,38 +66,11 @@ export function validatePlanSafety(
   return undefined;
 }
 
-/**
- * Estimates the total number of blocks affected by all primitives in the plan.
- * Uses conservative upper bounds (e.g. solid-cylinder formula) so the check
- * fails closed when the AI over-generates.
- */
+/** Sums {@link estimateLayerMapBlockCount} across all passes. */
 function estimatePlanBlockCount(plan: Plan): number {
   let total = 0;
   for (const pass of plan.passes) {
-    if (pass.layerMap) {
-      total += estimateLayerMapBlockCount(pass.layerMap);
-    } else {
-      for (const primitive of pass.primitives) {
-        total += estimatePrimitiveBlockCount(primitive);
-      }
-    }
+    total += estimateLayerMapBlockCount(pass.layerMap);
   }
   return total;
-}
-
-function estimatePrimitiveBlockCount(primitive: Primitive): number {
-  switch (primitive.type) {
-    case "set_block":
-      return 1;
-    case "fill_cuboid":
-    case "hollow_cuboid":
-    case "clear_region":
-    case "replace_in_region": {
-      const { from, to } = normalizeCuboid(primitive.from, primitive.to);
-      return (to.x - from.x + 1) * (to.y - from.y + 1) * (to.z - from.z + 1);
-    }
-    case "cylinder":
-      // Solid-cylinder formula as an upper bound regardless of hollow flag.
-      return Math.ceil(Math.PI * primitive.radius * primitive.radius * primitive.height);
-  }
 }

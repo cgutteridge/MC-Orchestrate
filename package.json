@@ -8,8 +8,15 @@
   "scripts": {
     "start": "tsx src/index.ts",
     "smoke:ai": "tsx scripts/smoke-ai-connection.ts",
+    "smoke:ai:prompt": "tsx scripts/smoke-ai-prompt.ts",
+    "smoke:ai:placement": "tsx scripts/smoke-ai-placement.ts",
+    "smoke:ai:build": "tsx scripts/smoke-ai-build.ts",
     "build": "tsc -p tsconfig.json",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "test": "vitest run",
+    "generate:blocks": "tsx scripts/generate-minecraft-block-ids.ts",
     "benchmark": "tsx src/benchmark/cli.ts",
     "test:agent": "vitest run --config vitest.agent.config.ts",
     "test:agent:watch": "vitest --config vitest.agent.config.ts",
@@ -24,9 +31,16 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/node": "^22.13.0",
+    "eslint": "^10.1.0",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^17.4.0",
+    "minecraft-data": "^3.105.0",
+    "prettier": "^3.8.1",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3",
+    "typescript-eslint": "^8.57.1",
     "vitest": "^4.0.18"
   }
 }

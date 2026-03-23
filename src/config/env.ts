@@ -3,19 +3,17 @@ import { z } from "zod";
 
 loadEnv();
 
-/** Default chat completion HTTP timeout when `AZURE_OPENAI_CHAT_TIMEOUT_MS` is unset (slow links + big layer-map JSON often need several minutes). */
-export const DEFAULT_AZURE_OPENAI_CHAT_TIMEOUT_MS = 300_000;
+/** Default chat completion timeout when `AZURE_OPENAI_CHAT_TIMEOUT_MS` is unset (slow Azure + large JSON often exceed a few minutes). */
+export const DEFAULT_AZURE_OPENAI_CHAT_TIMEOUT_MS = 900_000;
 
 const optionalNonEmpty = z.preprocess(
-  (value) =>
-    typeof value === "string" && value.trim() === "" ? undefined : value,
+  (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
   z.string().min(1).optional(),
 );
 
 const Schema = z.object({
   AZURE_OPENAI_ENDPOINT: z.preprocess(
-    (value) =>
-      typeof value === "string" && value.trim() === "" ? undefined : value,
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
     z.string().url().optional(),
   ),
   AZURE_OPENAI_API_KEY: optionalNonEmpty,
@@ -32,26 +30,50 @@ const Schema = z.object({
   MCORCH_ACTION_LOG: optionalNonEmpty,
   MCORCH_AI_LOG: optionalNonEmpty,
   MCORCH_AI_PROVIDER_LOG: optionalNonEmpty,
+  /** Legacy; prefer `MCORCH_AI_PLAN_LOG`. */
   MCORCH_DESIGN_LOOP_LOG: optionalNonEmpty,
+  MCORCH_AI_PLAN_LOG: optionalNonEmpty,
+  /** Legacy; prefer `MCORCH_AI_PLAN_MAX_STEPS`. */
   MCORCH_DESIGN_LOOP_MAX_TURNS: z.preprocess(
     (value) =>
-      value === undefined ||
-      value === "" ||
-      (typeof value === "string" && value.trim() === "")
+      value === undefined || value === "" || (typeof value === "string" && value.trim() === "")
         ? undefined
         : value,
     z.coerce.number().int().min(1).max(50).optional(),
   ),
-  /** HTTP timeout for Azure chat completions (ms). Includes upload, model time, and full response download. */
-  AZURE_OPENAI_CHAT_TIMEOUT_MS: z.preprocess(
+  MCORCH_AI_PLAN_MAX_STEPS: z.preprocess(
     (value) =>
-      value === undefined ||
-      value === "" ||
-      (typeof value === "string" && value.trim() === "")
+      value === undefined || value === "" || (typeof value === "string" && value.trim() === "")
         ? undefined
         : value,
-    z.coerce.number().int().min(5_000).max(1_800_000).optional(),
+    z.coerce.number().int().min(1).max(50).optional(),
   ),
+  /** HTTP timeout for Azure chat completions (ms). Applies to the full request including streaming body. */
+  AZURE_OPENAI_CHAT_TIMEOUT_MS: z.preprocess(
+    (value) =>
+      value === undefined || value === "" || (typeof value === "string" && value.trim() === "")
+        ? undefined
+        : value,
+    z.coerce.number().int().min(5_000).max(3_600_000).optional(),
+  ),
+  /** When true (default), use chat completions streaming so headers return quickly; set false for buffered JSON only. */
+  AZURE_OPENAI_CHAT_STREAM: z.preprocess(
+    (value) =>
+      value === undefined || value === "" || (typeof value === "string" && value.trim() === "")
+        ? undefined
+        : value,
+    z.enum(["true", "false", "1", "0"]).optional(),
+  ),
+  /** When true (default), use Responses API `POST .../openai/v1/responses` instead of Chat Completions. */
+  AZURE_OPENAI_USE_RESPONSES: z.preprocess(
+    (value) =>
+      value === undefined || value === "" || (typeof value === "string" && value.trim() === "")
+        ? undefined
+        : value,
+    z.enum(["true", "false", "1", "0"]).optional(),
+  ),
+  /** `api-version` for the Responses route (Azure often uses `preview`). */
+  AZURE_OPENAI_RESPONSES_API_VERSION: optionalNonEmpty,
 });
 
 export type AppConfig = {
@@ -61,8 +83,14 @@ export type AppConfig = {
     apiVersion: string;
     deployment: string;
     policyId?: string;
-    /** Upper bound on a single chat completion HTTP request (including model time). */
+    /** Upper bound on a single chat completion (upload through end of streamed or buffered response). */
     chatTimeoutMs: number;
+    /** Use SSE streaming for chat completions (recommended; avoids long waits for HTTP headers). */
+    chatStream: boolean;
+    /** Prefer Azure OpenAI Responses API over Chat Completions. */
+    useResponses: boolean;
+    /** Query `api-version` for `POST .../openai/v1/responses`. */
+    responsesApiVersion: string;
   };
   minecraft: {
     tcpHost: string;
@@ -77,8 +105,10 @@ export type AppConfig = {
   ai: {
     plannerLogPath: string;
     providerLogPath: string;
-    designLoopLogPath: string;
-    designLoopMaxTurns: number;
+    /** Human-readable log for placement-then-build AI progress. */
+    aiPlanLogPath: string;
+    /** Max AI calls per chat request (placement + build + retries). */
+    aiPlanMaxSteps: number;
   };
 };
 
@@ -99,8 +129,16 @@ export function loadConfig(): AppConfig {
         apiVersion: parsed.AZURE_OPENAI_API_VERSION!,
         deployment: parsed.AZURE_OPENAI_DEPLOYMENT!,
         policyId: parsed.AZURE_OPENAI_POLICY_ID,
-        chatTimeoutMs:
-          parsed.AZURE_OPENAI_CHAT_TIMEOUT_MS ?? DEFAULT_AZURE_OPENAI_CHAT_TIMEOUT_MS,
+        chatTimeoutMs: parsed.AZURE_OPENAI_CHAT_TIMEOUT_MS ?? DEFAULT_AZURE_OPENAI_CHAT_TIMEOUT_MS,
+        chatStream:
+          parsed.AZURE_OPENAI_CHAT_STREAM === undefined ||
+          parsed.AZURE_OPENAI_CHAT_STREAM === "true" ||
+          parsed.AZURE_OPENAI_CHAT_STREAM === "1",
+        useResponses:
+          parsed.AZURE_OPENAI_USE_RESPONSES === undefined ||
+          parsed.AZURE_OPENAI_USE_RESPONSES === "true" ||
+          parsed.AZURE_OPENAI_USE_RESPONSES === "1",
+        responsesApiVersion: parsed.AZURE_OPENAI_RESPONSES_API_VERSION ?? "preview",
       }
     : undefined;
 
@@ -118,10 +156,10 @@ export function loadConfig(): AppConfig {
     },
     ai: {
       plannerLogPath: parsed.MCORCH_AI_LOG ?? "logs/ai-planner.jsonl",
-      providerLogPath:
-        parsed.MCORCH_AI_PROVIDER_LOG ?? "logs/ai-provider.log",
-      designLoopLogPath: parsed.MCORCH_DESIGN_LOOP_LOG ?? "logs/design-loop.log",
-      designLoopMaxTurns: parsed.MCORCH_DESIGN_LOOP_MAX_TURNS ?? 10,
+      providerLogPath: parsed.MCORCH_AI_PROVIDER_LOG ?? "logs/ai-provider.log",
+      aiPlanLogPath:
+        parsed.MCORCH_AI_PLAN_LOG ?? parsed.MCORCH_DESIGN_LOOP_LOG ?? "logs/ai-plan.log",
+      aiPlanMaxSteps: parsed.MCORCH_AI_PLAN_MAX_STEPS ?? parsed.MCORCH_DESIGN_LOOP_MAX_TURNS ?? 10,
     },
   };
 }

@@ -1,7 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { z } from "zod";
 import type { Orchestrator } from "../orchestrator/orchestrator.js";
-import type { ChatCommandRequest } from "../types/plugin.js";
 
 const Vec3Schema = z.object({
   x: z.number(),

@@ -69,7 +69,7 @@ export type ChatCommandRequest = {
 };
 
 export type ChatCommandResponse = {
-  status: "executed" | "needs_more_info" | "rejected" | "error";
+  status: "executed" | "rejected" | "error";
   reply: string;
   requestId: string;
   intent: string;

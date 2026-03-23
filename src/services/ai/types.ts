@@ -10,8 +10,5 @@ export type ChatCompletionOptions = {
 
 export interface ChatProvider {
   readonly name: string;
-  chat(
-    messages: ChatMessage[],
-    options?: ChatCompletionOptions,
-  ): Promise<string>;
+  chat(messages: ChatMessage[], options?: ChatCompletionOptions): Promise<string>;
 }

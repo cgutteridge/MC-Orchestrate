@@ -1,6 +1,6 @@
 /**
  * Minimal connectivity check: one tiny chat completion through the configured
- * AI provider (same code path as the design loop). Does not load Minecraft prompts.
+ * AI provider (same code path as placement-then-build). Does not load Minecraft prompts.
  *
  * Usage:
  *   npx tsx scripts/smoke-ai-connection.ts
@@ -61,7 +61,7 @@ function truncateOneLine(s: string, maxChars: number): string {
 }
 
 main().catch((err) => {
-  process.stderr.write(err instanceof Error ? err.stack ?? err.message : String(err));
+  process.stderr.write(err instanceof Error ? (err.stack ?? err.message) : String(err));
   process.stderr.write("\n");
   process.exit(1);
 });

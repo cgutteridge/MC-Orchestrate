@@ -7,14 +7,14 @@
 import type { ChatCommandRequest } from "../types/plugin.js";
 
 /**
- * Explains why the design loop stopped without a plan after the AI failed
- * repeatedly or the turn budget was exhausted.
+ * Explains why placement-then-build planning stopped without a plan: the model
+ * failed repeatedly or the AI step budget was exhausted.
  *
- * @param kind - Whether the assistant failed twice in a row or turns ran out.
+ * @param kind - Whether the assistant failed twice in a row or steps ran out.
  * @param request - Used to quote a short snippet of the player's message.
  */
-export function designLoopFailureMessage(
-  kind: "max_turns" | "assistant_failed_twice",
+export function aiPlanFailureMessage(
+  kind: "max_steps" | "assistant_failed_twice",
   request: ChatCommandRequest,
 ): string {
   const hint = truncateForPlayer(request.message, 72);
@@ -22,7 +22,7 @@ export function designLoopFailureMessage(
   if (kind === "assistant_failed_twice") {
     return (
       `I couldn't lock in a valid build plan: the assistant gave two responses in a row that I couldn't use ` +
-      `(missing JSON, broken JSON, invalid view request, or a plan that didn't match the required shape). ` +
+      `(missing JSON, broken JSON, or a plan that didn't match the required shape). ` +
       `Your request looked like: "${hint}". ` +
       `Try again with a shorter, single-structure ask (size + material + "in front of me" / "here"). ` +
       `If this keeps happening, it's likely a model output issue on our side—not something you did wrong.`
@@ -30,13 +30,13 @@ export function designLoopFailureMessage(
   }
 
   return (
-    `I ran out of planning turns while working on: "${hint}". ` +
+    `I ran out of planning steps while working on: "${hint}". ` +
     `Break it into a smaller ask (one structure, explicit size and placement), or say exactly what block type and footprint you want.`
   );
 }
 
 /**
- * When the repaired plan has no executable primitives and no AI clarification.
+ * Player-facing message when a plan would have no executable passes (defensive path).
  */
 export function orchestratorEmptyPlanMessage(request: ChatCommandRequest): string {
   const hint = truncateForPlayer(request.message, 72);
@@ -124,10 +124,7 @@ export function safetyVolumeExceededMessage(volume: number, limit: number): stri
  * @param estimated - Estimated primitive block count.
  * @param limit - Max blocks per request.
  */
-export function safetyPrimitiveVolumeExceededMessage(
-  estimated: number,
-  limit: number,
-): string {
+export function safetyPrimitiveVolumeExceededMessage(estimated: number, limit: number): string {
   return (
     `Safety: the cylinders/fills in that plan would touch roughly ${estimated} blocks—` +
     `above my per-request cap of ${limit}. ` +
@@ -161,23 +158,13 @@ export const SEMANTICS_PASS_ORDER =
  * @param volume - Bounding box volume.
  * @param minVolume - Minimum required.
  */
-export function semanticsDegenerateStructureMessage(
-  volume: number,
-  minVolume: number,
-): string {
+export function semanticsDegenerateStructureMessage(volume: number, minVolume: number): string {
   return (
     `Plan check: for that kind of structure the footprint is only ${volume} blocks ` +
     `(I expect at least about ${minVolume} for a real building). ` +
     `Specify width, depth, and height so the model doesn't collapse to a single block.`
   );
 }
-
-/**
- * When the player's message implies build vs remove but the plan does the opposite.
- */
-export const CLARIFICATION_ACTION_MISMATCH =
-  "What you said sounds like you want to build, clear, or replace blocks — but the plan I got does the wrong kind of operation. " +
-  "Reply with one clear verb: e.g. \"build a …\", \"remove the …\", or \"replace X with Y\".";
 
 function truncateForPlayer(text: string, maxChars: number): string {
   const t = text.trim().replace(/\s+/g, " ");

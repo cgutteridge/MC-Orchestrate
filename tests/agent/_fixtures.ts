@@ -44,9 +44,7 @@ export function assertProviderPresent(): void {
  * WorldReader backed by the local Minecraft server directory.
  * Disk reads return `undefined` gracefully when the world is not present.
  */
-export const worldReader = new WorldReader(
-  config.minecraft.minecraftDir,
-);
+export const worldReader = new WorldReader(config.minecraft.minecraftDir);
 
 // ---------------------------------------------------------------------------
 // Request factory
@@ -83,14 +81,14 @@ export type Facing =
 const D = Math.SQRT1_2; // 1/√2 ≈ 0.707 — diagonal component
 
 const FACING: Record<Facing, { yaw: number; lookVector: { x: number; y: number; z: number } }> = {
-  south:     { yaw:   0, lookVector: { x:  0, y: 0, z:  1 } },
-  southwest: { yaw:  45, lookVector: { x: -D, y: 0, z:  D } },
-  west:      { yaw:  90, lookVector: { x: -1, y: 0, z:  0 } },
+  south: { yaw: 0, lookVector: { x: 0, y: 0, z: 1 } },
+  southwest: { yaw: 45, lookVector: { x: -D, y: 0, z: D } },
+  west: { yaw: 90, lookVector: { x: -1, y: 0, z: 0 } },
   northwest: { yaw: 135, lookVector: { x: -D, y: 0, z: -D } },
-  north:     { yaw: 180, lookVector: { x:  0, y: 0, z: -1 } },
-  northeast: { yaw: 225, lookVector: { x:  D, y: 0, z: -D } },
-  east:      { yaw: 270, lookVector: { x:  1, y: 0, z:  0 } },
-  southeast: { yaw: 315, lookVector: { x:  D, y: 0, z:  D } },
+  north: { yaw: 180, lookVector: { x: 0, y: 0, z: -1 } },
+  northeast: { yaw: 225, lookVector: { x: D, y: 0, z: -D } },
+  east: { yaw: 270, lookVector: { x: 1, y: 0, z: 0 } },
+  southeast: { yaw: 315, lookVector: { x: D, y: 0, z: D } },
 };
 
 /** Baseline player position — origin at y=64. */
@@ -121,13 +119,6 @@ export function makeRequest(
   const { position = BASE_POSITION, localContext, ...rest } = overrides;
   const { yaw, lookVector } = FACING[facing];
 
-  // Derive horizontal look direction (ignore y-component).
-  const hx = lookVector.x;
-  const hz = lookVector.z;
-  const hLen = Math.sqrt(hx * hx + hz * hz);
-  const nhx = hLen > 0.01 ? hx / hLen : 0;
-  const nhz = hLen > 0.01 ? hz / hLen : 1;
-
   // Ground level is one block below player feet.
   const groundY = position.y - 1;
 
@@ -137,11 +128,11 @@ export function makeRequest(
   // Including a default targetBlock would cause the AI to anchor there and
   // ignore directional phrases like "north" or "to my left".
   const groundBlocks: BlockSample[] = [
-    { x: position.x,     y: groundY, z: position.z,     type: "minecraft:grass_block" },
-    { x: position.x + 1, y: groundY, z: position.z,     type: "minecraft:grass_block" },
-    { x: position.x - 1, y: groundY, z: position.z,     type: "minecraft:grass_block" },
-    { x: position.x,     y: groundY, z: position.z + 1, type: "minecraft:grass_block" },
-    { x: position.x,     y: groundY, z: position.z - 1, type: "minecraft:grass_block" },
+    { x: position.x, y: groundY, z: position.z, type: "minecraft:grass_block" },
+    { x: position.x + 1, y: groundY, z: position.z, type: "minecraft:grass_block" },
+    { x: position.x - 1, y: groundY, z: position.z, type: "minecraft:grass_block" },
+    { x: position.x, y: groundY, z: position.z + 1, type: "minecraft:grass_block" },
+    { x: position.x, y: groundY, z: position.z - 1, type: "minecraft:grass_block" },
   ];
 
   return {
@@ -169,8 +160,12 @@ export function makeRequest(
       onlinePlayerCount: 1,
     },
     initialScanRegion: {
-      minX: position.x - 7, minY: position.y - 3, minZ: position.z - 7,
-      maxX: position.x + 7, maxY: position.y + 5, maxZ: position.z + 7,
+      minX: position.x - 7,
+      minY: position.y - 3,
+      minZ: position.z - 7,
+      maxX: position.x + 7,
+      maxY: position.y + 5,
+      maxZ: position.z + 7,
     },
     ...rest,
   };
@@ -184,9 +179,7 @@ export function makeRequest(
  * Extracts every world coordinate mentioned in any primitive across all passes
  * of a plan. Used by spatial assertions.
  */
-export function allPrimitiveCoords(
-  plan: Plan,
-): Array<{ x: number; y: number; z: number }> {
+export function allPrimitiveCoords(plan: Plan): Array<{ x: number; y: number; z: number }> {
   const coords: Array<{ x: number; y: number; z: number }> = [];
   for (const pass of plan.passes) {
     for (const p of pass.primitives) {

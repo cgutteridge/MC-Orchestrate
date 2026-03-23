@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { validateLayerMapShape } from "./layerMap.js";
-import { isLayerMapOnlyBuildMode } from "./planMode.js";
 
 export const IntentSchema = z
   .string()
@@ -82,52 +81,23 @@ export const LayerMapSchema = z
 
 export type LayerMap = z.infer<typeof LayerMapSchema>;
 
-export const PassSchema = z
-  .object({
-    name: z.string().min(1),
-    goal: z.string().min(1),
-    primitives: z.array(PrimitiveSchema).default([]),
-    layerMap: LayerMapSchema.optional(),
-  })
-  .superRefine((data, ctx) => {
-    const hasLayer = data.layerMap !== undefined;
-    const hasPrimitives = data.primitives.length > 0;
-    if (isLayerMapOnlyBuildMode()) {
-      if (!hasLayer) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message:
-            "Each pass must include layerMap (primitive passes are disabled). Set MCORCH_LAYER_MAP_ONLY=false to allow fill_cuboid / cylinder / etc.",
-        });
-        return;
-      }
-      if (hasPrimitives) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message:
-            "Do not include primitives when using layerMap-only mode; use an empty primitives array.",
-        });
-      }
-      return;
-    }
-    if (hasLayer === hasPrimitives) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message:
-          "Each pass must have exactly one of: non-empty primitives, or layerMap.",
-      });
-    }
-  });
+/**
+ * One build pass: **layer map only** (`primitives` must be empty — reserved for schema shape).
+ */
+export const PassSchema = z.object({
+  name: z.string().min(1),
+  goal: z.string().min(1),
+  primitives: z.array(PrimitiveSchema).max(0).default([]),
+  layerMap: LayerMapSchema,
+});
 
 export const PlanSchema = z.object({
   intent: IntentSchema,
   targetWorld: z.string().min(1),
   targetRegion: RegionSchema,
   assumptions: z.array(z.string().min(1)).default([]),
-  passes: z.array(PassSchema),
+  passes: z.array(PassSchema).min(1),
   reply: z.string().min(1),
-  needsMoreInfo: z.boolean(),
-  clarification: z.string().optional(),
 });
 
 export type Point = z.infer<typeof PointSchema>;
@@ -140,22 +110,6 @@ export type Plan = z.infer<typeof PlanSchema>;
 // ---------------------------------------------------------------------------
 // Design loop step — discriminated union returned by the AI each turn.
 // ---------------------------------------------------------------------------
-
-/**
- * Returned when the AI needs more world context before it can commit to a plan.
- * The orchestrator fulfils the scan and feeds the result back as the next user
- * message before calling the AI again.
- */
-export const ViewRequestSchema = z.object({
-  action: z.literal("view_request"),
-  /** The world region the AI wants to examine. Must be within safety limits. */
-  region: RegionSchema,
-  /**
-   * The AI's private reasoning for this scan and its intentions for the next
-   * turn. Echoed back verbatim so the AI retains context across messages.
-   */
-  selfNotes: z.string().min(1),
-});
 
 // ---------------------------------------------------------------------------
 // Placement intent — AI declares WHERE to place the structure using a strict
@@ -175,12 +129,32 @@ export const ViewRequestSchema = z.object({
  * - `last_build`      — origin at the centre of the last built structure;
  *                       for follow-up requests like "make it bigger"
  */
-export const PlacementRefSchema = z.enum([
-  "player_view",
-  "player_absolute",
-  "focus",
-  "last_build",
-]);
+export const PlacementRefSchema = z.enum(["player_view", "player_absolute", "focus", "last_build"]);
+
+/**
+ * Declared footprint and height for step 1 (placement — get location). The layer
+ * map in step 2 should match these bounds (within the usual 32×32×48 limits).
+ */
+export const DesiredSizeSchema = z.object({
+  /** Extent along local +X (layer-map columns). */
+  width: z.number().int().min(1).max(32),
+  /** Extent along local +Z (layer-map rows within a slice). */
+  depth: z.number().int().min(1).max(32),
+  /** Extent along local Y (number of layer strings). */
+  height: z.number().int().min(1).max(48),
+});
+
+/**
+ * Which point on the structure's axis-aligned box aligns with the semantic
+ * anchor from {@link PlacementRefSchema} and offsets.
+ *
+ * - `top` — anchor at the top face (e.g. ground surface for an excavated pool).
+ * - `bottom` — anchor at the bottom face (structures sitting on the ground).
+ * - `middle` — anchor at the vertical centre (floating builds, spans above/below).
+ * - `flying` — same alignment as `middle` today; reserved so the plan step can
+ *   tailor prompts (e.g. aerial builds) without changing placement math yet.
+ */
+export const VerticalReferenceSchema = z.enum(["top", "middle", "bottom", "flying"]);
 
 /**
  * Semantic placement instruction returned by the AI.
@@ -199,6 +173,17 @@ export const PlacementRefSchema = z.enum([
 export const PlacementSchema = z.object({
   ref: PlacementRefSchema.default("player_view"),
 
+  /**
+   * Optional declared size. Required for `placement_choice` in the split loop;
+   * guides step 2 and should match `targetRegion` / layer-map bounds.
+   */
+  desiredSize: DesiredSizeSchema.optional(),
+  /**
+   * Which vertical face or centre of the build volume sits on the resolved
+   * anchor point after offsets. Defaults to `middle` for backward compatibility.
+   */
+  verticalReference: VerticalReferenceSchema.default("middle"),
+
   // Player-view offsets (only used when ref = "player_view")
   /** Blocks in the player's look direction. */
   forward: z.number().int().default(0),
@@ -212,8 +197,8 @@ export const PlacementSchema = z.object({
   // Cardinal offsets (used when ref = "player_absolute", "focus", or "last_build")
   north: z.number().int().default(0),
   south: z.number().int().default(0),
-  east:  z.number().int().default(0),
-  west:  z.number().int().default(0),
+  east: z.number().int().default(0),
+  west: z.number().int().default(0),
 
   // Vertical — always independent of horizontal, relative to ground level at
   // the resolved XZ position.
@@ -224,6 +209,8 @@ export const PlacementSchema = z.object({
 });
 
 export type PlacementRef = z.infer<typeof PlacementRefSchema>;
+export type DesiredSize = z.infer<typeof DesiredSizeSchema>;
+export type VerticalReference = z.infer<typeof VerticalReferenceSchema>;
 export type Placement = z.infer<typeof PlacementSchema>;
 
 /**
@@ -237,6 +224,26 @@ export type Placement = z.infer<typeof PlacementSchema>;
  * structure's origin; the orchestrator shifts them to world space before
  * executing.
  */
+
+/**
+ * Placement object for step 1 of the split loop — includes required
+ * {@link DesiredSizeSchema} so size is chosen before the layer map.
+ */
+export const PlacementChoicePlacementSchema = PlacementSchema.extend({
+  desiredSize: DesiredSizeSchema,
+});
+
+/**
+ * Placement-only step for step 1 (first AI call). The next
+ * call requests the layer map; the server merges this `placement` with the plan.
+ */
+export const PlacementChoiceStepSchema = z.object({
+  action: z.literal("placement_choice"),
+  placement: PlacementChoicePlacementSchema,
+  /** Optional notes echoed on the plan phase turn. */
+  selfNotes: z.string().min(1).optional(),
+});
+
 export const BuildStepSchema = z.object({
   action: z.literal("build"),
   placement: PlacementSchema,
@@ -249,12 +256,12 @@ export const BuildStepSchema = z.object({
   verifyRegion: RegionSchema.optional(),
 });
 
-/** Discriminated union of every valid AI response during the design loop. */
+/** Discriminated union of every valid AI response during placement-then-build planning. */
 export const DesignStepSchema = z.discriminatedUnion("action", [
-  ViewRequestSchema,
+  PlacementChoiceStepSchema,
   BuildStepSchema,
 ]);
 
-export type ViewRequest = z.infer<typeof ViewRequestSchema>;
+export type PlacementChoiceStep = z.infer<typeof PlacementChoiceStepSchema>;
 export type BuildStep = z.infer<typeof BuildStepSchema>;
 export type DesignStep = z.infer<typeof DesignStepSchema>;

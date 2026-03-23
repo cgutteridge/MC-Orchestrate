@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ChatCommandRequest } from "../types/plugin.js";
 import {
-  designLoopFailureMessage,
+  aiPlanFailureMessage,
   orchestratorEmptyPlanMessage,
   orchestratorUnexpectedErrorMessage,
 } from "./playerRefusalMessages.js";
@@ -31,17 +31,17 @@ const baseRequest: ChatCommandRequest = {
   },
 };
 
-describe("designLoopFailureMessage", () => {
+describe("aiPlanFailureMessage", () => {
   it("explains repeated assistant output failures without blaming the player", () => {
-    const msg = designLoopFailureMessage("assistant_failed_twice", baseRequest);
+    const msg = aiPlanFailureMessage("assistant_failed_twice", baseRequest);
     expect(msg).toContain("couldn't lock in a valid build plan");
     expect(msg).toContain("castle");
     expect(msg).toContain("Try again");
   });
 
-  it("explains turn budget exhaustion with actionable hints", () => {
-    const msg = designLoopFailureMessage("max_turns", baseRequest);
-    expect(msg).toContain("planning turns");
+  it("explains step budget exhaustion with actionable hints", () => {
+    const msg = aiPlanFailureMessage("max_steps", baseRequest);
+    expect(msg).toContain("planning steps");
     expect(msg).toContain("smaller ask");
   });
 });

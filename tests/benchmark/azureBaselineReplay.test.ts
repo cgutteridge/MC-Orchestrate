@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { runDesignLoop } from "../../src/planner/aiPlanner.js";
+import { runPlacementThenBuild } from "../../src/planner/aiPlanner.js";
 import {
   createReplayChatProvider,
   parseReplayFixture,
@@ -55,7 +55,7 @@ const baselineRequest: ChatCommandRequest = {
 };
 
 describe("Azure baseline replay fixtures", () => {
-  it("replays v1 single-turn build and returns a validated plan", async () => {
+  it("replays v1 two-turn placement then build and returns a validated plan", async () => {
     const raw = JSON.parse(
       await readFile(
         path.join(
@@ -73,7 +73,7 @@ describe("Azure baseline replay fixtures", () => {
     const fixture = parseReplayFixture(raw);
     const provider = createReplayChatProvider(fixture.assistantTurns);
 
-    const result = await runDesignLoop(
+    const result = await runPlacementThenBuild(
       provider,
       baselineRequest,
       fakeWorldReader,
@@ -88,10 +88,6 @@ describe("Azure baseline replay fixtures", () => {
     expect(result.plan.intent).toBe("build_cylinder");
     expect(result.placement.ref).toBe("player_view");
     expect(result.placement.forward).toBe(8);
-    expect(result.plan.passes[0]?.primitives[0]).toMatchObject({
-      type: "cylinder",
-      block: "minecraft:glass",
-      hollow: true,
-    });
+    expect(result.plan.passes[0]?.layerMap.palette.G).toBe("minecraft:glass");
   });
 });

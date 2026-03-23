@@ -27,12 +27,7 @@ function voxelKey(x: number, y: number, z: number): string {
   return `${x},${y},${z}`;
 }
 
-function fillCuboid(
-  map: Map<string, string>,
-  from: Point,
-  to: Point,
-  block: string,
-): void {
+function fillCuboid(map: Map<string, string>, from: Point, to: Point, block: string): void {
   const c = normalizeCuboid(from, to);
   for (let x = c.from.x; x <= c.to.x; x++) {
     for (let y = c.from.y; y <= c.to.y; y++) {
@@ -43,12 +38,7 @@ function fillCuboid(
   }
 }
 
-function applyHollowCuboid(
-  map: Map<string, string>,
-  from: Point,
-  to: Point,
-  block: string,
-): void {
+function applyHollowCuboid(map: Map<string, string>, from: Point, to: Point, block: string): void {
   const cuboid = normalizeCuboid(from, to);
   const widthX = cuboid.to.x - cuboid.from.x + 1;
   const widthY = cuboid.to.y - cuboid.from.y + 1;
@@ -139,16 +129,10 @@ function applyReplaceInRegion(
  * @param map Mutable map from `"x,y,z"` world keys to block id.
  * @param primitive One build primitive.
  */
-export function applyPrimitiveToVoxelMap(
-  map: Map<string, string>,
-  primitive: Primitive,
-): void {
+export function applyPrimitiveToVoxelMap(map: Map<string, string>, primitive: Primitive): void {
   switch (primitive.type) {
     case "set_block":
-      map.set(
-        voxelKey(primitive.x, primitive.y, primitive.z),
-        primitive.block,
-      );
+      map.set(voxelKey(primitive.x, primitive.y, primitive.z), primitive.block);
       break;
     case "fill_cuboid":
       fillCuboid(map, primitive.from, primitive.to, primitive.block);
@@ -235,8 +219,7 @@ export function primitivesToLayerMapData(
   if (minX < origin.x || minY < origin.y || minZ < origin.z) {
     return {
       ok: false,
-      error:
-        `primitivesToLayerMapData: voxel min (${minX},${minY},${minZ}) is below options.origin (${origin.x},${origin.y},${origin.z})`,
+      error: `primitivesToLayerMapData: voxel min (${minX},${minY},${minZ}) is below options.origin (${origin.x},${origin.y},${origin.z})`,
     };
   }
 

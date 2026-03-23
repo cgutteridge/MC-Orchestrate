@@ -10,19 +10,14 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { runDesignLoop } from "../../src/planner/aiPlanner.js";
+import { runPlacementThenBuild } from "../../src/planner/aiPlanner.js";
 import type { Placement } from "../../src/planner/schema.js";
-import {
-  assertProviderPresent,
-  makeRequest,
-  provider,
-  worldReader,
-} from "./_fixtures.js";
+import { assertProviderPresent, makeRequest, provider, worldReader } from "./_fixtures.js";
 
 assertProviderPresent();
 
 /**
- * Runs the design loop and returns placement when a plan is produced.
+ * Runs placement-then-build planning and returns placement when a plan is produced.
  *
  * @param message - Player chat text.
  * @param facing - Horizontal facing for the synthetic request.
@@ -32,7 +27,7 @@ async function getPlacement(
   message: string,
   facing: Parameters<typeof makeRequest>[1],
 ): Promise<Placement | undefined> {
-  const result = await runDesignLoop(
+  const result = await runPlacementThenBuild(
     provider!,
     makeRequest(message, facing),
     worldReader,
@@ -80,10 +75,7 @@ describe.skipIf(!provider)("Agent: placement intent", () => {
   });
 
   it("'10 blocks to the north' → player_absolute with north offset", async () => {
-    const placement = await getPlacement(
-      "build a small pillar 10 blocks to the north",
-      "south",
-    );
+    const placement = await getPlacement("build a small pillar 10 blocks to the north", "south");
 
     expect(placement).toBeDefined();
     expect(placement!.ref).toBe("player_absolute");

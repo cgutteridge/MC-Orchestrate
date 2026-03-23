@@ -20,18 +20,14 @@ const towerPlan: Plan = {
     {
       name: "tower_column",
       goal: "Build tower.",
-      primitives: [
-        {
-          type: "fill_cuboid",
-          from: { x: -1, y: 64, z: -1 },
-          to: { x: 1, y: 71, z: 1 },
-          block: "minecraft:stone",
-        },
-      ],
+      primitives: [],
+      layerMap: {
+        layers: Array.from({ length: 8 }, () => "SSS\nSSS\nSSS"),
+        palette: { S: "minecraft:stone", _: "minecraft:air" },
+      },
     },
   ],
   reply: "Built.",
-  needsMoreInfo: false,
 };
 
 describe("scorePlan", () => {
@@ -44,7 +40,7 @@ describe("scorePlan", () => {
     expect(result.metrics.schemaValid).toBe(true);
     expect(result.metrics.passCount).toBe(1);
     expect(result.metrics.primitiveCount).toBe(1);
-    expect(result.metrics.paletteDiversity).toBe(1);
+    expect(result.metrics.paletteDiversity).toBe(2);
     expect(result.metrics.targetRegionVolume).toBe(3 * 8 * 3);
     expect(result.metrics.estimatedBridgeOperations).toBe(3 * 8 * 3);
   });

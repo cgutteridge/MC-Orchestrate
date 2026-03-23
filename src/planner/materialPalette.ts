@@ -108,6 +108,8 @@ const SUPPORTED_MATERIAL_HINTS = [
  * Returns true when `id` matches a Java resource-location shape suitable for
  * block ids (`namespace:path`). Does not consult the live server registry —
  * invalid but well-formed ids are accepted and may fail at execution time.
+ * For vanilla-only membership, see {@link isVanillaMinecraftBlockId} in
+ * `minecraftBlockRegistry.ts` (generated from `minecraft-data`).
  * Block states (`foo[axis=x]`) are rejected.
  */
 export function isValidMinecraftBlockId(id: string): boolean {
@@ -120,51 +122,6 @@ export function isValidMinecraftBlockId(id: string): boolean {
   }
   return /^[a-z0-9._-]+:[a-z0-9/._-]+$/.test(s);
 }
-
-/**
- * Blocks that are non-solid or fluid and must not be used as structural
- * building materials (walls, floors, roofs, trim). `minecraft:water` /
- * `minecraft:lava` may still be used in volumetric `fill_cuboid` / `cylinder`
- * when the material resolver allows fluid fills (moats, pools). They remain valid for
- * `replace_in_region` and `clear_region` operational uses.
- */
-const NON_STRUCTURAL_BLOCKS = new Set([
-  "minecraft:air",
-  "minecraft:water",
-  "minecraft:lava",
-  "minecraft:grass_block",
-  "minecraft:dirt",
-  "minecraft:dirt_path",
-  "minecraft:oak_leaves",
-  "minecraft:birch_leaves",
-  "minecraft:spruce_leaves",
-]);
-
-/**
- * Gravity-affected blocks that fall when unsupported. These must not be used
- * in structural wall, roof, or trim slots.
- */
-const GRAVITY_BLOCKS = new Set([
-  "minecraft:sand",
-  "minecraft:red_sand",
-  "minecraft:gravel",
-  "minecraft:white_concrete_powder",
-  "minecraft:orange_concrete_powder",
-  "minecraft:magenta_concrete_powder",
-  "minecraft:light_blue_concrete_powder",
-  "minecraft:yellow_concrete_powder",
-  "minecraft:lime_concrete_powder",
-  "minecraft:pink_concrete_powder",
-  "minecraft:gray_concrete_powder",
-  "minecraft:light_gray_concrete_powder",
-  "minecraft:cyan_concrete_powder",
-  "minecraft:purple_concrete_powder",
-  "minecraft:blue_concrete_powder",
-  "minecraft:brown_concrete_powder",
-  "minecraft:green_concrete_powder",
-  "minecraft:red_concrete_powder",
-  "minecraft:black_concrete_powder",
-]);
 
 const TEXT_ALIAS_ENTRIES = Object.entries(MATERIAL_ALIASES)
   .filter(([alias]) => !alias.startsWith("minecraft:"))
@@ -228,12 +185,7 @@ export function normalizeBlockId(block: string): string {
   return normalized;
 }
 
-export {
-  GRAVITY_BLOCKS,
-  MATERIAL_ALIASES,
-  NON_STRUCTURAL_BLOCKS,
-  SUPPORTED_MATERIAL_HINTS,
-};
+export { MATERIAL_ALIASES, SUPPORTED_MATERIAL_HINTS };
 
 function normalizeMaterialKey(value: string): string {
   return value.toLowerCase().trim();
