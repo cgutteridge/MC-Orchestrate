@@ -297,7 +297,6 @@ const PLAN_SCHEMA_GUIDE = {
     {
       name: "string",
       goal: "string",
-      primitives: [],
       layerMap: {
         layers: ["SSS\nSSS\nSSS", "SSS\nS_S\nSSS", "SSS\nSSS\nSSS"],
         palette: {
@@ -357,7 +356,7 @@ const CONVERSATION_FOLLOWUPS_COMPACT = [
 ].join("\n");
 
 const LAYER_MAP_AND_PLAN_COMPACT = [
-  "BUILDS USE LAYER MAPS ONLY: each pass has layerMap + primitives:[]. No fill_cuboid / cylinder / set_block / etc.",
+  "BUILDS ARE LAYER MAPS ONLY: each pass has `layerMap` (layers + palette). No legacy shape ops.",
   "layers[] = Y slices top→bottom; within a slice, rows = +Z, chars = +X. palette maps char → minecraft:id. ` ` = leave block; `_` = air.",
   "Max 32×32 footprint, 48 tall. Prefer one full-structure pass; second pass only for polish. Straight silhouettes unless the player asked for round.",
   "Real 3D needs many slices — one slice = a flat slab. verifyRegion: optional box ~2 blocks past the build for inspection.",
@@ -365,7 +364,7 @@ const LAYER_MAP_AND_PLAN_COMPACT = [
 
 const MATERIALS_AND_CONSTRAINTS_COMPACT = [
   "=== MATERIALS ===",
-  "Put vanilla `minecraft:` block ids in palettes and primitives. Unknown or non-vanilla ids are replaced with minecraft:stone at execution (the player is warned).",
+  "Put vanilla `minecraft:` block ids in palettes. Unknown or non-vanilla ids are replaced with minecraft:stone at execution (the player is warned).",
   "=== CONSTRAINTS ===",
   "Stay in-world; stay within ~32 blocks of the player unless asked otherwise. Every plan must include at least one executable pass; do not invent world coords.",
 ].join("\n");
@@ -492,10 +491,6 @@ export function buildPlacementPhaseMessages(
   request: ChatCommandRequest,
   lastPlan?: Plan,
 ): ChatMessage[] {
-  if (isMinimalInitialPromptEnabled()) {
-    return buildMinimalPlacementMessages(request, lastPlan);
-  }
-
   const userContent = buildSharedUserContent(
     request,
     lastPlan,
@@ -505,55 +500,6 @@ export function buildPlacementPhaseMessages(
   return [
     { role: "system", content: systemContent },
     { role: "user", content: userContent },
-  ];
-}
-
-/**
- * When `MCORCH_MINIMAL_INITIAL_PROMPT` is `true`/`1`/`yes`, {@link buildPlacementPhaseMessages}
- * uses a drastically shortened placement-only prompt for debugging token count and latency.
- * Output quality is not expected to match production; unset for real runs.
- *
- * @returns True when minimal prompt mode is enabled.
- */
-export function isMinimalInitialPromptEnabled(): boolean {
-  const v = process.env.MCORCH_MINIMAL_INITIAL_PROMPT?.trim().toLowerCase();
-  return v === "1" || v === "true" || v === "yes";
-}
-
-/**
- * Stripped-down step 1 messages (experimental). Omits placement card, hint blocks,
- * conversation history formatting, and pretty-printed request JSON.
- */
-function buildMinimalPlacementMessages(
-  request: ChatCommandRequest,
-  lastPlan?: Plan,
-): ChatMessage[] {
-  const guide = JSON.stringify(PLACEMENT_CHOICE_GUIDE);
-  const systemContent = [
-    "Minecraft builder step 1/2. Reply with exactly one JSON object. No markdown fences or prose outside JSON.",
-    `Return only placement_choice: ${guide}`,
-    "No plan, layerMap, or passes on this turn.",
-  ].join("\n");
-
-  const userParts: string[] = [`Request: ${request.message}`];
-  if (lastPlan !== undefined) {
-    userParts.push(`Prior build: ${summarizeLastBuiltPlan(lastPlan)}`);
-  }
-  userParts.push(
-    `Context: ${JSON.stringify({
-      requestId: request.requestId,
-      world: request.player.world,
-      position: request.player.position,
-      message: request.message,
-      recentMessages: request.recentMessages,
-      nearbyBlocks: request.localContext.nearbyBlocks.slice(0, 24),
-      initialScanRegion: request.initialScanRegion,
-    })}`,
-  );
-
-  return [
-    { role: "system", content: systemContent },
-    { role: "user", content: userParts.join("\n\n") },
   ];
 }
 

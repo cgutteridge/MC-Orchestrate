@@ -260,7 +260,6 @@ const basePlan: Plan = {
     {
       name: "walls",
       goal: "Build walls.",
-      primitives: [],
       layerMap: {
         layers: ["SSSSS", "SSSSS", "SSSSS", "SSSSS", "SSSSS"],
         palette: { S: "minecraft:stone", _: "minecraft:air" },

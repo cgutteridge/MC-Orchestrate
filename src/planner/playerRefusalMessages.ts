@@ -121,14 +121,14 @@ export function safetyVolumeExceededMessage(volume: number, limit: number): stri
 }
 
 /**
- * @param estimated - Estimated primitive block count.
+ * @param estimated - Estimated layer-map cell count (non–no-op voxels).
  * @param limit - Max blocks per request.
  */
-export function safetyPrimitiveVolumeExceededMessage(estimated: number, limit: number): string {
+export function safetyLayerMapVolumeExceededMessage(estimated: number, limit: number): string {
   return (
-    `Safety: the cylinders/fills in that plan would touch roughly ${estimated} blocks—` +
+    `Safety: the layer map(s) in that plan would place roughly ${estimated} blocks—` +
     `above my per-request cap of ${limit}. ` +
-    `Use a smaller radius, shorter height, or fewer fills.`
+    `Use a smaller footprint, fewer layers, or split into multiple requests.`
   );
 }
 

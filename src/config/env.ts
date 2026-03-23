@@ -30,17 +30,7 @@ const Schema = z.object({
   MCORCH_ACTION_LOG: optionalNonEmpty,
   MCORCH_AI_LOG: optionalNonEmpty,
   MCORCH_AI_PROVIDER_LOG: optionalNonEmpty,
-  /** Legacy; prefer `MCORCH_AI_PLAN_LOG`. */
-  MCORCH_DESIGN_LOOP_LOG: optionalNonEmpty,
   MCORCH_AI_PLAN_LOG: optionalNonEmpty,
-  /** Legacy; prefer `MCORCH_AI_PLAN_MAX_STEPS`. */
-  MCORCH_DESIGN_LOOP_MAX_TURNS: z.preprocess(
-    (value) =>
-      value === undefined || value === "" || (typeof value === "string" && value.trim() === "")
-        ? undefined
-        : value,
-    z.coerce.number().int().min(1).max(50).optional(),
-  ),
   MCORCH_AI_PLAN_MAX_STEPS: z.preprocess(
     (value) =>
       value === undefined || value === "" || (typeof value === "string" && value.trim() === "")
@@ -157,9 +147,8 @@ export function loadConfig(): AppConfig {
     ai: {
       plannerLogPath: parsed.MCORCH_AI_LOG ?? "logs/ai-planner.jsonl",
       providerLogPath: parsed.MCORCH_AI_PROVIDER_LOG ?? "logs/ai-provider.log",
-      aiPlanLogPath:
-        parsed.MCORCH_AI_PLAN_LOG ?? parsed.MCORCH_DESIGN_LOOP_LOG ?? "logs/ai-plan.log",
-      aiPlanMaxSteps: parsed.MCORCH_AI_PLAN_MAX_STEPS ?? parsed.MCORCH_DESIGN_LOOP_MAX_TURNS ?? 10,
+      aiPlanLogPath: parsed.MCORCH_AI_PLAN_LOG ?? "logs/ai-plan.log",
+      aiPlanMaxSteps: parsed.MCORCH_AI_PLAN_MAX_STEPS ?? 10,
     },
   };
 }

@@ -87,7 +87,6 @@ describe("validatePlanSafety", () => {
         {
           name: "column",
           goal: "Oversized solid layer map.",
-          primitives: [],
           layerMap: {
             layers,
             palette: { S: "minecraft:stone", _: "minecraft:air" },

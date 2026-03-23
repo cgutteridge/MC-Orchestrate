@@ -6,7 +6,6 @@ import { loadConfig } from "../../src/config/env.js";
 import { createChatProvider } from "../../src/services/ai/provider.js";
 import type { ChatProvider } from "../../src/services/ai/types.js";
 import type { ChatCommandRequest, BlockSample } from "../../src/types/plugin.js";
-import type { Plan } from "../../src/planner/schema.js";
 import { WorldReader } from "../../src/world/worldReader.js";
 
 // ---------------------------------------------------------------------------
@@ -169,58 +168,4 @@ export function makeRequest(
     },
     ...rest,
   };
-}
-
-// ---------------------------------------------------------------------------
-// Spatial assertion helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Extracts every world coordinate mentioned in any primitive across all passes
- * of a plan. Used by spatial assertions.
- */
-export function allPrimitiveCoords(plan: Plan): Array<{ x: number; y: number; z: number }> {
-  const coords: Array<{ x: number; y: number; z: number }> = [];
-  for (const pass of plan.passes) {
-    for (const p of pass.primitives) {
-      switch (p.type) {
-        case "set_block":
-          coords.push({ x: p.x, y: p.y, z: p.z });
-          break;
-        case "fill_cuboid":
-        case "hollow_cuboid":
-        case "clear_region":
-          coords.push(p.from, p.to);
-          break;
-        case "replace_in_region":
-          coords.push(p.from, p.to);
-          break;
-        case "cylinder":
-          coords.push(p.center);
-          break;
-      }
-    }
-  }
-  return coords;
-}
-
-/**
- * Returns true when every coordinate in `coords` satisfies `predicate`.
- * Useful for loose spatial assertions.
- */
-export function allCoords(
-  coords: Array<{ x: number; y: number; z: number }>,
-  predicate: (c: { x: number; y: number; z: number }) => boolean,
-): boolean {
-  return coords.length > 0 && coords.every(predicate);
-}
-
-/**
- * Returns true when at least one coordinate satisfies `predicate`.
- */
-export function someCoord(
-  coords: Array<{ x: number; y: number; z: number }>,
-  predicate: (c: { x: number; y: number; z: number }) => boolean,
-): boolean {
-  return coords.some(predicate);
 }

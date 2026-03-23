@@ -16,11 +16,10 @@ export type PlanBenchmarkMetrics = {
    * one per setBlock. Aligns with {@link compilePlanToBridgeCommands} output.
    */
   estimatedBridgeOperations: number;
-  primitiveCount: number;
   passCount: number;
   /** Volume of the declared `targetRegion` bounding box (informational). */
   targetRegionVolume: number;
-  /** Distinct `block` ids across all primitives (symbolic slots count as distinct ids). */
+  /** Distinct block ids across all layer-map palettes. */
   paletteDiversity: number;
 };
 
@@ -47,19 +46,11 @@ function bridgeCommandWeight(cmd: BridgeCommand): number {
   }
 }
 
-function collectPrimitiveBlockIds(plan: Plan): Set<string> {
+function collectPaletteBlockIds(plan: Plan): Set<string> {
   const ids = new Set<string>();
   for (const pass of plan.passes) {
-    if (pass.layerMap) {
-      for (const v of Object.values(pass.layerMap.palette)) {
-        ids.add(v);
-      }
-      continue;
-    }
-    for (const p of pass.primitives) {
-      if ("block" in p && typeof p.block === "string") {
-        ids.add(p.block);
-      }
+    for (const v of Object.values(pass.layerMap.palette)) {
+      ids.add(v);
     }
   }
   return ids;
@@ -97,13 +88,9 @@ export function scorePlan(
     metrics: {
       schemaValid: true,
       estimatedBridgeOperations,
-      primitiveCount: p.passes.reduce(
-        (n, pass) => n + (pass.layerMap ? 1 : pass.primitives.length),
-        0,
-      ),
       passCount: p.passes.length,
       targetRegionVolume: regionVolume(p.targetRegion),
-      paletteDiversity: collectPrimitiveBlockIds(p).size,
+      paletteDiversity: collectPaletteBlockIds(p).size,
     },
   };
 }

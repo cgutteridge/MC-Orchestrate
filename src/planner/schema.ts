@@ -18,54 +18,10 @@ export const RegionSchema = z.object({
   max: PointSchema,
 });
 
-export const PrimitiveSchema = z.discriminatedUnion("type", [
-  z.object({
-    type: z.literal("set_block"),
-    x: z.number().int(),
-    y: z.number().int(),
-    z: z.number().int(),
-    block: z.string().min(1),
-  }),
-  z.object({
-    type: z.literal("fill_cuboid"),
-    from: PointSchema,
-    to: PointSchema,
-    block: z.string().min(1),
-  }),
-  z.object({
-    type: z.literal("hollow_cuboid"),
-    from: PointSchema,
-    to: PointSchema,
-    block: z.string().min(1),
-  }),
-  z.object({
-    type: z.literal("clear_region"),
-    from: PointSchema,
-    to: PointSchema,
-  }),
-  z.object({
-    type: z.literal("replace_in_region"),
-    from: PointSchema,
-    to: PointSchema,
-    fromBlock: z.string().min(1),
-    toBlock: z.string().min(1),
-  }),
-  z.object({
-    type: z.literal("cylinder"),
-    center: PointSchema,
-    radius: z.number().int().min(1).max(16),
-    height: z.number().int().min(1).max(32),
-    block: z.string().min(1),
-    hollow: z.boolean().default(false),
-    axis: z.enum(["x", "y", "z"]).default("y"),
-  }),
-]);
-
 /**
- * Character-layer voxel grid (alternative to `primitives`). Layers are ordered
- * **top → bottom**; each layer is newline-separated rows. **` ` (space)** means
- * leave that cell unchanged (no-op). **`_`** means place air (default
- * `minecraft:air` if `_` is omitted from `palette`).
+ * Character-layer voxel grid. Layers are ordered **top → bottom**; each layer is
+ * newline-separated rows. **` ` (space)** means leave that cell unchanged (no-op).
+ * **`_`** means place air (default `minecraft:air` if `_` is omitted from `palette`).
  */
 export const LayerMapSchema = z
   .object({
@@ -81,13 +37,10 @@ export const LayerMapSchema = z
 
 export type LayerMap = z.infer<typeof LayerMapSchema>;
 
-/**
- * One build pass: **layer map only** (`primitives` must be empty — reserved for schema shape).
- */
+/** One build pass: a layer map in local space; the plan's `targetRegion.min` anchors it in the world. */
 export const PassSchema = z.object({
   name: z.string().min(1),
   goal: z.string().min(1),
-  primitives: z.array(PrimitiveSchema).max(0).default([]),
   layerMap: LayerMapSchema,
 });
 
@@ -102,7 +55,6 @@ export const PlanSchema = z.object({
 
 export type Point = z.infer<typeof PointSchema>;
 export type Region = z.infer<typeof RegionSchema>;
-export type Primitive = z.infer<typeof PrimitiveSchema>;
 export type BuildPass = z.infer<typeof PassSchema>;
 export type Intent = z.infer<typeof IntentSchema>;
 export type Plan = z.infer<typeof PlanSchema>;
@@ -151,8 +103,7 @@ export const DesiredSizeSchema = z.object({
  * - `top` — anchor at the top face (e.g. ground surface for an excavated pool).
  * - `bottom` — anchor at the bottom face (structures sitting on the ground).
  * - `middle` — anchor at the vertical centre (floating builds, spans above/below).
- * - `flying` — same alignment as `middle` today; reserved so the plan step can
- *   tailor prompts (e.g. aerial builds) without changing placement math yet.
+ * - `flying` — same alignment as `middle` today; reserved for richer plan-step prompts.
  */
 export const VerticalReferenceSchema = z.enum(["top", "middle", "bottom", "flying"]);
 
@@ -220,9 +171,8 @@ export type Placement = z.infer<typeof PlacementSchema>;
  *
  * `placement` is required: the AI must declare WHERE to put the structure
  * using semantic anchor+offset rather than computing world coordinates itself.
- * All primitives in `plan` should use local coordinates with (0,0,0) as the
- * structure's origin; the orchestrator shifts them to world space before
- * executing.
+ * Layer maps use local coordinates with (0,0,0) as the structure's bottom-south-west
+ * corner; the orchestrator shifts `targetRegion` to world space before executing.
  */
 
 /**

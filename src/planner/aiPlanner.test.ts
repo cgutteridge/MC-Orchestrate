@@ -134,7 +134,6 @@ describe("runPlacementThenBuild", () => {
         {
           name: "cylinder_pass",
           goal: "Build a hollow glass cylinder at the target block.",
-          primitives: [],
           layerMap: LAYER_RING_GLASS,
         },
       ],
@@ -205,7 +204,6 @@ describe("runPlacementThenBuild", () => {
             {
               name: "tower",
               goal: "Extend the stone tower upward per the player's follow-up request.",
-              primitives: [],
               layerMap: {
                 layers: Array.from({ length: 13 }, () => layer3x3),
                 palette: { S: "minecraft:stone", _: "minecraft:air" },
@@ -238,7 +236,6 @@ describe("runPlacementThenBuild", () => {
         {
           name: "Create Hollow Glass Cylinder",
           goal: "Build a hollow glass cylinder at the player's position.",
-          primitives: [],
           layerMap: {
             layers: LAYER_RING_GLASS.layers,
             palette: { G: "minecraft:glass", _: "minecraft:air" },
@@ -263,7 +260,6 @@ describe("runPlacementThenBuild", () => {
         {
           name: "Create tower",
           goal: "Build a tower.",
-          primitives: [],
           layerMap: {
             layers: ["S"],
             palette: { S: "minecraft:stone", _: "minecraft:air" },
@@ -296,7 +292,6 @@ describe("runPlacementThenBuild", () => {
           {
             name: "mystery",
             goal: "Build something.",
-            primitives: [],
             layerMap: {
               layers: ["S"],
               palette: { S: "minecraft:stone", _: "minecraft:air" },
@@ -328,7 +323,6 @@ describe("runPlacementThenBuild", () => {
         {
           name: "mystery",
           goal: "Do something.",
-          primitives: [],
         },
       ],
       reply: "Building something strange.",
@@ -376,7 +370,6 @@ describe("runPlacementThenBuild", () => {
         {
           name: "body",
           goal: "Build a wool shape.",
-          primitives: [],
           layerMap: {
             layers: ["W"],
             palette: { W: "minecraft:wool", _: "minecraft:air" },
@@ -415,7 +408,6 @@ describe("runPlacementThenBuild", () => {
         {
           name: "shell",
           goal: "Build something.",
-          primitives: [],
           layerMap: {
             layers: ["SS", "SS"],
             palette: { S: "minecraft:stone", _: "minecraft:air" },
@@ -489,7 +481,6 @@ describe("runPlacementThenBuild", () => {
               {
                 name: "p",
                 goal: "g",
-                primitives: [],
                 layerMap: {
                   layers: ["S"],
                   palette: { S: "minecraft:stone", _: "minecraft:air" },
@@ -570,7 +561,6 @@ describe("runPlacementThenBuild", () => {
             {
               name: "walls",
               goal: "Build walls.",
-              primitives: [],
               layerMap: {
                 layers: Array.from({ length: 8 }, () => layer),
                 palette: { S: "minecraft:stone", _: "minecraft:air" },

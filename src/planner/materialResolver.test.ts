@@ -25,7 +25,6 @@ describe("sanitizePlanMaterials", () => {
         {
           name: "p",
           goal: "g",
-          primitives: [],
           layerMap: {
             layers: ["S"],
             palette: { S: "minecraft:stone", _: "minecraft:air" },
@@ -44,7 +43,6 @@ describe("sanitizePlanMaterials", () => {
         {
           name: "p",
           goal: "g",
-          primitives: [],
           layerMap: {
             layers: ["X"],
             palette: { X: "sheep fluff", _: "minecraft:air" },
@@ -63,7 +61,6 @@ describe("sanitizePlanMaterials", () => {
         {
           name: "p",
           goal: "g",
-          primitives: [],
           layerMap: {
             layers: ["S"],
             palette: { S: "material:wall", _: "minecraft:air" },
@@ -82,7 +79,6 @@ describe("sanitizePlanMaterials", () => {
         {
           name: "p",
           goal: "g",
-          primitives: [],
           layerMap: {
             layers: ["O"],
             palette: { O: "oak planks", _: "minecraft:air" },

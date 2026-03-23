@@ -26,7 +26,6 @@ describe("validatePlanSemantics", () => {
       {
         name: "walls",
         goal: "Build walls.",
-        primitives: [],
         layerMap: {
           layers: ["SSS", "S_S", "SSS"],
           palette: { S: "minecraft:stone", _: "minecraft:air" },
@@ -35,7 +34,6 @@ describe("validatePlanSemantics", () => {
       {
         name: "details",
         goal: "Add trim.",
-        primitives: [],
         layerMap: {
           layers: ["G"],
           palette: { G: "minecraft:glass", _: "minecraft:air" },
@@ -66,7 +64,6 @@ describe("validatePlanSemantics — degenerate structure", () => {
         {
           name: "body",
           goal: "Build.",
-          primitives: [],
           layerMap: LAYER_MAP_1x1x1_STONE,
         },
       ],
@@ -108,13 +105,11 @@ describe("validatePlanSemantics — degenerate structure", () => {
       {
         name: "main",
         goal: "Complete structure.",
-        primitives: [],
         layerMap: tinyLayerMap,
       },
       {
         name: "refine",
         goal: "Polish.",
-        primitives: [],
         layerMap: {
           layers: ["S"],
           palette: { S: "minecraft:stone_bricks", _: "minecraft:air" },
@@ -129,7 +124,6 @@ describe("validatePlanSemantics — degenerate structure", () => {
     const pass = {
       name: "p",
       goal: "g",
-      primitives: [] as Plan["passes"][number]["primitives"],
       layerMap: tinyLayerMap,
     };
     const plan = makePlan([pass, pass, pass]);

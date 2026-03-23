@@ -6,7 +6,7 @@ import { isVanillaMinecraftBlockId } from "./minecraftBlockRegistry.js";
 export const MATERIAL_FALLBACK_BLOCK = "minecraft:stone" as const;
 
 export type SanitizePlanMaterialsResult = {
-  /** Plan with all palette / primitive block fields canonicalized or replaced. */
+  /** Plan with palette block ids canonicalized or replaced. */
   plan: Plan;
   /** Distinct raw ids that were replaced with {@link MATERIAL_FALLBACK_BLOCK}. */
   replacedIds: string[];
@@ -27,7 +27,6 @@ export function sanitizePlanMaterials(plan: Plan): SanitizePlanMaterialsResult {
 
   const passes = plan.passes.map((pass) => ({
     ...pass,
-    primitives: [],
     layerMap: {
       ...pass.layerMap,
       palette: sanitizePalette(pass.layerMap.palette, replaced),

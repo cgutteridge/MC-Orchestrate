@@ -36,7 +36,7 @@ export const DEFAULT_AI_PLAN_MAX_STEPS = 10;
  *
  * When `outcome` is `"plan"`, `placement` carries the semantic anchor+offset
  * the AI specified. The orchestrator resolves this to a world-space point and
- * shifts all primitive coordinates before validation and execution.
+ * shifts the plan's region before validation and execution.
  *
  * `rejected` is returned when the step budget is exhausted or the assistant
  * fails twice in a row; `reason` is player-facing text for the HTTP response.
@@ -330,30 +330,6 @@ export async function runPlacementThenBuild(
         );
         continue;
       }
-    }
-
-    if (action === "view_request") {
-      consecutiveParseFailures++;
-      await dl?.line(
-        request.requestId,
-        step,
-        maxSteps,
-        "view_request_unsupported",
-        "action not supported",
-      );
-      if (consecutiveParseFailures >= 2) {
-        abortedAfterRepeatedAssistantErrors = true;
-        break;
-      }
-      messages.push(
-        { role: "assistant", content: jsonText },
-        {
-          role: "user",
-          content:
-            'The action "view_request" is not supported. Return action "placement_choice" on step 1, or action "build" with a plan after placement is locked.',
-        },
-      );
-      continue;
     }
 
     // build or bare Plan — extract plan candidate and repair.
@@ -653,7 +629,6 @@ function repairPass(pass: unknown, _request: ChatCommandRequest): Record<string,
     return {
       name: typeof record.name === "string" ? record.name : "build_pass",
       goal: typeof record.goal === "string" ? record.goal : "Apply layer map build.",
-      primitives: [],
       layerMap: {
         layers: layerRaw.layers as string[],
         palette: (isRecord(layerRaw.palette) ? layerRaw.palette : {}) as Record<string, string>,
@@ -664,7 +639,6 @@ function repairPass(pass: unknown, _request: ChatCommandRequest): Record<string,
   return {
     name: typeof record.name === "string" ? record.name : "build_pass",
     goal: typeof record.goal === "string" ? record.goal : "Apply layer map build.",
-    primitives: [],
   };
 }
 

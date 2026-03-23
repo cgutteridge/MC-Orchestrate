@@ -13,7 +13,7 @@ Use this skill for coding and debugging work in `/Users/cjg/Projects/MC-Orchestr
 - Treat the stack as: Spigot plugin -> HTTP orchestrator -> AI design loop -> bridge -> Minecraft server.
 - The heuristic planner and templates are deleted. The AI owns all build decisions.
 - If no AI provider is configured the orchestrator returns `rejected` immediately.
-- The AI must emit **`layerMap`** passes only (`primitives: []`). Intended shape: **one pass = full structure** in a single `layers` array; **optional second pass** = refinement only — at most two layer-map passes (`validatePlanSemantics` in `src/planner/semantics.ts`).
+- The AI must emit **`layerMap`** passes only. Intended shape: **one pass = full structure** in a single `layers` array; **optional second pass** = refinement only — at most two layer-map passes (`validatePlanSemantics` in `src/planner/semantics.ts`).
 - Prefer fixing concrete behavioral defects over broad refactors.
 - Keep `tasks/index.json` (via the task-index-manager skill) aligned with newly confirmed issues.
 - If you are certain a repo-specific failure mode, workflow, or guardrail is missing from this skill, update this skill in the same change rather than leaving the knowledge only in chat.
@@ -89,7 +89,7 @@ Inspect these first when bot behavior is wrong:
 
 - Bridge actions: `/Users/cjg/Projects/MC-Orchestrate/logs/bridge-actions.jsonl`
 - Planner stages (structured JSONL): `/Users/cjg/Projects/MC-Orchestrate/logs/ai-planner.jsonl`
-- Placement-then-build progress (human-readable lines): `/Users/cjg/Projects/MC-Orchestrate/logs/ai-plan.log` (`MCORCH_AI_PLAN_LOG`; legacy `MCORCH_DESIGN_LOOP_LOG` still supported)
+- Placement-then-build progress (human-readable lines): `/Users/cjg/Projects/MC-Orchestrate/logs/ai-plan.log` (`MCORCH_AI_PLAN_LOG`)
 - Raw provider trace: `/Users/cjg/Projects/MC-Orchestrate/logs/ai-provider.log`
 
 Use them to answer:

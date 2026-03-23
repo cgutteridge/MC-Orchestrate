@@ -1,6 +1,6 @@
 /**
  * Shared valid layer maps for tests and smoke tooling. Production plans use the
- * same shape: `primitives: []` and a `layerMap` per pass.
+ * same shape as production passes: `name`, `goal`, and `layerMap`.
  */
 export const LAYER_MAP_1x1x1_STONE = {
   layers: ["S"],

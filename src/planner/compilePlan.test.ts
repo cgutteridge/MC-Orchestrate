@@ -18,13 +18,11 @@ describe("compilePlanToBridgeCommands", () => {
         {
           name: "first",
           goal: "First slice.",
-          primitives: [],
           layerMap: LAYER_MAP_1x1x1_STONE,
         },
         {
           name: "second",
           goal: "Second slice.",
-          primitives: [],
           layerMap: {
             layers: ["B"],
             palette: { B: "minecraft:stone_bricks", _: "minecraft:air" },
@@ -53,7 +51,6 @@ describe("compilePlanToBridgeCommands", () => {
         {
           name: "path",
           goal: "Glass strip.",
-          primitives: [],
           layerMap: LAYER_MAP_3x1x1_GLASS,
         },
       ],

@@ -160,7 +160,6 @@ describe("Orchestrator", () => {
         {
           name: "walls",
           goal: "Build it.",
-          primitives: [],
           layerMap: {
             layers: Array.from({ length: 5 }, () => layer5),
             palette: { S: "minecraft:stone", _: "minecraft:air" },
@@ -191,7 +190,6 @@ describe("Orchestrator", () => {
             {
               name: "cottage",
               goal: "Build a cottage.",
-              primitives: [],
             },
           ],
           reply: "Your cottage is being built!",
@@ -222,7 +220,6 @@ describe("Orchestrator", () => {
         {
           name: "mystery",
           goal: "Build something.",
-          primitives: [],
           layerMap: {
             layers: ["F", "F"],
             palette: { F: "sheep fluff", _: "minecraft:air" },
@@ -261,7 +258,6 @@ describe("Orchestrator", () => {
         {
           name: "a",
           goal: "First slice.",
-          primitives: [],
           layerMap: {
             layers: [layer3],
             palette: { S: "minecraft:stone", _: "minecraft:air" },
@@ -270,7 +266,6 @@ describe("Orchestrator", () => {
         {
           name: "b",
           goal: "Second slice.",
-          primitives: [],
           layerMap: {
             layers: [layer3],
             palette: { S: "minecraft:stone", _: "minecraft:air" },
@@ -279,7 +274,6 @@ describe("Orchestrator", () => {
         {
           name: "c",
           goal: "Third slice.",
-          primitives: [],
           layerMap: {
             layers: [layer3],
             palette: { S: "minecraft:stone", _: "minecraft:air" },
@@ -316,13 +310,11 @@ describe("Orchestrator", () => {
         {
           name: "step_1",
           goal: "Lay first block.",
-          primitives: [],
           layerMap: oneStone,
         },
         {
           name: "step_2",
           goal: "Lay second block.",
-          primitives: [],
           layerMap: oneStone,
         },
       ],
@@ -370,13 +362,11 @@ describe("Orchestrator", () => {
         {
           name: "wall",
           goal: "Tiny wall.",
-          primitives: [],
           layerMap: oneStone,
         },
         {
           name: "wall_b",
           goal: "Second block.",
-          primitives: [],
           layerMap: oneStone,
         },
       ],
@@ -406,7 +396,6 @@ describe("Orchestrator", () => {
         {
           name: "a",
           goal: "Block.",
-          primitives: [],
           layerMap: {
             layers: ["S"],
             palette: { S: "minecraft:stone", _: "minecraft:air" },
@@ -457,7 +446,6 @@ describe("Orchestrator", () => {
               {
                 name: "remove_logs",
                 goal: "Clear volume to air.",
-                primitives: [],
                 layerMap: {
                   layers: Array.from({ length: 9 }, () => air3),
                   palette: { _: "minecraft:air" },
@@ -481,7 +469,6 @@ describe("Orchestrator", () => {
               {
                 name: "extension",
                 goal: "Extend tower upward.",
-                primitives: [],
                 layerMap: {
                   layers: ["W", "W"],
                   palette: { W: "minecraft:white_wool", _: "minecraft:air" },
@@ -505,7 +492,6 @@ describe("Orchestrator", () => {
             {
               name: "tower_column",
               goal: "Build the tower shaft.",
-              primitives: [],
               layerMap: {
                 layers: Array.from({ length: 5 }, () => "W"),
                 palette: { W: "minecraft:white_wool", _: "minecraft:air" },
@@ -588,7 +574,6 @@ describe("Orchestrator", () => {
             {
               name: "walls",
               goal: "Build it.",
-              primitives: [],
               layerMap: {
                 layers: Array.from({ length: 5 }, () => layer5),
                 palette: { S: "minecraft:stone", _: "minecraft:air" },

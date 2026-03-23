@@ -34,25 +34,6 @@ const request: ChatCommandRequest = {
 };
 
 describe("buildPlacementPhaseMessages (step 1)", () => {
-  it("uses a short experimental prompt when MCORCH_MINIMAL_INITIAL_PROMPT is enabled", () => {
-    const prev = process.env.MCORCH_MINIMAL_INITIAL_PROMPT;
-    process.env.MCORCH_MINIMAL_INITIAL_PROMPT = "true";
-    try {
-      const messages = buildPlacementPhaseMessages(request);
-      expect(messages[0]?.content.length).toBeLessThan(4000);
-      expect(messages[0]?.content).toContain("step 1/2");
-      expect(messages[0]?.content).toContain("placement_choice");
-      expect(messages[1]?.content).toContain("five by five");
-      expect(messages[1]?.content).not.toContain("PLACEMENT REFERENCE");
-    } finally {
-      if (prev === undefined) {
-        delete process.env.MCORCH_MINIMAL_INITIAL_PROMPT;
-      } else {
-        process.env.MCORCH_MINIMAL_INITIAL_PROMPT = prev;
-      }
-    }
-  });
-
   it("includes recent player prompts for clarification follow-ups", () => {
     const messages = buildPlacementPhaseMessages(request);
 
@@ -118,7 +99,6 @@ describe("buildPlacementPhaseMessages (step 1)", () => {
         {
           name: "main",
           goal: "Tower column.",
-          primitives: [],
           layerMap: {
             layers: ["SSS", "SSS", "SSS"],
             palette: { S: "minecraft:stone", _: "minecraft:air" },
@@ -163,7 +143,6 @@ describe("buildPlacementPhaseMessages (step 1)", () => {
         {
           name: "walls",
           goal: "Raise the east wall using stone bricks.",
-          primitives: [],
           layerMap: {
             layers: ["BBBBBBBBBB"],
             palette: { B: "minecraft:stone_bricks", _: "minecraft:air" },
@@ -237,7 +216,7 @@ describe("buildPlacementPhaseMessages (step 1)", () => {
 });
 
 describe("buildPlanPhaseSystemContent (step 2)", () => {
-  it("lists layerMap (not primitive ops) in the plan schema guide", () => {
+  it("lists layerMap in the plan schema guide", () => {
     const system = buildPlanPhaseSystemContent(request);
 
     expect(system).toContain('"layerMap"');

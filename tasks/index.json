@@ -102,7 +102,7 @@
     },
     {
       "id": 30,
-      "title": "Phase 2.4 — Primitive coverage for terrain-aware structures",
+      "title": "Phase 2.4 — Layer-map coverage for terrain-aware structures",
       "status": "todo",
       "priority": "medium",
       "complexity": "m",

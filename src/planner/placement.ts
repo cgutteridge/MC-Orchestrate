@@ -164,10 +164,7 @@ export function shiftPlan(plan: Plan, offset: Point): Plan {
 }
 
 function shiftPass(pass: BuildPass, _offset: Point): BuildPass {
-  return {
-    ...pass,
-    primitives: [],
-  };
+  return { ...pass };
 }
 
 function addPoint(p: Point, offset: Point): Point {

@@ -1,7 +1,7 @@
 import type { ChatCommandRequest } from "../types/plugin.js";
 import {
   safetyPlanRegionWorldMismatchMessage,
-  safetyPrimitiveVolumeExceededMessage,
+  safetyLayerMapVolumeExceededMessage,
   safetyRegionTooLargeMessage,
   safetyTooFarFromPlayerMessage,
   safetyVolumeExceededMessage,
@@ -42,13 +42,11 @@ export function validatePlanSafety(request: ChatCommandRequest, plan: Plan): str
     return safetyVolumeExceededMessage(volume, MAX_BLOCKS_PER_REQUEST);
   }
 
-  // The targetRegion bounding-box check above does not account for cylinder
-  // primitives, whose block count depends on radius/height rather than the
-  // declared region. Check the estimated primitive block count separately so
-  // large cylinders cannot bypass the limit.
-  const primitiveBlockCount = estimatePlanBlockCount(plan);
-  if (primitiveBlockCount > MAX_BLOCKS_PER_REQUEST) {
-    return safetyPrimitiveVolumeExceededMessage(primitiveBlockCount, MAX_BLOCKS_PER_REQUEST);
+  // Bounding-box volume can under-count layer-map cells (sparse maps). Use the
+  // layer-map estimate so large sparse plans cannot bypass the limit.
+  const estimatedLayerCells = estimatePlanBlockCount(plan);
+  if (estimatedLayerCells > MAX_BLOCKS_PER_REQUEST) {
+    return safetyLayerMapVolumeExceededMessage(estimatedLayerCells, MAX_BLOCKS_PER_REQUEST);
   }
 
   const dx = Math.abs(
