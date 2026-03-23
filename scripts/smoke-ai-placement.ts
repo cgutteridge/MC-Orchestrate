@@ -9,12 +9,11 @@
 import { loadConfig } from "../src/config/env.js";
 import { buildPlacementPhaseMessages } from "../src/planner/prompt.js";
 import { createChatProvider } from "../src/services/ai/provider.js";
-import { extractJsonValue, parseJsonStrict } from "../src/services/ai/json.js";
-import { createSmokeChatRequest, formatMessagesForStdout } from "./smoke/shared.js";
-
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
-}
+import {
+  createSmokeChatRequest,
+  formatMessagesForStdout,
+  parsePlacementChoiceFromAssistantText,
+} from "./smoke/shared.js";
 
 const message =
   process.argv.slice(2).join(" ").trim() || "build a small stone house in front of me";
@@ -39,29 +38,12 @@ async function main(): Promise<void> {
   process.stdout.write(raw);
   process.stdout.write("\n");
 
-  const jsonText = extractJsonValue(raw);
-  if (!jsonText) {
-    process.stderr.write("FAIL: no JSON object in assistant reply.\n");
+  const result = parsePlacementChoiceFromAssistantText(raw);
+  if (!result.ok) {
+    process.stderr.write(`FAIL: ${result.error}\n`);
     process.exit(1);
   }
-  let parsed: unknown;
-  try {
-    parsed = parseJsonStrict<unknown>(jsonText);
-  } catch {
-    process.stderr.write("FAIL: assistant JSON was not parseable.\n");
-    process.exit(1);
-  }
-  if (!isRecord(parsed) || typeof parsed.action !== "string") {
-    process.stderr.write("FAIL: expected object with action.\n");
-    process.exit(1);
-  }
-  const action = parsed.action;
-  if (action === "placement_choice") {
-    process.stdout.write(`\nOK: ${action}\n`);
-    process.exit(0);
-  }
-  process.stderr.write(`FAIL: expected action placement_choice, got ${String(action)}.\n`);
-  process.exit(1);
+  process.stdout.write("\nOK: placement_choice\n");
 }
 
 main().catch((err) => {

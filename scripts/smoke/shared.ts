@@ -2,13 +2,55 @@
  * Shared fixtures and output helpers for AI smoke scripts (`smoke-ai-*`).
  */
 import type { LayerMapData } from "../../src/planner/layerMap.js";
-import { PlacementChoicePlacementSchema } from "../../src/planner/schema.js";
+import {
+  PlacementChoicePlacementSchema,
+  PlacementChoiceStepSchema,
+} from "../../src/planner/schema.js";
+import type { Placement } from "../../src/planner/schema.js";
 import { extractJsonValue, parseJsonStrict } from "../../src/services/ai/json.js";
 import type { ChatMessage } from "../../src/services/ai/types.js";
 import type { ChatCommandRequest } from "../../src/types/plugin.js";
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+/**
+ * Result of parsing a placement-phase assistant reply into a validated `placement_choice`.
+ */
+export type ParsePlacementChoiceResult =
+  | { ok: true; placement: Placement; selfNotes?: string }
+  | { ok: false; error: string };
+
+/**
+ * Parses assistant text from a placement-phase turn into a validated `placement_choice`
+ * (including required `desiredSize`).
+ *
+ * @param raw Raw assistant message (may include markdown fences or prose).
+ */
+export function parsePlacementChoiceFromAssistantText(raw: string): ParsePlacementChoiceResult {
+  const jsonText = extractJsonValue(raw);
+  if (!jsonText) {
+    return { ok: false, error: "No JSON object in assistant reply" };
+  }
+  let parsed: unknown;
+  try {
+    parsed = parseJsonStrict<unknown>(jsonText);
+  } catch {
+    return { ok: false, error: "Assistant JSON was not parseable" };
+  }
+  if (!isRecord(parsed)) {
+    return { ok: false, error: "Expected JSON object" };
+  }
+  const result = PlacementChoiceStepSchema.safeParse(parsed);
+  if (!result.success) {
+    return { ok: false, error: result.error.message };
+  }
+  return {
+    ok: true,
+    placement: result.data.placement,
+    selfNotes: result.data.selfNotes,
+  };
 }
 
 /**

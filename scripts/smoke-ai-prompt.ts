@@ -1,7 +1,10 @@
 /**
- * Smoke: **step 1 (location)** — one API call with `buildPlacementPhaseMessages`
- * (placement and size only). For step 2 (plan after placement lock) use:
- *   `npx tsx scripts/smoke-ai-build.ts`
+ * Smoke: **full placement-then-build prompt path** — two API calls:
+ * 1. `buildPlacementPhaseMessages` → `placement_choice`
+ * 2. `resetMessagesForPlanPhase` → `build` with layer map
+ *
+ * For step 1 only, use `npx tsx scripts/smoke-ai-placement.ts`.
+ * For step 2 with a fixed placement fixture, use `npx tsx scripts/smoke-ai-build.ts`.
  *
  * Usage:
  *   npx tsx scripts/smoke-ai-prompt.ts "your message here"
@@ -11,11 +14,13 @@
  * If requests abort with a timeout, set AZURE_OPENAI_CHAT_TIMEOUT_MS (default 900000 ms).
  */
 import { loadConfig } from "../src/config/env.js";
-import { buildPlacementPhaseMessages } from "../src/planner/prompt.js";
+import { buildPlacementPhaseMessages, resetMessagesForPlanPhase } from "../src/planner/prompt.js";
+import type { ChatMessage } from "../src/services/ai/types.js";
 import { createChatProvider } from "../src/services/ai/provider.js";
 import {
   createSmokeChatRequest,
   formatMessagesForStdout,
+  parsePlacementChoiceFromAssistantText,
   printLayerMapPreviewFromAssistantText,
 } from "./smoke/shared.js";
 
@@ -34,15 +39,37 @@ async function main(): Promise<void> {
   }
 
   const request = createSmokeChatRequest(message);
-  const messages = buildPlacementPhaseMessages(request, undefined);
+  const messages: ChatMessage[] = buildPlacementPhaseMessages(request, undefined);
   process.stdout.write(formatMessagesForStdout(messages));
-  process.stdout.write(`--- Calling ${provider.name} (temperature 0.2)…\n\n`);
+  process.stdout.write(`--- Calling ${provider.name} (temperature 0.2) — placement step…\n\n`);
 
-  const raw = await provider.chat(messages, { temperature: 0.2 });
-  process.stdout.write(raw);
+  const rawPlacement = await provider.chat(messages, { temperature: 0.2 });
+  process.stdout.write(rawPlacement);
   process.stdout.write("\n");
 
-  printLayerMapPreviewFromAssistantText(raw);
+  const placementResult = parsePlacementChoiceFromAssistantText(rawPlacement);
+  if (!placementResult.ok) {
+    process.stderr.write(`FAIL (placement step): ${placementResult.error}\n`);
+    process.exit(1);
+  }
+
+  resetMessagesForPlanPhase(
+    messages,
+    request,
+    placementResult.placement,
+    undefined,
+    placementResult.selfNotes,
+  );
+
+  process.stdout.write("\n");
+  process.stdout.write(formatMessagesForStdout(messages));
+  process.stdout.write(`--- Calling ${provider.name} (temperature 0.2) — build step…\n\n`);
+
+  const rawBuild = await provider.chat(messages, { temperature: 0.2 });
+  process.stdout.write(rawBuild);
+  process.stdout.write("\n");
+
+  printLayerMapPreviewFromAssistantText(rawBuild);
 }
 
 main().catch((err) => {
