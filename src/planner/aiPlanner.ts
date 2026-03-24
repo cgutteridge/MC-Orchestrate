@@ -1146,7 +1146,7 @@ function truncateOneLine(s: string, max = 160): string {
 }
 
 /**
- * Merges position-only placement with the design step's footprint.
+ * Merges position-only placement with the design step's footprint and vertical reference.
  *
  * @param position Step-1 placement (no `desiredSize`).
  * @param design Validated design_choice.
@@ -1158,6 +1158,7 @@ function mergePlacementWithDesign(
   return {
     ...position,
     desiredSize: design.desiredSize,
+    verticalReference: design.verticalReference,
   };
 }
 

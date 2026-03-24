@@ -88,22 +88,19 @@ export function parseDesignChoiceFromAssistantText(raw: string): ParseDesignChoi
   return { ok: true, design: result.data };
 }
 
-const SMOKE_FOOTPRINT = { width: 16, depth: 16, height: 12 } as const;
+const SMOKE_FOOTPRINT = { width: 10, depth: 10, height: 20 } as const;
 
 /**
  * Default design fixture for build-step smoke (`smoke-ai-build.ts`).
  */
 export const DEFAULT_SMOKE_DESIGN: DesignChoiceStep = DesignChoiceStepSchema.parse({
   action: "design_choice",
-  designSummary: "Smoke fixture",
-  builderGuide: "Follow the player request using the recommended materials.",
+  designSummary: "A tall, spiraling wizard tower with a cozy study at the top.",
+  builderGuide:
+    "Start by creating a circular base with stone bricks. Build the tower upwards using a mix of stone and wood, adding spiral stairs inside. At the top, create a small room for the study with large windows for light. Decorate the interior with bookshelves and a desk.",
   desiredSize: SMOKE_FOOTPRINT,
-  recommendedMaterials: [
-    "minecraft:stone",
-    "minecraft:cobblestone",
-    "minecraft:oak_planks",
-    "minecraft:air",
-  ],
+  verticalReference: "on_ground",
+  recommendedMaterials: ["stone_bricks", "oak_planks", "glass", "bookshelf", "ladder"],
 });
 
 /**
@@ -114,7 +111,7 @@ export const DEFAULT_LOCKED_PLACEMENT = PlacementWithDesiredSizeSchema.parse({
   frame: "player",
   offset: { F: 10, R: 0, N: 0, E: 0, UP: 0 },
   desiredSize: SMOKE_FOOTPRINT,
-  verticalReference: "bottom",
+  verticalReference: "on_ground",
 });
 
 /**

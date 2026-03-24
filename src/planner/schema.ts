@@ -105,12 +105,11 @@ export const DesiredSizeSchema = z.object({
  * Which point on the structure's axis-aligned box aligns with the semantic
  * anchor from {@link PlacementRefSchema} and offsets.
  *
- * - `top` — anchor at the top face (e.g. ground surface for an excavated pool).
- * - `bottom` — anchor at the bottom face (structures sitting on the ground).
- * - `middle` — anchor at the vertical centre (floating builds, spans above/below).
- * - `flying` — same alignment as `middle` today; reserved for richer plan-step prompts.
+ * - `on_ground` — anchor at bottom face (normal buildings sitting on ground; structure goes up).
+ * - `under_ground` — anchor at top face (excavations like trenches/pools; structure goes down from ground level).
+ * - `flying` — anchor at vertical center (floating builds in air; not tied to ground).
  */
-export const VerticalReferenceSchema = z.enum(["top", "middle", "bottom", "flying"]);
+export const VerticalReferenceSchema = z.enum(["on_ground", "under_ground", "flying"]);
 
 /**
  * Semantic placement instruction returned by the AI.
@@ -131,9 +130,9 @@ export const PlacementSchema = z.object({
   desiredSize: DesiredSizeSchema.optional(),
   /**
    * Which vertical face or centre of the build volume sits on the resolved
-   * anchor point after offsets. Defaults to `middle` for backward compatibility.
+   * anchor point after offsets. Defaults to `on_ground` for most builds.
    */
-  verticalReference: VerticalReferenceSchema.default("middle"),
+  verticalReference: VerticalReferenceSchema.default("on_ground"),
 });
 
 export type PlacementRef = z.infer<typeof PlacementRefSchema>;
@@ -194,6 +193,8 @@ export const DesignChoiceStepSchema = z.object({
   /** Prose instructions for the layer-map builder (step 3). */
   builderGuide: z.string().min(1),
   desiredSize: DesiredSizeSchema,
+  /** Vertical anchor point for the structure. */
+  verticalReference: VerticalReferenceSchema.default("on_ground"),
   /** Vanilla `minecraft:` block ids to prefer in palettes (step 3). */
   recommendedMaterials: z
     .array(z.string().min(1))

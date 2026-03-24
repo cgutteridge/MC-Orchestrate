@@ -35,13 +35,13 @@ const message =
   process.argv.slice(2).join(" ").trim() || "make a castle with battlements and a moat";
 
 /**
- * Combines position-only placement with design footprint (same merge as production).
+ * Combines position-only placement with design footprint and vertical reference (same merge as production).
  *
  * @param position Step-1 placement.
  * @param design Validated design_choice.
  */
 function mergePlacementForBuild(position: PlacementPositionOnly, design: DesignChoiceStep): Placement {
-  return { ...position, desiredSize: design.desiredSize };
+  return { ...position, desiredSize: design.desiredSize, verticalReference: design.verticalReference };
 }
 
 async function main(): Promise<void> {

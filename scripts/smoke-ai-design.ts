@@ -49,6 +49,7 @@ async function main(): Promise<void> {
   process.stdout.write("\nOK: design_choice parsed\n");
   process.stdout.write(`  designSummary: ${result.design.designSummary}\n`);
   process.stdout.write(`  desiredSize: ${result.design.desiredSize.width}×${result.design.desiredSize.depth}×${result.design.desiredSize.height}\n`);
+  process.stdout.write(`  verticalReference: ${result.design.verticalReference}\n`);
   process.stdout.write(`  recommendedMaterials: ${result.design.recommendedMaterials.join(", ")}\n`);
 }
 

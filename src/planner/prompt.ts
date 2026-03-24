@@ -236,7 +236,7 @@ export function buildPlanPhaseUserContent(
     "Fill this volume with your layer map (local coordinates only; the server places it in the world). You do not know world position.",
     "",
     `Volume: ${ds.width} wide × ${ds.depth} deep × ${ds.height} tall (cells).`,
-    `Vertical anchor on that box: ${mergedPlacement.verticalReference} — top = top face / rim; bottom = bottom face on terrain; middle / flying = vertical centre.`,
+    `Vertical anchor: ${mergedPlacement.verticalReference}`,
     "",
     "DESIGN SUMMARY (from design step):",
     design.designSummary,
@@ -360,6 +360,7 @@ const DESIGN_CHOICE_GUIDE = {
   designSummary: "one-line aesthetic / structure description",
   builderGuide: "prose instructions for the layer-map builder (step 3)",
   desiredSize: { width: "INTEGER", depth: "INTEGER", height: "INTEGER" },
+  verticalReference: "on_ground|under_ground|flying",
   recommendedMaterials: ["LIST"],
 };
 
@@ -438,6 +439,11 @@ const DESIGN_PHASE_SYSTEM_PROMPT = [
   `Return DESIGN_CHOICE ${JSON.stringify(DESIGN_CHOICE_GUIDE)}.`,
   "",
   "Scale: 1 voxel = 1 m³.",
+  "",
+  "verticalReference options:",
+  "  on_ground = normal buildings sitting on ground (anchor at base; structure goes up)",
+  "  under_ground = excavations like trenches/pools (anchor at ground level; structure goes down)",
+  "  flying = floating builds in air (anchor at center; not tied to ground)",
   "",
   buildDesignPhaseMaterialRegistrySection(),
 ].join("\n");
