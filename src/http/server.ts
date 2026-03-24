@@ -30,7 +30,6 @@ const RequestSchema = z.object({
     lookVector: Vec3Schema,
   }),
   message: z.string(),
-  recentMessages: z.array(z.string()).default([]),
   localContext: z.object({
     targetBlock: BlockSampleSchema.optional(),
     nearbyBlocks: z.array(BlockSampleSchema),

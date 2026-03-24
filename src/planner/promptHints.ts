@@ -35,13 +35,13 @@ export const DEFAULT_PROMPT_HINTS: readonly PromptHint[] = [
 ];
 
 /**
- * Concatenates fields used for keyword matching (current message + recent chat).
+ * Builds text for keyword matching (current message only).
  *
  * @param request The validated plugin request for this chat turn.
  * @returns Lowercase text for matching.
  */
 export function buildPromptMatchText(request: ChatCommandRequest): string {
-  return [request.message, ...request.recentMessages].join("\n").toLowerCase();
+  return request.message.toLowerCase();
 }
 
 /**

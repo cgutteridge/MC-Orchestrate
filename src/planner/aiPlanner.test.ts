@@ -78,12 +78,9 @@ function buildStep(plan: Record<string, unknown>): string {
   return JSON.stringify({ action: "build", plan });
 }
 
-/** Step 1 JSON — valid {@link PlacementChoiceStepSchema} for tests. */
+/** Step 1 JSON — placement intent only. */
 function placementChoiceJson(placement: Record<string, unknown>): string {
-  return JSON.stringify({
-    action: "placement_choice",
-    placement,
-  });
+  return JSON.stringify(placement);
 }
 
 /** Step 2 JSON — valid {@link DesignChoiceStepSchema} for tests. */
@@ -107,16 +104,8 @@ function threeTurnProvider(plan: Record<string, unknown>): ChatProvider {
       if (turn === 1) {
         return placementChoiceJson({
           ref: "focus",
-          forward: 0,
-          back: 0,
-          left: 0,
-          right: 0,
-          north: 0,
-          south: 0,
-          east: 0,
-          west: 0,
-          up: 0,
-          down: 0,
+          frame: "player",
+          offset: { F: 0, R: 0, N: 0, E: 0, UP: 0 },
           verticalReference: "middle",
         });
       }
@@ -179,17 +168,9 @@ describe("runPlacementThenBuild", () => {
         turn++;
         if (turn === 1) {
           return placementChoiceJson({
-            ref: "player_view",
-            forward: 0,
-            back: 0,
-            left: 0,
-            right: 0,
-            north: 0,
-            south: 0,
-            east: 0,
-            west: 0,
-            up: 0,
-            down: 0,
+            ref: "player",
+            frame: "player",
+            offset: { F: 0, R: 0, N: 0, E: 0, UP: 0 },
             verticalReference: "bottom",
           });
         }
@@ -474,17 +455,9 @@ describe("runPlacementThenBuild", () => {
         callCount++;
         if (callCount === 1) {
           return placementChoiceJson({
-            ref: "player_view",
-            forward: 0,
-            back: 0,
-            left: 0,
-            right: 0,
-            north: 0,
-            south: 0,
-            east: 0,
-            west: 0,
-            up: 0,
-            down: 0,
+            ref: "player",
+            frame: "player",
+            offset: { F: 0, R: 0, N: 0, E: 0, UP: 0 },
             verticalReference: "middle",
           });
         }
@@ -518,17 +491,9 @@ describe("runPlacementThenBuild", () => {
         callCount++;
         if (callCount === 1) {
           return placementChoiceJson({
-            ref: "player_view",
-            forward: 0,
-            back: 0,
-            left: 0,
-            right: 0,
-            north: 0,
-            south: 0,
-            east: 0,
-            west: 0,
-            up: 0,
-            down: 0,
+            ref: "player",
+            frame: "player",
+            offset: { F: 0, R: 0, N: 0, E: 0, UP: 0 },
             verticalReference: "middle",
           });
         }
@@ -551,17 +516,9 @@ describe("runPlacementThenBuild", () => {
         turn++;
         if (turn === 1) {
           return placementChoiceJson({
-            ref: "player_view",
-            forward: 8,
-            back: 0,
-            left: 0,
-            right: 0,
-            north: 0,
-            south: 0,
-            east: 0,
-            west: 0,
-            up: 0,
-            down: 0,
+            ref: "player",
+            frame: "player",
+            offset: { F: 8, R: 0, N: 0, E: 0, UP: 0 },
             verticalReference: "middle",
           });
         }

@@ -172,13 +172,12 @@ describe("buildPlacementPhaseMessages (step 1)", () => {
     const messages = buildPlacementPhaseMessages(request);
     const system = messages[0]?.content ?? "";
 
-    expect(system).toContain("player_view");
-    expect(system).toContain("player_absolute");
+    expect(system).toContain("ref: player | focus");
     expect(system).toContain("focus");
-    expect(system).toContain("last_build");
-    expect(system).toContain("forward");
-    expect(system).toContain("up");
-    expect(system).toContain("north");
+    expect(system).toContain("frame");
+    expect(system).toContain("F");
+    expect(system).toContain("UP");
+    expect(system).toContain("N");
   });
 
   it("system prompt instructs the model to treat recentMessages as conversation context", () => {
@@ -194,10 +193,10 @@ describe("buildPlacementPhaseMessages (step 1)", () => {
     const system = messages[0]?.content ?? "";
 
     expect(system).toContain("in front of me");
-    expect(system).toContain("above me");
+    expect(system).toContain("Up in the sky");
     expect(system).toContain("to my left");
-    expect(system).toContain("a pit under me");
-    expect(system).toContain("feet Y + 1");
+    expect(system).toContain("NE");
+    expect(system).toContain("Signed axis meanings");
   });
 
   it("user message contains a pre-computed placement reference card", () => {

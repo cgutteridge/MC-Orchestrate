@@ -86,8 +86,9 @@ describe("Azure baseline replay fixtures", () => {
       return;
     }
     expect(result.plan.intent).toBe("build_cylinder");
-    expect(result.placement.ref).toBe("player_view");
-    expect(result.placement.forward).toBe(8);
+    expect(result.placement.ref).toBe("player");
+    expect(result.placement.frame).toBe("player");
+    expect(result.placement.offset.F).toBe(8);
     expect(result.plan.passes[0]?.layerMap.palette.G).toBe("minecraft:glass");
   });
 });

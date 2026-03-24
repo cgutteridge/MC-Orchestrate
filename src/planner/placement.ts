@@ -12,30 +12,24 @@ import type { Plan, Placement, Point, BuildPass } from "./schema.js";
  *
  * | ref              | Origin              | Horizontal offsets         |
  * |------------------|---------------------|----------------------------|
- * | `player_view`    | player position     | forward/back/left/right    |
- * | `player_absolute`| player position     | north/south/east/west      |
- * | `focus`          | targetBlock surface | north/south/east/west      |
- * | `last_build`     | last build centre   | north/south/east/west      |
+ * | `player`         | player position     | frame-selected signed axes |
+ * | `focus`          | targetBlock surface | frame-selected signed axes |
  *
  * ## Y axis
  *
  * Y is always independent of horizontal offsets. The vertical zero reference
  * depends on `placement.ref`:
  *
- * - **`player_view` / `player_absolute`**: `up: 0` is **player head height**
+ * - **`player`**: `offset.UP: 0` is **player head height**
  *   (`round(player.position.y) + 1`). The player is two blocks tall; feet are
- *   at `y`, the head/eye band is at `y+1`, so aerial builds do not clip the
- *   body. `up: N` adds N blocks above that. `down: N` subtracts N (pits,
- *   basements).
- * - **`focus`**: `up: 0` is the **top surface** of the looked-at block
+ *   at `y`, the head/eye band is at `y+1`.
+ * - **`focus`**: `offset.UP: 0` is the **top surface** of the looked-at block
  *   (`round(targetBlock.y) + 1`). Without a target block, falls back to head
  *   height.
- * - **`last_build`**: `up: 0` is the **last structure centre Y** from the
- *   prior plan. If unknown, falls back to head height.
  *
  * ## Player-view rotation
  *
- * For `player_view`, the horizontal look direction is derived from the
+ * For `frame="player"`, the horizontal look direction is derived from the
  * player's look vector (pitch ignored). Right = clockwise 90° from forward
  * in the XZ plane: rightX = −nhz, rightZ = nhx.
  *
@@ -47,7 +41,7 @@ import type { Plan, Placement, Point, BuildPass } from "./schema.js";
 export function resolvePlacement(
   placement: Placement,
   request: ChatCommandRequest,
-  lastBuildCenter?: Point,
+  _lastBuildCenter?: Point,
 ): Point {
   const pos = request.player.position;
 
@@ -64,60 +58,32 @@ export function resolvePlacement(
   let baseX: number;
   let baseZ: number;
 
-  switch (placement.ref) {
-    case "player_view": {
-      // Forward and backward along look vector; left/right perpendicular.
-      // Right direction: clockwise 90° from (nhx, nhz) → (−nhz, nhx) in XZ.
-      const fx =
-        nhx * (placement.forward - placement.back) - nhz * (placement.right - placement.left);
-      const fz =
-        nhz * (placement.forward - placement.back) + nhx * (placement.right - placement.left);
-      baseX = Math.round(pos.x + fx);
-      baseZ = Math.round(pos.z + fz);
-      break;
-    }
+  const originX =
+    placement.ref === "focus" && request.localContext.targetBlock
+      ? request.localContext.targetBlock.x
+      : Math.round(pos.x);
+  const originZ =
+    placement.ref === "focus" && request.localContext.targetBlock
+      ? request.localContext.targetBlock.z
+      : Math.round(pos.z);
 
-    case "focus": {
-      const tb = request.localContext.targetBlock;
-      // E/W → X axis; N/S → Z axis (Minecraft convention: east=+x, north=-z)
-      const originX = tb ? tb.x : Math.round(pos.x);
-      const originZ = tb ? tb.z : Math.round(pos.z);
-      baseX = originX + (placement.east - placement.west);
-      baseZ = originZ + (placement.south - placement.north);
-      break;
-    }
-
-    case "last_build": {
-      const lb = lastBuildCenter ?? { x: Math.round(pos.x), z: Math.round(pos.z) };
-      baseX = lb.x + (placement.east - placement.west);
-      baseZ = lb.z + (placement.south - placement.north);
-      break;
-    }
-
-    default: // "player_absolute"
-      baseX = Math.round(pos.x) + (placement.east - placement.west);
-      baseZ = Math.round(pos.z) + (placement.south - placement.north);
+  if (placement.frame === "player") {
+    // World-space from signed player-relative axes: +F forward, +R right.
+    const fx = nhx * placement.offset.F - nhz * placement.offset.R;
+    const fz = nhz * placement.offset.F + nhx * placement.offset.R;
+    baseX = Math.round(originX + fx);
+    baseZ = Math.round(originZ + fz);
+  } else {
+    // World-space cardinal axes: +E east (+x), +N north (-z).
+    baseX = originX + placement.offset.E;
+    baseZ = originZ - placement.offset.N;
   }
 
   // ── Resolve Y (independent of horizontal) ────────────────────────────
   const tb = request.localContext.targetBlock;
   let verticalBaseY: number;
-  switch (placement.ref) {
-    case "player_view":
-    case "player_absolute":
-      verticalBaseY = headY;
-      break;
-    case "focus":
-      verticalBaseY = tb ? Math.round(tb.y) + 1 : headY;
-      break;
-    case "last_build":
-      verticalBaseY = lastBuildCenter !== undefined ? Math.round(lastBuildCenter.y) : headY;
-      break;
-    default:
-      verticalBaseY = headY;
-  }
-
-  const resolvedY = verticalBaseY + placement.up - placement.down;
+  verticalBaseY = placement.ref === "focus" ? (tb ? Math.round(tb.y) + 1 : headY) : headY;
+  const resolvedY = verticalBaseY + placement.offset.UP;
 
   return { x: baseX, y: resolvedY, z: baseZ };
 }

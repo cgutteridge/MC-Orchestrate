@@ -44,21 +44,10 @@ function buildStep(plan: Record<string, unknown>): string {
 /** Design loop step 1 — matches production `buildPlacementPhaseMessages` system prompt. */
 function placementChoiceStep(): string {
   return JSON.stringify({
-    action: "placement_choice",
-    placement: {
-      ref: "player_view",
-      forward: 8,
-      back: 0,
-      left: 0,
-      right: 0,
-      north: 0,
-      south: 0,
-      east: 0,
-      west: 0,
-      up: 0,
-      down: 0,
-      verticalReference: "middle",
-    },
+    ref: "player",
+    frame: "player",
+    offset: { F: 8, R: 0, N: 0, E: 0, UP: 0 },
+    verticalReference: "middle",
   });
 }
 
@@ -75,12 +64,12 @@ function designChoiceStep(): string {
 
 /** True when the system prompt is placement phase (full or minimal prompt mode). */
 function isPlacementPhaseSystem(sys: string): boolean {
-  return sys.includes("Step 1 of 3");
+  return sys.includes("Infer placement intent");
 }
 
 /** True when the system prompt is design phase. */
 function isDesignPhaseSystem(sys: string): boolean {
-  return sys.includes("Step 2 of 3");
+  return sys.includes("design only");
 }
 
 /**

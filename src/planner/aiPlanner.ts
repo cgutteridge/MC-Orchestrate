@@ -18,6 +18,7 @@ import { defaultRegion } from "./requestContext.js";
 import {
   DesignChoiceStepSchema,
   PlacementChoiceStepSchema,
+  PlacementPositionOnlySchema,
   PlanSchema,
   type DesignChoiceStep,
   type Plan,
@@ -70,7 +71,7 @@ export type PlacementThenBuildOptions = {
 /**
  * Three-step build: **position** → **design** (materials + size + prose) → **layer map**.
  *
- * 1. **Placement** — `placement_choice` (anchor only; no size).
+ * 1. **Placement** — position intent (anchor only; no size).
  * 2. **Design** — `design_choice` (only step with full material-registry context).
  * 3. **Build** — `build` with `plan`; server merges placement from step 1 with size from step 2.
  * 4. Repairs and validates the plan against {@link PlanSchema}.
@@ -213,6 +214,27 @@ export async function runPlacementThenBuild(
     // Dispatch on action type
     // ------------------------------------------------------------------
     const action = typeof looseParsed.action === "string" ? looseParsed.action : undefined;
+    const placementCandidate = parsePlacementPositionOnly(looseParsed);
+
+    if (!splitPlanPlacement && !lockedDesign && placementCandidate !== undefined) {
+      splitPlanPlacement = placementCandidate;
+      resetMessagesForDesignPhase(messages, request, lastPlan);
+      await dl?.line(
+        request.requestId,
+        step,
+        maxSteps,
+        "split_placement_locked",
+        "transition to design phase",
+      );
+      await plannerLogger?.log({
+        timestamp: new Date().toISOString(),
+        requestId: request.requestId,
+        stage: "split_placement_locked",
+        payload: { step, placement: placementCandidate },
+      });
+      consecutiveParseFailures = 0;
+      continue;
+    }
 
     // placement_choice — phase 1 → design phase
     if (action === "placement_choice") {
@@ -281,13 +303,13 @@ export async function runPlacementThenBuild(
           { role: "assistant", content: jsonText },
           {
             role: "user",
-            content: `The placement_choice was invalid: ${pcResult.error.message.slice(0, 200)}. Ensure action is placement_choice, placement has verticalReference and ref and offsets, and do NOT include desiredSize.`,
+            content: `Placement was invalid: ${pcResult.error.message.slice(0, 200)}. Return placement intent as {ref, frame, offset}; no size and no action wrapper.`,
           },
         );
         continue;
       }
 
-      const { placement: chosenPlacement } = pcResult.data;
+      const chosenPlacement = pcResult.data.placement;
       splitPlanPlacement = chosenPlacement;
       resetMessagesForDesignPhase(messages, request, lastPlan);
       await dl?.line(
@@ -316,7 +338,7 @@ export async function runPlacementThenBuild(
           step,
           maxSteps,
           "design_choice_without_placement",
-          "expected placement_choice first",
+          "expected placement first",
         );
         if (consecutiveParseFailures >= 2) {
           abortedAfterRepeatedAssistantErrors = true;
@@ -327,7 +349,7 @@ export async function runPlacementThenBuild(
           {
             role: "user",
             content:
-              "Return placement_choice first (anchor only). You cannot output design_choice before placement is locked.",
+              "Return placement intent first as {ref, frame, offset}. You cannot output design_choice before placement is locked.",
           },
         );
         continue;
@@ -409,7 +431,7 @@ export async function runPlacementThenBuild(
         step,
         maxSteps,
         "build_in_placement_phase",
-        "expected placement_choice",
+        "expected placement",
       );
       if (consecutiveParseFailures >= 2) {
         abortedAfterRepeatedAssistantErrors = true;
@@ -420,7 +442,7 @@ export async function runPlacementThenBuild(
         {
           role: "user",
           content:
-            "This phase is placement only. Return placement_choice with a placement object — not a full plan yet.",
+            "This phase is placement only. Return placement intent as {ref, frame, offset} — not a full plan yet.",
         },
       );
       continue;
@@ -462,14 +484,14 @@ export async function runPlacementThenBuild(
           step,
           maxSteps,
           "bare_plan_in_early_phase",
-          !splitPlanPlacement ? "expected placement_choice" : "expected design_choice",
+          !splitPlanPlacement ? "expected placement" : "expected design_choice",
         );
         if (consecutiveParseFailures >= 2) {
           abortedAfterRepeatedAssistantErrors = true;
           break;
         }
         const expected = !splitPlanPlacement
-          ? 'Return JSON with action "placement_choice", not a full plan.'
+          ? "Return placement intent JSON {ref, frame, offset}, not a full plan."
           : 'Return JSON with action "design_choice", not a full plan.';
         messages.push({ role: "assistant", content: jsonText }, { role: "user", content: expected });
         continue;
@@ -494,7 +516,7 @@ export async function runPlacementThenBuild(
         {
           role: "user",
           content:
-            "Expected placement_choice, then design_choice, then build with a plan. Return the correct action for this phase.",
+            "Expected placement intent, then design_choice, then build with a plan. Return the correct schema for this phase.",
         },
       );
       continue;
@@ -921,7 +943,123 @@ function normalizeLooseDesignStepResponse(loose: Record<string, unknown>): Recor
 }
 
 /**
- * Parses pseudo-JSON placement strings such as `{ ref:player_view, forward:8 }`.
+ * Accepts either direct placement JSON (`{ref,frame,offset}`) or legacy
+ * wrapped shape (`{action:"placement_choice", placement:{...}}`).
+ */
+function parsePlacementPositionOnly(loose: Record<string, unknown>): PlacementPositionOnly | undefined {
+  if (looksLikePlacementRecord(loose)) {
+    const direct = PlacementPositionOnlySchema.safeParse(normalizeLegacyPlacementObject(loose));
+    if (direct.success) {
+      return direct.data;
+    }
+  }
+  const wrapped = PlacementChoiceStepSchema.safeParse(loose);
+  if (wrapped.success) {
+    return wrapped.data.placement;
+  }
+  const nestedPlacement = loose.placement;
+  if (isRecord(nestedPlacement)) {
+    const nested = PlacementPositionOnlySchema.safeParse(
+      normalizeLegacyPlacementObject(nestedPlacement),
+    );
+    if (nested.success) {
+      return nested.data;
+    }
+  }
+  return undefined;
+}
+
+function looksLikePlacementRecord(input: Record<string, unknown>): boolean {
+  for (const key of [
+    "ref",
+    "frame",
+    "offset",
+    "F",
+    "R",
+    "N",
+    "E",
+    "UP",
+    "forward",
+    "back",
+    "left",
+    "right",
+    "north",
+    "south",
+    "east",
+    "west",
+    "up",
+    "down",
+  ] as const) {
+    if (key in input) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Converts legacy placement keys (`player_view`, `forward`, `north`, `up`...)
+ * into the signed-axis shape used by {@link PlacementPositionOnlySchema}.
+ */
+function normalizeLegacyPlacementObject(input: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...input };
+  const offset: Record<string, number> = {};
+  if (isRecord(input.offset)) {
+    for (const k of ["F", "R", "N", "E", "UP"] as const) {
+      if (typeof input.offset[k] === "number") {
+        offset[k] = Math.round(input.offset[k] as number);
+      }
+    }
+  }
+  const read = (k: string): number | undefined =>
+    typeof input[k] === "number" ? Math.round(input[k] as number) : undefined;
+  const forward = read("forward") ?? 0;
+  const back = read("back") ?? 0;
+  const right = read("right") ?? 0;
+  const left = read("left") ?? 0;
+  const north = read("north") ?? 0;
+  const south = read("south") ?? 0;
+  const east = read("east") ?? 0;
+  const west = read("west") ?? 0;
+  const up = read("up") ?? 0;
+  const down = read("down") ?? 0;
+
+  if (forward || back || right || left) {
+    offset.F = (offset.F ?? 0) + forward - back;
+    offset.R = (offset.R ?? 0) + right - left;
+  }
+  if (north || south || east || west) {
+    offset.N = (offset.N ?? 0) + north - south;
+    offset.E = (offset.E ?? 0) + east - west;
+  }
+  if (up || down) {
+    offset.UP = (offset.UP ?? 0) + up - down;
+  }
+
+  if (Object.keys(offset).length > 0) {
+    out.offset = offset;
+  }
+
+  const rawRef = typeof input.ref === "string" ? input.ref : undefined;
+  if (rawRef === "player_view" || rawRef === "player_absolute" || rawRef === "last_build") {
+    out.ref = "player";
+  }
+  if (rawRef === "focus") {
+    out.ref = "focus";
+  }
+
+  if (typeof input.frame !== "string") {
+    if (forward || back || right || left) {
+      out.frame = "player";
+    } else if (north || south || east || west) {
+      out.frame = "world";
+    }
+  }
+  return out;
+}
+
+/**
+ * Parses pseudo-JSON placement strings such as `{ ref:player, frame:player, offset:{F:10,R:0,UP:0} }`.
  *
  * @param s Raw `placement` string from the model.
  * @returns A record suitable for {@link PlacementSchema} parsing, or `undefined`.
@@ -944,6 +1082,18 @@ function coercePlacementFromModelString(s: string): Record<string, unknown> | un
   if (refM) {
     out.ref = refM[1];
   }
+  const frameM = inner.match(/\bframe\s*:\s*([a-z_]+)/i);
+  if (frameM) {
+    out.frame = frameM[1];
+  }
+  const offset: Record<string, number> = {};
+  for (const key of ["F", "R", "N", "E", "UP"] as const) {
+    const km = inner.match(new RegExp(`\\b${key}\\s*:\\s*(-?\\d+)`, "i"));
+    if (km) {
+      offset[key] = Number(km[1]);
+    }
+  }
+  // Legacy compatibility for partially quoted pseudo-JSON from older prompts.
   for (const key of [
     "forward",
     "back",
@@ -958,8 +1108,30 @@ function coercePlacementFromModelString(s: string): Record<string, unknown> | un
   ] as const) {
     const km = inner.match(new RegExp(`\\b${key}\\s*:\\s*(-?\\d+)`));
     if (km) {
-      out[key] = Number(km[1]);
+      const n = Number(km[1]);
+      if (key === "forward") offset.F = (offset.F ?? 0) + n;
+      if (key === "back") offset.F = (offset.F ?? 0) - n;
+      if (key === "right") offset.R = (offset.R ?? 0) + n;
+      if (key === "left") offset.R = (offset.R ?? 0) - n;
+      if (key === "north") offset.N = (offset.N ?? 0) + n;
+      if (key === "south") offset.N = (offset.N ?? 0) - n;
+      if (key === "east") offset.E = (offset.E ?? 0) + n;
+      if (key === "west") offset.E = (offset.E ?? 0) - n;
+      if (key === "up") offset.UP = (offset.UP ?? 0) + n;
+      if (key === "down") offset.UP = (offset.UP ?? 0) - n;
     }
+  }
+  if (Object.keys(offset).length > 0) {
+    out.offset = offset;
+  }
+  if (out.frame === undefined && (offset.F !== undefined || offset.R !== undefined)) {
+    out.frame = "player";
+  }
+  if (out.frame === undefined && (offset.N !== undefined || offset.E !== undefined)) {
+    out.frame = "world";
+  }
+  if (out.ref === "player_view" || out.ref === "player_absolute" || out.ref === "last_build") {
+    out.ref = "player";
   }
   return Object.keys(out).length > 0 ? out : undefined;
 }
@@ -1007,6 +1179,9 @@ function computeTerrainGroundHint(
 }
 
 function summarizeLooseParsed(loose: Record<string, unknown>): string {
+  if (parsePlacementPositionOnly(loose) !== undefined) {
+    return "placement_only";
+  }
   const action = typeof loose.action === "string" ? loose.action : undefined;
   if (action === "placement_choice") {
     return "action=placement_choice";

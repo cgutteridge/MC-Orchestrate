@@ -68,20 +68,25 @@ export type Plan = z.infer<typeof PlanSchema>;
 // reference + offset vocabulary. The code resolves this to world coordinates.
 // ---------------------------------------------------------------------------
 
+/** Anchor reference for placement intent. */
+export const PlacementRefSchema = z.enum(["player", "focus"]);
+
+/** Horizontal frame for signed-axis offsets. */
+export const PlacementFrameSchema = z.enum(["player", "world"]);
+
 /**
- * The placement reference. Encodes both the ORIGIN POINT and the ROTATION
- * system used to interpret horizontal offsets.
- *
- * - `player_view`     — origin at player position; offsets use player-facing
- *                       directions (forward/back/left/right)
- * - `player_absolute` — origin at player position; offsets use world cardinal
- *                       directions (north/south/east/west)
- * - `focus`           — origin at the looked-at block (targetBlock); offsets
- *                       are cardinal; or no offsets for "right here/on this"
- * - `last_build`      — origin at the centre of the last built structure;
- *                       for follow-up requests like "make it bigger"
+ * Signed offsets:
+ * - Player frame: `F` (+forward/-back), `R` (+right/-left)
+ * - World frame: `N` (+north/-south), `E` (+east/-west)
+ * - Vertical: `UP` (+up/-down)
  */
-export const PlacementRefSchema = z.enum(["player_view", "player_absolute", "focus", "last_build"]);
+export const PlacementOffsetSchema = z.object({
+  F: z.number().int().default(0),
+  R: z.number().int().default(0),
+  N: z.number().int().default(0),
+  E: z.number().int().default(0),
+  UP: z.number().int().default(0),
+});
 
 /**
  * Declared footprint and height for step 1 (placement — get location). The layer
@@ -110,19 +115,14 @@ export const VerticalReferenceSchema = z.enum(["top", "middle", "bottom", "flyin
 /**
  * Semantic placement instruction returned by the AI.
  *
- * **Y is independent of horizontal offsets.** `up: 0` (default) = ground
- * level at the resolved XZ position. `up: N` = N blocks above ground.
- * `down: N` = N blocks below ground (for pits, pools). Aerial builds should
- * use a minimum of `up: 2` to clear the player's head.
- *
- * Horizontal offsets depend on `ref`:
- * - `player_view`:     use `forward`, `back`, `left`, `right`
- * - `player_absolute`: use `north`, `south`, `east`, `west`
- * - `focus`:           use `north`, `south`, `east`, `west` (or none = "here")
- * - `last_build`:      use `north`, `south`, `east`, `west` (or none = "extend it")
+ * Offsets are signed axes under `offset`:
+ * - `frame="player"`: use `F`, `R`, and `UP` (set `N=0`, `E=0`)
+ * - `frame="world"`: use `N`, `E`, and `UP` (set `F=0`, `R=0`)
  */
 export const PlacementSchema = z.object({
-  ref: PlacementRefSchema.default("player_view"),
+  ref: PlacementRefSchema.default("player"),
+  frame: PlacementFrameSchema.default("player"),
+  offset: PlacementOffsetSchema.default({ F: 0, R: 0, N: 0, E: 0, UP: 0 }),
 
   /**
    * Optional declared size. Required for `placement_choice` in the split loop;
@@ -134,32 +134,11 @@ export const PlacementSchema = z.object({
    * anchor point after offsets. Defaults to `middle` for backward compatibility.
    */
   verticalReference: VerticalReferenceSchema.default("middle"),
-
-  // Player-view offsets (only used when ref = "player_view")
-  /** Blocks in the player's look direction. */
-  forward: z.number().int().default(0),
-  /** Blocks opposite the player's look direction. */
-  back: z.number().int().default(0),
-  /** Blocks to the player's left (left of look direction). */
-  left: z.number().int().default(0),
-  /** Blocks to the player's right (right of look direction). */
-  right: z.number().int().default(0),
-
-  // Cardinal offsets (used when ref = "player_absolute", "focus", or "last_build")
-  north: z.number().int().default(0),
-  south: z.number().int().default(0),
-  east: z.number().int().default(0),
-  west: z.number().int().default(0),
-
-  // Vertical — always independent of horizontal, relative to ground level at
-  // the resolved XZ position.
-  /** Blocks above ground level at target XZ. Minimum 2 for aerial builds. */
-  up: z.number().int().min(0).default(0),
-  /** Blocks below ground level (for pits, pools, underground builds). */
-  down: z.number().int().min(0).default(0),
 });
 
 export type PlacementRef = z.infer<typeof PlacementRefSchema>;
+export type PlacementFrame = z.infer<typeof PlacementFrameSchema>;
+export type PlacementOffset = z.infer<typeof PlacementOffsetSchema>;
 export type DesiredSize = z.infer<typeof DesiredSizeSchema>;
 export type VerticalReference = z.infer<typeof VerticalReferenceSchema>;
 export type Placement = z.infer<typeof PlacementSchema>;

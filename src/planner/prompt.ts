@@ -146,20 +146,6 @@ function buildNearbyMaterialsDetailForDesign(request: ChatCommandRequest): strin
   return ["NEARBY BLOCK TYPES (sampled; no coordinates):", ...lines].join("\n");
 }
 
-/**
- * Formats prior player lines for the user prompt when `recentMessages` is non-empty.
- */
-function formatConversationHistoryForPrompt(request: ChatCommandRequest): string | undefined {
-  const { recentMessages } = request;
-  if (recentMessages.length === 0) {
-    return undefined;
-  }
-  const lines = recentMessages.map((line, i) => `${i + 1}. ${line}`);
-  return [
-    'CONVERSATION HISTORY (oldest first; excludes this turn\'s JSON field "message" — that is the latest line only):',
-    ...lines,
-  ].join("\n");
-}
 
 // ---------------------------------------------------------------------------
 // Placement card — pre-computed reference points so the AI never has to do
@@ -175,45 +161,13 @@ function formatConversationHistoryForPrompt(request: ChatCommandRequest): string
  * unless noted.
  */
 function buildPlacementCard(request: ChatCommandRequest): string {
-  const { position, lookVector } = request.player;
+  const { position } = request.player;
   const px = Math.round(position.x);
   const py = Math.round(position.y);
   const pz = Math.round(position.z);
 
-  // Horizontal projection of look vector — ignoring pitch so steep angles
-  // don't collapse the in-front direction toward (0,0).
-  const hx = lookVector.x;
-  const hz = lookVector.z;
-  const hLen = Math.sqrt(hx * hx + hz * hz);
-  const nhx = hLen > 0.01 ? hx / hLen : 0;
-  const nhz = hLen > 0.01 ? hz / hLen : 1;
-
-  const front = (d: number) => `(${Math.round(px + nhx * d)}, ${py}, ${Math.round(pz + nhz * d)})`;
-  // Left = 90° counterclockwise turn in XZ from the player's perspective:
-  // rotate (nhx, nhz) left → (nhz, -nhx)
-  const left = (d: number) => `(${Math.round(px + nhz * d)}, ${py}, ${Math.round(pz - nhx * d)})`;
-  // Right = 90° clockwise turn: rotate (nhx, nhz) right → (-nhz, nhx)
-  const right = (d: number) => `(${Math.round(px - nhz * d)}, ${py}, ${Math.round(pz + nhx * d)})`;
-
   return [
-    "PLACEMENT REFERENCE — use these pre-computed coordinates as your anchor origin.",
-    `  Player feet:         x=${px} y=${py} z=${pz}  ← never build on the player's body blocks (y=${py} and y=${py + 1})`,
-    `  Player head (code up:0 for player_view / player_absolute): y=${py + 1}`,
-    `  5 blocks in front:  ${front(5)}`,
-    `  10 blocks in front: ${front(10)}`,
-    `  20 blocks in front: ${front(20)}`,
-    `  5 blocks behind:    (${Math.round(px - nhx * 5)}, ${py}, ${Math.round(pz - nhz * 5)})`,
-    `  5 blocks left:      ${left(5)}`,
-    `  5 blocks right:     ${right(5)}`,
-    "  Cardinal offsets from player (scale D as needed):",
-    `    north (−z): x=${px} z=${pz}-D`,
-    `    south (+z): x=${px} z=${pz}+D`,
-    `    east  (+x): x=${px}+D z=${pz}`,
-    `    west  (−x): x=${px}-D z=${pz}`,
-    `  5 blocks above head:  y=${py + 1 + 5}`,
-    `  10 blocks above head: y=${py + 1 + 10}`,
-    `  5 blocks below head:  y=${py + 1 - 5}`,
-    "  Scale vertically as needed. 'above me' with no distance → placement up≈10 (ten blocks above head).",
+    `Player at x=${px} y=${py} z=${pz}. Avoid y=${py} and y=${py + 1} (player body).`,
   ].join("\n");
 }
 
@@ -301,10 +255,6 @@ export function buildPlanPhaseUserContent(
     );
   }
   lines.push(`Build request: ${request.message}`);
-  if (request.recentMessages.length > 0) {
-    const tail = request.recentMessages.slice(-5);
-    lines.push(`Earlier lines: ${tail.join(" → ")}`);
-  }
   return lines.join("\n");
 }
 
@@ -373,10 +323,6 @@ export function buildDesignPhaseUserContent(
   if (detail) {
     lines.push(detail, "");
   }
-  const historyBlock = formatConversationHistoryForPrompt(request);
-  if (historyBlock) {
-    lines.push(historyBlock, "");
-  }
   if (lastPlan) {
     lines.push(
       "PRIOR BUILD (for follow-ups; no world coordinates):\n" + summarizeLastBuiltPlanForDesign(lastPlan),
@@ -434,12 +380,14 @@ const DESIGN_CHOICE_GUIDE = {
 
 /** Example shape for phase 1 — must match {@link PlacementChoiceStepSchema} (flat `action`, object `placement`). */
 const PLACEMENT_CHOICE_GUIDE = {
-  action: "placement_choice",
-  placement: {
-    ref: "player_view | player_absolute | focus | last_build",
-    forward: 8,
-    up: 0,
-    verticalReference: "top | middle | bottom | flying",
+  ref: "player",
+  frame: "player",
+  offset: {
+    F: 10,
+    R: 0,
+    N: 0,
+    E: 0,
+    UP: 0,
   },
 };
 
@@ -453,20 +401,17 @@ const JSON_DISCIPLINE = [
 
 /** Placement rules — step 1 (`placement_choice`) only; size is chosen in step 2 (design). */
 const PLACEMENT_RULES_COMPACT = [
-  "PLACEMENT (user message includes a PLACEMENT REFERENCE card with anchor coords). Do NOT choose size here — the design step sets width×depth×height.",
-  "ref: player_view (forward/back/left/right) | player_absolute (north/south/east/west) | focus (NSEW or 0 = here) | last_build (follow-ups).",
-  "Y baseline: player_view/player_absolute → up:0 = head (feet Y + 1); focus → up:0 = top of looked-at block +1; last_build → prior centre Y.",
-  "Step 1 requires placement.verticalReference: top | middle | bottom | flying (how the eventual box will anchor when placed).",
-  "Default if vague: {ref:player_view, forward:8}. Never intersect the player's body blocks.",
-  "Phrase hints: 'in front of me' → forward; 'to my left' → left; 'above me' → up; '10 blocks NE' → player_absolute north+east; 'here' → focus; 'make it bigger' → last_build; 'a pit under me' → down.",
+  "Return placement intent only as {ref, frame, offset}. No action, no size, no plan, no materials, no layerMap.",
+  "ref: player | focus.",
+  "frame selects horizontal axes: player => F,R; world => N,E. Always include UP.",
+  "Signed axis meanings: +F forward, -F back, +R right, -R left, +N north, -N south, +E east, -E west, +UP up, -UP down.",
+  "Always return all keys: offset {F,R,N,E,UP} as integers. If frame=player set N=0,E=0. If frame=world set F=0,R=0.",
+  "Default when vague: {ref:'player', frame:'player', offset:{F:10,R:0,N:0,E:0,UP:0}}.",
+  "Scale words: close 3-10, default 10-20, far/long way 20-50, very long way 50+.",
+  "'Up in the sky' means UP >= 20.",
+  "Phrase hints: 'in front of me' => frame:player with +F; 'to my left' => frame:player with -R; '10 blocks NE' => frame:world with +N and +E; 'here' or 'on this block' => ref:focus.",
 ].join("\n");
 
-const CONVERSATION_FOLLOWUPS_COMPACT = [
-  "=== CONVERSATION AND FOLLOW-UPS ===",
-  "User JSON has message, recentMessages, lastBuiltStructureSummary, lastBuiltStructure. Treat as one thread; short messages refer to prior lines or LAST BUILD SUMMARY.",
-  "Follow-ups (taller, oak, move it): use placement ref last_build when editing the previous build.",
-  "Use nearbyBlocks + initialScanRegion as your primary context for terrain and materials; you cannot request additional world scans.",
-].join("\n");
 
 const LAYER_MAP_AND_PLAN_COMPACT = [
   "BUILDS ARE LAYER MAPS ONLY: each pass has `layerMap` (layers + palette). No legacy shape ops.",
@@ -490,13 +435,13 @@ const BUILDER_PALETTE_RULES_COMPACT = [
 const PLACEMENT_PHASE_SYSTEM_PROMPT = [
   JSON_DISCIPLINE,
   "",
-  "Step 1 of 3: placement only (where the structure will go). Do not output size, Plan, layerMap, or passes.",
+  "Infer placement intent from player text and nearby context.",
   "",
-  `Return PLACEMENT_CHOICE ${JSON.stringify(PLACEMENT_CHOICE_GUIDE)} — required: placement.verticalReference, ref, offsets. Omit desiredSize (forbidden).`,
+  `Return this JSON shape with literal enum values (choose one): ${JSON.stringify(
+    PLACEMENT_CHOICE_GUIDE,
+  )}.`,
   "",
   PLACEMENT_RULES_COMPACT,
-  "",
-  CONVERSATION_FOLLOWUPS_COMPACT,
 ].join("\n");
 
 /**
@@ -510,8 +455,6 @@ const DESIGN_PHASE_SYSTEM_PROMPT = [
   `Return DESIGN_CHOICE ${JSON.stringify(DESIGN_CHOICE_GUIDE)}.`,
   "",
   buildDesignPhaseMaterialRegistrySection(),
-  "",
-  CONVERSATION_FOLLOWUPS_COMPACT,
 ].join("\n");
 
 /**
@@ -547,47 +490,7 @@ function buildSharedUserContent(
   introLine: string,
   options?: { includeNearbyMaterials?: boolean },
 ): string {
-  const parts: string[] = [introLine, buildPlacementCard(request)];
-
-  if (options?.includeNearbyMaterials === true) {
-    const nearbySummary = buildNearbyContextSummary(request);
-    if (nearbySummary) {
-      parts.push(nearbySummary);
-    }
-  }
-
-  const historyBlock = formatConversationHistoryForPrompt(request);
-  if (historyBlock) {
-    parts.push(historyBlock);
-  }
-
-  const lastSummary = lastPlan ? summarizeLastBuiltPlan(lastPlan) : null;
-
-  if (lastSummary) {
-    parts.push(
-      `LAST BUILD SUMMARY (use for follow-ups; placement ref last_build anchors to this structure):\n${lastSummary}`,
-    );
-  }
-
-  parts.push(
-    JSON.stringify(
-      {
-        requestId: request.requestId,
-        player: request.player,
-        message: request.message,
-        recentMessages: request.recentMessages,
-        localContext: request.localContext,
-        serverContext: request.serverContext,
-        initialScanRegion: request.initialScanRegion,
-        lastBuiltStructureSummary: lastSummary,
-        lastBuiltStructure: lastPlan ?? null,
-      },
-      null,
-      2,
-    ),
-  );
-
-  return parts.join("\n\n");
+  return request.message;
 }
 
 /**
@@ -639,7 +542,7 @@ export function buildPlacementPhaseMessages(
   const userContent = buildSharedUserContent(
     request,
     lastPlan,
-    "Choose placement and vertical reference for this request (step 1 of 3). Do not choose size or materials — no layer map yet.",
+    "Choose placement intent for this request. Return only ref/frame/offset JSON.",
   );
   const systemContent = buildPlacementPhaseSystemContent(request);
   return [

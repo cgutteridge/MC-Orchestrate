@@ -579,7 +579,7 @@ export class Orchestrator {
  * Formats a placement intent as a short human-readable string for in-game
  * debug output so the player can verify what the AI decided.
  *
- * Example: "player_view → forward:8, left:3, up:5"
+ * Example: "player/player → F:10, UP:5"
  */
 function describePlacement(p: import("../planner/schema.js").Placement): string {
   const meta: string[] = [];
@@ -591,23 +591,18 @@ function describePlacement(p: import("../planner/schema.js").Placement): string 
   }
 
   const offsets: string[] = [];
-  if (p.ref === "player_view") {
-    if (p.forward) offsets.push(`forward:${p.forward}`);
-    if (p.back) offsets.push(`back:${p.back}`);
-    if (p.left) offsets.push(`left:${p.left}`);
-    if (p.right) offsets.push(`right:${p.right}`);
+  if (p.frame === "player") {
+    if (p.offset.F) offsets.push(`F:${p.offset.F}`);
+    if (p.offset.R) offsets.push(`R:${p.offset.R}`);
   } else {
-    if (p.north) offsets.push(`north:${p.north}`);
-    if (p.south) offsets.push(`south:${p.south}`);
-    if (p.east) offsets.push(`east:${p.east}`);
-    if (p.west) offsets.push(`west:${p.west}`);
+    if (p.offset.N) offsets.push(`N:${p.offset.N}`);
+    if (p.offset.E) offsets.push(`E:${p.offset.E}`);
   }
-  if (p.up) offsets.push(`up:${p.up}`);
-  if (p.down) offsets.push(`down:${p.down}`);
+  if (p.offset.UP) offsets.push(`UP:${p.offset.UP}`);
 
   const pieces = [...meta, ...offsets];
   const tail = pieces.length > 0 ? ` → ${pieces.join(", ")}` : " → at origin";
-  return `${p.ref}${tail}`;
+  return `${p.ref}/${p.frame}${tail}`;
 }
 
 /** True when at least one pass carries a layer map (what we execute as structure). */

@@ -4,6 +4,7 @@
 import type { LayerMapData } from "../../src/planner/layerMap.js";
 import {
   DesignChoiceStepSchema,
+  PlacementPositionOnlySchema,
   PlacementChoiceStepSchema,
   PlacementWithDesiredSizeSchema,
 } from "../../src/planner/schema.js";
@@ -17,15 +18,15 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 }
 
 /**
- * Result of parsing a placement-phase assistant reply into a validated `placement_choice`.
+ * Result of parsing a placement-phase assistant reply into validated placement intent.
  */
 export type ParsePlacementChoiceResult =
   | { ok: true; placement: PlacementPositionOnly }
   | { ok: false; error: string };
 
 /**
- * Parses assistant text from a placement-phase turn into a validated `placement_choice`
- * (position only — no `desiredSize`).
+ * Parses assistant text from a placement-phase turn into validated placement
+ * intent (position only — no `desiredSize`).
  *
  * @param raw Raw assistant message (may include markdown fences or prose).
  */
@@ -43,14 +44,15 @@ export function parsePlacementChoiceFromAssistantText(raw: string): ParsePlaceme
   if (!isRecord(parsed)) {
     return { ok: false, error: "Expected JSON object" };
   }
-  const result = PlacementChoiceStepSchema.safeParse(parsed);
-  if (!result.success) {
-    return { ok: false, error: result.error.message };
+  const direct = PlacementPositionOnlySchema.safeParse(parsed);
+  if (direct.success) {
+    return { ok: true, placement: direct.data };
   }
-  return {
-    ok: true,
-    placement: result.data.placement,
-  };
+  const wrapped = PlacementChoiceStepSchema.safeParse(parsed);
+  if (wrapped.success) {
+    return { ok: true, placement: wrapped.data.placement };
+  }
+  return { ok: false, error: "Expected placement JSON shape: {ref, frame, offset}" };
 }
 
 /**
@@ -108,8 +110,9 @@ export const DEFAULT_SMOKE_DESIGN: DesignChoiceStep = DesignChoiceStepSchema.par
  * Merged placement for build-step smoke (matches {@link DEFAULT_SMOKE_DESIGN} footprint).
  */
 export const DEFAULT_LOCKED_PLACEMENT = PlacementWithDesiredSizeSchema.parse({
-  ref: "player_view",
-  forward: 8,
+  ref: "player",
+  frame: "player",
+  offset: { F: 10, R: 0, N: 0, E: 0, UP: 0 },
   desiredSize: SMOKE_FOOTPRINT,
   verticalReference: "bottom",
 });

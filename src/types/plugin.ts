@@ -61,7 +61,6 @@ export type ChatCommandRequest = {
   requestId: string;
   player: PlayerSnapshot;
   message: string;
-  recentMessages: string[];
   localContext: LocalContext;
   serverContext: ServerContext;
   /** Bounding box of the expanded block scan included in `localContext.nearbyBlocks`. */

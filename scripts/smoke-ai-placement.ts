@@ -1,5 +1,5 @@
 /**
- * Smoke: **step 1 (location) only** — `placement_choice`.
+ * Smoke: placement intent only (`{ref, frame, offset}`).
  *
  * Usage:
  *   npx tsx scripts/smoke-ai-placement.ts "build a cottage"
@@ -43,7 +43,7 @@ async function main(): Promise<void> {
     process.stderr.write(`FAIL: ${result.error}\n`);
     process.exit(1);
   }
-  process.stdout.write("\nOK: placement_choice\n");
+  process.stdout.write("\nOK: placement intent parsed\n");
 }
 
 main().catch((err) => {
