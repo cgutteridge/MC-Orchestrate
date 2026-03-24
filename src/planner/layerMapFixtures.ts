@@ -1,6 +1,7 @@
 /**
  * Shared valid layer maps for tests and smoke tooling. Production plans use the
  * same shape as production passes: `name`, `goal`, and `layerMap`.
+ * `layers[0]` is the bottom Y slice (`src/planner/layerMap.ts`).
  */
 export const LAYER_MAP_1x1x1_STONE = {
   layers: ["S"],

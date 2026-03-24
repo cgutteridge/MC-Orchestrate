@@ -174,7 +174,7 @@ export function formatMessagesForStdout(messages: ChatMessage[]): string {
 }
 
 /**
- * Each layer string in order (top Y → bottom Y), separated by a blank line.
+ * Each layer string in order (bottom Y → top Y), separated by a blank line.
  */
 export function formatLayerMapForDisplay(layerMap: LayerMapData): string {
   return layerMap.layers.join("\n\n");

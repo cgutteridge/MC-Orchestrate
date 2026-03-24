@@ -19,8 +19,8 @@ export const RegionSchema = z.object({
 });
 
 /**
- * Character-layer voxel grid. Layers are ordered **top → bottom**; each layer is
- * newline-separated rows. **` ` (space)** means leave that cell unchanged (no-op).
+ * Character-layer voxel grid. Layers are ordered **bottom → top** (`layers[0]` =
+ * lowest Y); each layer is newline-separated rows. **` ` (space)** means leave that cell unchanged (no-op).
  * **`_`** means place air (default `minecraft:air` if `_` is omitted from `palette`).
  */
 export const LayerMapSchema = z

@@ -1,7 +1,8 @@
 import type { BridgeBatchBlock, BridgeCommand } from "../bridge/types.js";
 
 /**
- * Layer map payload: top-to-bottom layers + character → block id palette.
+ * Layer map payload: bottom-to-top Y slices + character → block id palette.
+ * `layers[0]` is the **bottom** slice (lowest local Y); `layers[length-1]` is the top.
  *
  * **Grid characters**
  * - **` ` (space)** — no-op: do not place or change this block (skip in compile).
@@ -30,7 +31,7 @@ const BATCH_SET_CHUNK = 512;
 /**
  * Footprint for {@link normalizeLayerMap}: same meaning as the design-step `desiredSize`
  * (`DesiredSizeSchema`) — width = columns (+X), depth = rows per slice (+Z), height = Y slice count
- * (layers top→bottom).
+ * (layers bottom→top: first string is the lowest Y slice).
  */
 export type LayerMapClip = {
   width: number;
@@ -185,14 +186,14 @@ export type ParsedLayerGrid = {
   width: number;
   depth: number;
   height: number;
-  /** Bottom Y slice index 0; top = height - 1. */
+  /** Local Y: 0 = bottom slice; `height - 1` = top slice (matches `layers` order). */
   getBlock: (lx: number, ly: number, lz: number) => string;
 };
 
 /**
  * Validates shape and palette coverage for a layer map. Layers are ordered
- * **top → bottom**: `layers[0]` is the top slice (highest Y), `layers[last]` is
- * the bottom slice (lowest Y). Each layer is newline-separated **rows**; each
+ * **bottom → top**: `layers[0]` is the bottom slice (lowest Y), `layers[last]`
+ * is the top slice (highest Y). Each layer is newline-separated **rows**; each
  * row is **columns** left-to-right (increasing X). Row index increases with Z.
  *
  * @returns `undefined` when valid, otherwise a human-readable error message.
@@ -356,8 +357,7 @@ function parseLayerMapGrid(layerMap: LayerMapData): { grid: ParsedLayerGrid } | 
   const height = layers.length;
 
   const getBlock = (lx: number, ly: number, lz: number): string => {
-    const layerFromTop = height - 1 - ly;
-    const row = rowSets[layerFromTop]![lz]!;
+    const row = rowSets[ly]![lz]!;
     const chars = [...row];
     const ch = chars[lx];
     if (ch === undefined) {
@@ -376,8 +376,7 @@ function parseLayerMapGrid(layerMap: LayerMapData): { grid: ParsedLayerGrid } | 
   for (let ly = 0; ly < height; ly++) {
     for (let lz = 0; lz < depth; lz++) {
       for (let lx = 0; lx < width; lx++) {
-        const layerFromTop = height - 1 - ly;
-        const row = rowSets[layerFromTop]![lz]!;
+        const row = rowSets[ly]![lz]!;
         const ch = [...row][lx]!;
         if (ch === " ") {
           continue;

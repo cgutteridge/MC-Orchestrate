@@ -470,7 +470,7 @@ const CONVERSATION_FOLLOWUPS_COMPACT = [
 
 const LAYER_MAP_AND_PLAN_COMPACT = [
   "BUILDS ARE LAYER MAPS ONLY: each pass has `layerMap` (layers + palette). No legacy shape ops.",
-  "layers[] = Y slices top→bottom; within a slice, rows = +Z, chars = +X. palette maps char → minecraft:id. ` ` = leave block; `_` = air.",
+  "layers[] = Y slices bottom→top (first layer = ground / lowest Y); within a slice, rows = +Z, chars = +X. palette maps char → minecraft:id. ` ` = leave block; `_` = air.",
   "Max 32×32 footprint, 48 tall. Prefer one full-structure pass; second pass only for polish. Straight silhouettes unless the player asked for round.",
   "Real 3D needs many slices — one slice = a flat slab. verifyRegion: optional box ~2 blocks past the build for inspection.",
 ].join("\n");

@@ -8,11 +8,11 @@ import {
 } from "./layerMap.js";
 
 describe("layer map", () => {
-  it("parses top-to-bottom layers and compiles each non–no-op cell", () => {
+  it("parses bottom-to-top layers and compiles each non–no-op cell", () => {
     const layerMap = {
       layers: [
-        "#", // top (highest Y)
         "#", // bottom (lowest Y)
+        "#", // top (highest Y)
       ],
       palette: { "#": "minecraft:stone" },
     };
