@@ -153,7 +153,38 @@ describe("runPlacementThenBuild", () => {
     expect(result.plan.passes[0]?.layerMap.palette.G).toBe("minecraft:glass");
   });
 
-  it("includes prior chat lines in the initial user message for follow-up resolution", async () => {
+  it("returns a plan when step 3 is only layers and palette (no action or passes)", async () => {
+    let turn = 0;
+    const provider: ChatProvider = {
+      name: "test",
+      async chat() {
+        turn++;
+        if (turn === 1) {
+          return placementChoiceJson({
+            ref: "focus",
+            frame: "player",
+            offset: { F: 0, R: 0, N: 0, E: 0, UP: 0 },
+            verticalReference: "on_ground",
+          });
+        }
+        if (turn === 2) {
+          return designChoiceJson({ width: 5, depth: 5, height: 6 });
+        }
+        return JSON.stringify(LAYER_RING_GLASS);
+      },
+    };
+
+    const result = await runPlacementThenBuild(provider, request, fakeWorldReader, undefined);
+
+    expect(result.outcome).toBe("plan");
+    if (result.outcome !== "plan") {
+      return;
+    }
+    expect(result.plan.passes).toHaveLength(1);
+    expect(result.plan.passes[0]?.layerMap.palette.G).toBe("minecraft:glass");
+  });
+
+  it("plan phase user message carries design fixture text (no duplicate player line)", async () => {
     const followUpRequest: ChatCommandRequest = {
       ...request,
       message: "make it taller",
@@ -178,8 +209,8 @@ describe("runPlacementThenBuild", () => {
           return designChoiceJson({ width: 8, depth: 8, height: 16 });
         }
         const user = messages.find((m) => m.role === "user")?.content ?? "";
-        if (!user.includes("Build request: make it taller")) {
-          throw new Error("Expected current message in plan-phase user content");
+        if (!user.includes("Fixture design") || !user.includes("Volume:")) {
+          throw new Error("Expected plan-phase user message with design summary and volume");
         }
         return buildStep({
           intent: "build_tower",

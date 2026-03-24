@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  coerceAssistantLayerMapToLoosePlanCandidate,
   compileLayerMapToBridgeCommands,
   deriveLayerMapLocalBounds,
   estimateLayerMapBlockCount,
   normalizeLayerMap,
+  tryExtractLayerMapData,
   validateLayerMapShape,
 } from "./layerMap.js";
 
@@ -94,5 +96,34 @@ describe("layer map", () => {
     const n = normalizeLayerMap(raw);
     expect(n.palette[" "]).toBeUndefined();
     expect(validateLayerMapShape(raw)).toBeUndefined();
+  });
+});
+
+describe("assistant layer-map coercion", () => {
+  it("coerceAssistantLayerMapToLoosePlanCandidate wraps bare layers/palette in one pass", () => {
+    const out = coerceAssistantLayerMapToLoosePlanCandidate({
+      layers: ["A"],
+      palette: { A: "minecraft:stone" },
+    });
+    expect(out.passes).toHaveLength(1);
+    expect((out.passes as { layerMap: { layers: string[] } }[])[0]?.layerMap.layers).toEqual(["A"]);
+  });
+
+  it("tryExtractLayerMapData reads bare JSON and legacy build+plan+passes", () => {
+    expect(
+      tryExtractLayerMapData({
+        layers: ["X"],
+        palette: { X: "minecraft:glass" },
+      })?.palette.X,
+    ).toBe("minecraft:glass");
+
+    expect(
+      tryExtractLayerMapData({
+        action: "build",
+        plan: {
+          passes: [{ name: "p", goal: "g", layerMap: { layers: ["Y"], palette: { Y: "minecraft:stone" } } }],
+        },
+      })?.layers,
+    ).toEqual(["Y"]);
   });
 });

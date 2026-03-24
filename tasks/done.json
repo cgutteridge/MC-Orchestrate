@@ -8,7 +8,7 @@
       "priority": "medium",
       "complexity": "s",
       "blockedBy": [],
-      "notes": "Completed 2026-03-22. src/planner/promptHints.ts: PromptHint, DEFAULT_PROMPT_HINTS, collectPromptHints, formatPromptHintsSection, keyword matching on message+recentMessages; buildInitialMessages appends section; moat/trench guidance moved from base SYSTEM_PROMPT into default hints; tests in promptHints.test.ts."
+      "notes": "Removed 2026-03-24: keyword-triggered contextual hints (promptHints module) were deleted; base phase system prompts only."
     },
     {
       "id": 18,

@@ -195,13 +195,17 @@ describe("buildPlacementPhaseMessages (step 1)", () => {
 });
 
 describe("buildPlanPhaseSystemContent (step 2)", () => {
-  it("lists layerMap in the plan schema guide", () => {
+  it("lists layers and palette as the only required model output", () => {
     const system = buildPlanPhaseSystemContent(request);
 
-    expect(system).toContain('"layerMap"');
     expect(system).toContain('"layers"');
-    expect(system).toContain("LAYER MAPS ONLY");
+    expect(system).toContain('"palette"');
+    expect(system).toContain("serializes");
+    expect(system).toContain("expert Minecraft builder");
+    expect(system).toContain("WORKED EXAMPLE");
+    expect(system).toContain("CCGGGCC");
     expect(system).not.toContain('"fill_cuboid"');
+    expect(system).not.toContain('"action"');
   });
 
   it("instructs the model to use concrete minecraft ids and mentions stone fallback", () => {
@@ -211,12 +215,18 @@ describe("buildPlanPhaseSystemContent (step 2)", () => {
     expect(system).toContain("minecraft:stone");
   });
 
-  it("describes the build step and verifyRegion", () => {
+  it("describes step 3 without an action field", () => {
     const system = buildPlanPhaseSystemContent(request);
 
-    expect(system).toContain("verifyRegion");
     expect(system).toContain("Step 3 of 3");
-    expect(system).toContain('"action":"build"');
+    expect(system).toContain("no action field");
+  });
+
+  it("does not ask the model for targetWorld or targetRegion in the plan schema guide", () => {
+    const system = buildPlanPhaseSystemContent(request);
+
+    expect(system).not.toContain('"targetWorld"');
+    expect(system).not.toContain('"targetRegion"');
   });
 });
 
@@ -268,7 +278,7 @@ describe("plan phase user content (step 2)", () => {
       false,
     );
     expect(text).toContain("Volume:");
-    expect(text).toContain("a hut");
+    expect(text).toContain(designFixture.designSummary);
     expect(text).not.toContain("Terrain:");
   });
 

@@ -5,7 +5,7 @@
  * Uses fixed placement and design fixtures; does not call position or design steps.
  *
  * Usage:
- *   npx tsx scripts/smoke-ai-build.ts "a cottage with a door"
+ *   npx tsx scripts/smoke-ai-build.ts "a wizard tower with a spiral stair and study at the top"
  *
  * Requires the same AI env as the app (see `.env.example`).
  */
@@ -22,7 +22,8 @@ import {
 } from "./smoke/shared.js";
 
 const message =
-  process.argv.slice(2).join(" ").trim() || "make a castle with battlements and a moat";
+  process.argv.slice(2).join(" ").trim() ||
+  "a wizard tower with a spiral stair and study at the top";
 
 async function main(): Promise<void> {
   const config = loadConfig();

@@ -2,59 +2,7 @@ import type { ChatMessage } from "../services/ai/types.js";
 import type { ChatCommandRequest } from "../types/plugin.js";
 import type { DesignChoiceStep, Plan, Placement, Region } from "./schema.js";
 import type { BlockSample } from "../types/plugin.js";
-import { collectPromptHints, formatPromptHintsSection } from "./promptHints.js";
 import { buildDesignPhaseMaterialRegistrySection } from "./designMaterialContext.js";
-
-// ---------------------------------------------------------------------------
-// Nearby context card
-// ---------------------------------------------------------------------------
-
-/**
- * Block types that carry no information about a player's intended build
- * material and should be excluded from the nearby context card.
- */
-const CONTEXT_SKIP_BLOCKS = new Set([
-  "minecraft:air",
-  "minecraft:cave_air",
-  "minecraft:void_air",
-  "minecraft:water",
-  "minecraft:lava",
-  "minecraft:grass_block",
-  "minecraft:dirt",
-  "minecraft:dirt_path",
-  "minecraft:oak_leaves",
-  "minecraft:birch_leaves",
-  "minecraft:spruce_leaves",
-  "minecraft:short_grass",
-  "minecraft:tall_grass",
-]);
-
-/**
- * Builds a compact one-line summary of the most common nearby non-terrain
- * blocks, or `undefined` when no relevant blocks are present.
- */
-function buildNearbyContextSummary(request: ChatCommandRequest): string | undefined {
-  const counts = new Map<string, number>();
-  for (const block of request.localContext.nearbyBlocks) {
-    const type = block.type.toLowerCase().trim();
-    if (CONTEXT_SKIP_BLOCKS.has(type)) {
-      continue;
-    }
-    counts.set(type, (counts.get(type) ?? 0) + 1);
-  }
-
-  if (counts.size === 0) {
-    return undefined;
-  }
-
-  const top = [...counts.entries()]
-    .sort(([, a], [, b]) => b - a)
-    .slice(0, 5)
-    .map(([block, count]) => `${block.replace("minecraft:", "")} ×${count}`)
-    .join(", ");
-
-  return `Nearby materials: ${top}.`;
-}
 
 /**
  * Summarizes the last executed plan as a single readable line for prompts and
@@ -128,49 +76,6 @@ export function summarizeLastBuiltPlanForDesign(plan: Plan): string {
   return parts.join(" — ");
 }
 
-/**
- * Block-type counts near the player for the design phase (no coordinates).
- */
-function buildNearbyMaterialsDetailForDesign(request: ChatCommandRequest): string | undefined {
-  const counts = new Map<string, number>();
-  for (const block of request.localContext.nearbyBlocks) {
-    const type = block.type.toLowerCase().trim();
-    counts.set(type, (counts.get(type) ?? 0) + 1);
-  }
-  if (counts.size === 0) {
-    return undefined;
-  }
-  const lines = [...counts.entries()]
-    .sort(([, a], [, b]) => b - a)
-    .map(([t, c]) => `  ${t} ×${c}`);
-  return ["NEARBY BLOCK TYPES (sampled; no coordinates):", ...lines].join("\n");
-}
-
-
-// ---------------------------------------------------------------------------
-// Placement card — pre-computed reference points so the AI never has to do
-// trig from raw yaw/lookVector values.
-// ---------------------------------------------------------------------------
-
-/**
- * Computes a set of concrete anchor coordinates from the player's position and
- * look vector and formats them as a compact placement reference card.
- *
- * The horizontal look direction is derived from lookVector.x/z (ignoring Y so
- * steep pitch angles don't skew the result). All Y values are at player feet
- * unless noted.
- */
-function buildPlacementCard(request: ChatCommandRequest): string {
-  const { position } = request.player;
-  const px = Math.round(position.x);
-  const py = Math.round(position.y);
-  const pz = Math.round(position.z);
-
-  return [
-    `Player at x=${px} y=${py} z=${pz}. Avoid y=${py} and y=${py + 1} (player body).`,
-  ].join("\n");
-}
-
 /** Blocks treated as empty for “solid ground below anchor” probing. */
 const AIR_OR_FLUID_FOR_GROUND_PROBE = new Set([
   "minecraft:air",
@@ -215,14 +120,15 @@ export function hasSolidGroundBelowResolvedAnchor(
 /**
  * User message for the **build** step (layer map): volume from merged placement,
  * design guide from step 2, optional terrain hint — no world coordinates.
+ * Player chat text is not repeated here; it is reflected in the design step output.
  *
- * @param request Original chat request (message, recentMessages).
+ * @param _request Reserved for API symmetry with other builders (placement/design include request).
  * @param mergedPlacement Locked placement with `desiredSize` from the design step.
  * @param design Validated design_choice (prose + materials).
  * @param terrainGroundHint When true, mention solid ground below the footprint.
  */
 export function buildPlanPhaseUserContent(
-  request: ChatCommandRequest,
+  _request: ChatCommandRequest,
   mergedPlacement: Placement,
   design: DesignChoiceStep,
   terrainGroundHint: boolean,
@@ -254,7 +160,6 @@ export function buildPlanPhaseUserContent(
       "",
     );
   }
-  lines.push(`Build request: ${request.message}`);
   return lines.join("\n");
 }
 
@@ -263,7 +168,7 @@ export function buildPlanPhaseUserContent(
  * coordinates in the user message; placement is merged server-side for execution.
  *
  * @param messages Mutable message list (cleared and repopulated).
- * @param request Chat request for hints and user text.
+ * @param request Chat request (e.g. for system prompt symmetry; build user text is volume + design only).
  * @param mergedPlacement Placement from step 1 plus `desiredSize` from step 2.
  * @param design Validated design_choice from step 2.
  * @param terrainGroundHint When true, user text mentions solid ground below the footprint.
@@ -309,215 +214,131 @@ export function resetMessagesForDesignPhase(
  * User text for the design phase (no placement card, no coordinates).
  *
  * @param request Current plugin request.
- * @param lastPlan Optional prior successful plan.
+ * @param _lastPlan Reserved for follow-up context if design prompts gain history later.
  */
 export function buildDesignPhaseUserContent(
   request: ChatCommandRequest,
-  lastPlan: Plan | undefined,
+  _lastPlan: Plan | undefined,
 ): string {
   return request.message;
 }
-
-// ---------------------------------------------------------------------------
-// Schema guide (embedded in system prompt so AI stays aligned with Zod types)
-// ---------------------------------------------------------------------------
-
-const PLAN_SCHEMA_GUIDE = {
-  intent: "string (snake_case label, e.g. build_bridge; use unknown when unclear)",
-  targetWorld: "string",
-  targetRegion: {
-    world: "string",
-    min: { x: 0, y: 0, z: 0 },
-    max: { x: 0, y: 0, z: 0 },
-  },
-  assumptions: ["string"],
-  passes: [
-    {
-      name: "string",
-      goal: "string",
-      layerMap: {
-        layers: ["SSS\nSSS\nSSS", "SSS\nS_S\nSSS", "SSS\nSSS\nSSS"],
-        palette: {
-          S: "minecraft:stone",
-        },
-      },
-    },
-  ],
-  reply: "short player-facing confirmation text",
-};
-
-const DESIGN_STEP_GUIDE = {
-  build: {
-    action: "build",
-    plan: "<<Plan object as above>>",
-    verifyRegion: "optional Region — post-build scan for a polish pass",
-  },
-};
-
-/** Example shape for phase 2 — must match {@link DesignChoiceStepSchema}. */
-const DESIGN_CHOICE_GUIDE = {
-  action: "design_choice",
-  designSummary: "one-line aesthetic / structure description",
-  builderGuide: "prose instructions for the layer-map builder (step 3)",
-  desiredSize: { width: "INTEGER", depth: "INTEGER", height: "INTEGER" },
-  verticalReference: "on_ground|under_ground|flying",
-  recommendedMaterials: ["LIST"],
-};
-
-/** Example shape for phase 1 — must match {@link PlacementChoiceStepSchema} (flat `action`, object `placement`). */
-const PLACEMENT_CHOICE_GUIDE = {
-  ref: "player",
-  frame: "player",
-  offset: {
-    F: 10,
-    R: 0,
-    N: 0,
-    E: 0,
-    UP: 0,
-  },
-};
 
 // ---------------------------------------------------------------------------
 // System prompts — step 1: position; step 2: design; step 3: layer map / plan
+// Edit each block as one document; JSON examples use ${JSON.stringify(...)}.
 // ---------------------------------------------------------------------------
 
-const JSON_DISCIPLINE = [
-  "Reply with exactly one JSON object per turn. No markdown fences; no prose outside JSON.",
-].join("\n");
-
-/** Placement rules — step 1 (`placement_choice`) only; size is chosen in step 2 (design). */
-const PLACEMENT_RULES_COMPACT = [
-  "Return placement intent only as {ref, frame, offset}. No action, no size, no plan, no materials, no layerMap.",
-  "ref: player | focus.",
-  "frame selects horizontal axes: player => F,R; world => N,E. Always include UP.",
-  "Signed axis meanings: +F forward, -F back, +R right, -R left, +N north, -N south, +E east, -E west, +UP up, -UP down.",
-  "Always return all keys: offset {F,R,N,E,UP} as integers. If frame=player set N=0,E=0. If frame=world set F=0,R=0.",
-  "Default when vague: {ref:'player', frame:'player', offset:{F:10,R:0,N:0,E:0,UP:0}}.",
-  "Scale words: close 3-10, default 10-20, far/long way 20-50, very long way 50+.",
-  "'Up in the sky' means UP >= 20.",
-  "Phrase hints: 'in front of me' => frame:player with +F; 'to my left' => frame:player with -R; '10 blocks NE' => frame:world with +N and +E; 'here' or 'on this block' => ref:focus.",
-].join("\n");
-
-
-const LAYER_MAP_AND_PLAN_COMPACT = [
-  "BUILDS ARE LAYER MAPS ONLY: each pass has `layerMap` (layers + palette). No legacy shape ops.",
-  "layers[] = Y slices bottom→top (first layer = ground / lowest Y); within a slice, rows = +Z, chars = +X. palette maps char → minecraft:id. ` ` = leave block; `_` = air.",
-  "Max 32×32 footprint, 48 tall. Prefer one full-structure pass; second pass only for polish. Straight silhouettes unless the player asked for round.",
-  "Real 3D needs many slices — one slice = a flat slab. verifyRegion: optional box ~2 blocks past the build for inspection.",
-].join("\n");
-
-/** Builder step: palette rules only (full material list was design phase). */
-const BUILDER_PALETTE_RULES_COMPACT = [
-  "=== PALETTE ===",
-  "Use vanilla `minecraft:` block ids in palettes. Prefer ids from the design step's recommendedMaterials.",
-  "Unknown or non-vanilla ids may be replaced with minecraft:stone at execution (the player is warned).",
-  "=== CONSTRAINTS ===",
-  "Do not invent world coordinates. Layer map must match the given width×depth×height.",
-].join("\n");
-
 /**
- * Step 1 — position / anchor only (no size, no materials, no layer map).
+ * Step 1 — placement / anchor only (no size, no materials, no layer map).
+ *
+ * @param _request Reserved for API symmetry with other phase builders.
  */
-const PLACEMENT_PHASE_SYSTEM_PROMPT = [
-  JSON_DISCIPLINE,
-  "",
-  "Infer placement intent from player text and nearby context.",
-  "",
-  `Return this JSON shape with literal enum values (choose one): ${JSON.stringify(
-    PLACEMENT_CHOICE_GUIDE,
-  )}.`,
-  "",
-  PLACEMENT_RULES_COMPACT,
-].join("\n");
+export function buildPlacementPhaseSystemContent(_request: ChatCommandRequest): string {
+  return `Reply with exactly one JSON object per turn. No markdown fences; no prose outside JSON.
+
+Infer placement intent from player text and nearby context.
+
+Return this JSON shape with literal enum values (choose one): ${JSON.stringify({
+    ref: "player",
+    frame: "player",
+    offset: {
+      F: 10,
+      R: 0,
+      N: 0,
+      E: 0,
+      UP: 0,
+    },
+  })}.
+
+Return placement intent only as {ref, frame, offset}. No action, no size, no plan, no materials, no layerMap.
+ref: player | focus.
+frame selects horizontal axes: player => F,R; world => N,E. Always include UP.
+Signed axis meanings: +F forward, -F back, +R right, -R left, +N north, -N south, +E east, -E west, +UP up, -UP down.
+Always return all keys: offset {F,R,N,E,UP} as integers. If frame=player set N=0,E=0. If frame=world set F=0,R=0.
+Default when vague: {ref:'player', frame:'player', offset:{F:10,R:0,N:0,E:0,UP:0}}.
+Scale words: close 3-10, default 10-20, far/long way 20-50, very long way 50+.
+'Up in the sky' means UP >= 20.
+Phrase hints: 'in front of me' => frame:player with +F; 'to my left' => frame:player with -R; '10 blocks NE' => frame:world with +N and +E; 'here' or 'on this block' => ref:focus.`;
+}
 
 /**
  * Step 2 — design: materials, prose guide, footprint size (only step with full material context).
+ *
+ * @param _request Reserved for API symmetry with other phase builders.
  */
-const DESIGN_PHASE_SYSTEM_PROMPT = [
-  JSON_DISCIPLINE,
-  "",
-  `Return DESIGN_CHOICE ${JSON.stringify(DESIGN_CHOICE_GUIDE)}.`,
-  "",
-  "Scale: 1 voxel = 1 m³.",
-  "",
-  "verticalReference options:",
-  "  on_ground = normal buildings sitting on ground (anchor at base; structure goes up)",
-  "  under_ground = excavations like trenches/pools (anchor at ground level; structure goes down)",
-  "  flying = floating builds in air (anchor at center; not tied to ground)",
-  "",
-  buildDesignPhaseMaterialRegistrySection(),
-].join("\n");
+export function buildDesignPhaseSystemContent(_request: ChatCommandRequest): string {
+  return `Reply with exactly one JSON object per turn. No markdown fences; no prose outside JSON.
+
+Return DESIGN_CHOICE ${JSON.stringify({
+    action: "design_choice",
+    designSummary: "one-line aesthetic / structure description",
+    builderGuide: "prose instructions for the layer-map builder (step 3)",
+    desiredSize: { width: "INTEGER", depth: "INTEGER", height: "INTEGER" },
+    verticalReference: "on_ground|under_ground|flying",
+    recommendedMaterials: ["LIST"],
+  })}.
+
+Scale: 1 voxel = 1 m³.
+
+verticalReference options:
+  on_ground = normal buildings sitting on ground (anchor at base; structure goes up)
+  under_ground = excavations like trenches/pools (anchor at ground level; structure goes down)
+  flying = floating builds in air (anchor at center; not tied to ground)
+
+${buildDesignPhaseMaterialRegistrySection()}`;
+}
 
 /**
  * Step 3 — layer map / plan; volume and materials come from the user message (design + merged placement).
- */
-const PLAN_PHASE_SYSTEM_PROMPT = [
-  JSON_DISCIPLINE,
-  "",
-  "Step 3 of 3: output the build plan only. The user message gives volume, design guide, and recommended materials — do not send placement or placement_choice.",
-  "",
-  `Return build ${JSON.stringify(DESIGN_STEP_GUIDE.build)}.`,
-  "Layer map must match the given width×depth×height; align content in local Y using the given vertical anchor.",
-  "",
-  LAYER_MAP_AND_PLAN_COMPACT,
-  "",
-  "=== PLAN SCHEMA ===",
-  JSON.stringify(PLAN_SCHEMA_GUIDE, null, 2),
-  "",
-  BUILDER_PALETTE_RULES_COMPACT,
-].join("\n");
-
-/**
- * Builds the shared user prompt body (placement card, history, JSON payload) for
- * placement-phase turns.
  *
- * @param request Current plugin request.
- * @param lastPlan Optional prior successful plan.
- * @param introLine First paragraph describing this turn's task.
+ * @param _request Reserved for API symmetry with other phase builders.
  */
-function buildSharedUserContent(
-  request: ChatCommandRequest,
-  lastPlan: Plan | undefined,
-  introLine: string,
-  options?: { includeNearbyMaterials?: boolean },
-): string {
-  return request.message;
-}
+export function buildPlanPhaseSystemContent(_request: ChatCommandRequest): string {
+  const cottageLayerMap = {
+    layers: [
+      ["PPPPPPP", "PPPPPPP", "PPPPPPP", "PPPPPPP", "PPPPPPP", "PPPPPPP"].join("\n"),
+      ["CCC_CCC", "C_____C", "C_____C", "C_____C", "C_____C", "CCCCCCC"].join("\n"),
+      ["CCC_CCC", "C_____C", "G_____G", "G_____G", "C_____C", "CCGGGCC"].join("\n"),
+      ["CCCCCCC", "C_____C", "G_____G", "G_____G", "C_____C", "CCGGGCC"].join("\n"),
+      ["CCCCCCC", "C_____C", "C_____C", "C_____C", "C_____C", "CCCCCCC"].join("\n"),
+      ["PPPPPPP", "PPPPPPP", "PPPPPPP", "PPPPPPP", "PPPPPPP", "PPPPPPP"].join("\n"),
+      ["       ", " PPPPP ", " PPPPP ", " PPPPP ", " PPPPP ", "       "].join("\n"),
+      ["       ", "       ", "  PPP  ", "  PPP  ", "       ", "       "].join("\n"),
+    ],
+    palette: {
+      P: "minecraft:oak_planks",
+      C: "minecraft:cobblestone",
+      G: "minecraft:glass",
+      _: "minecraft:air",
+    },
+  };
 
-/**
- * Builds the system message for step 1 — placement only (anchor; no size).
- *
- * @param request Used for optional prompt hints (same keywords as monolithic).
- */
-export function buildPlacementPhaseSystemContent(request: ChatCommandRequest): string {
-  const hintSection = formatPromptHintsSection(collectPromptHints(request));
-  return hintSection !== undefined
-    ? `${PLACEMENT_PHASE_SYSTEM_PROMPT}\n\n${hintSection}`
-    : PLACEMENT_PHASE_SYSTEM_PROMPT;
-}
+  const minimalLayerMapExample = {
+    layers: ["SSS\nSSS\nSSS", "SSS\nS_S\nSSS", "SSS\nSSS\nSSS"],
+    palette: { S: "minecraft:stone", _: "minecraft:air" },
+  };
 
-/**
- * Builds the system message for step 2 — design (materials + size + prose for builder).
- *
- * @param request Used for optional prompt hints (see `promptHints.ts`).
- */
-export function buildDesignPhaseSystemContent(request: ChatCommandRequest): string {
-  const hintSection = formatPromptHintsSection(collectPromptHints(request));
-  return hintSection !== undefined
-    ? `${DESIGN_PHASE_SYSTEM_PROMPT}\n\n${hintSection}`
-    : DESIGN_PHASE_SYSTEM_PROMPT;
-}
+  return `Reply with exactly one JSON object per turn. No markdown fences; no prose outside JSON.
 
-/**
- * Builds the system message for step 3 — layer map / plan (build the thing).
- *
- * @param request Used for optional prompt hints (see `promptHints.ts`).
- */
-export function buildPlanPhaseSystemContent(request: ChatCommandRequest): string {
-  const hintSection = formatPromptHintsSection(collectPromptHints(request));
-  return hintSection !== undefined
-    ? `${PLAN_PHASE_SYSTEM_PROMPT}\n\n${hintSection}`
-    : PLAN_PHASE_SYSTEM_PROMPT;
+Step 3 of 3 — layer map: placement and design are locked. Return only the voxel grid below — no action field, no passes array, no world coordinates.
+
+You are an expert Minecraft builder. Think in 3D first, then output JSON. The layer map serializes the model you already decided.
+
+Fill the given width×depth×height volume. \`layers\`: bottom→top Y (first string = lowest Y). Within each string, rows = +Z, characters = +X. \`palette\`: one character → one \`minecraft:\` id. Space = leave unchanged; \`_\` = air. Max footprint 32×32, height 48.
+
+Your only output is \`layers\` (array of newline-separated slice strings) and \`palette\` (character → block id). The server turns that into the executable plan.
+
+=== MINIMAL RESPONSE (only these two keys) ===
+${JSON.stringify(minimalLayerMapExample, null, 2)}
+
+=== WORKED EXAMPLE (layer map → cottage-shaped build) ===
+Illustrative only — adapt to the design step. 7×6 footprint, 7 Y slices. Rows = +Z, chars = +X.
+Palette: P=oak_planks, C=cobblestone, G=glass, _=air. space=leave cell unchanged.
+
+${JSON.stringify(cottageLayerMap, null, 2)}
+
+Use vanilla \`minecraft:\` ids in palettes; prefer the design step's recommendedMaterials. Unknown ids may become minecraft:stone at execution.
+Filled voxels must match the given width×depth×height. Do not invent world coordinates.`;
 }
 
 /**
@@ -542,9 +363,23 @@ export function buildPlacementPhaseMessages(
   ];
 }
 
-// ---------------------------------------------------------------------------
-// Public API
-// ---------------------------------------------------------------------------
+/**
+ * Builds the shared user prompt body for placement-phase turns (currently the raw
+ * player message only).
+ *
+ * @param request Current plugin request.
+ * @param _lastPlan Reserved for follow-up context if placement prompts gain history later.
+ * @param _introLine Reserved for richer placement user text if reintroduced.
+ * @param _options Reserved for optional sections (e.g. nearby materials).
+ */
+function buildSharedUserContent(
+  request: ChatCommandRequest,
+  _lastPlan: Plan | undefined,
+  _introLine: string,
+  _options?: { includeNearbyMaterials?: boolean },
+): string {
+  return request.message;
+}
 
 /**
  * Appends a post-build verification pair to an existing message history.
@@ -573,7 +408,6 @@ export function appendVerifyFulfillment(
       "",
       "If the result looks correct, return a minimal polish pass or a short reply-only build if nothing should change.",
       "If you see issues to fix, return a build response with a targeted polish plan.",
-      "Do NOT include verifyRegion this time.",
     ].join("\n"),
   });
 }

@@ -85,7 +85,7 @@ describe("Azure baseline replay fixtures", () => {
     if (result.outcome !== "plan") {
       return;
     }
-    expect(result.plan.intent).toBe("build_cylinder");
+    expect(result.plan.intent).toBe("unknown");
     expect(result.placement.ref).toBe("player");
     expect(result.placement.frame).toBe("player");
     expect(result.placement.offset.F).toBe(8);

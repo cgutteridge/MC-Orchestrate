@@ -28,7 +28,13 @@ import {
 } from "./schema.js";
 import type { WorldReader } from "../world/worldReader.js";
 import { aiPlanFailureMessage } from "./playerRefusalMessages.js";
-import { deriveLayerMapLocalBounds, normalizeLayerMap, type LayerMapClip } from "./layerMap.js";
+import {
+  coerceAssistantLayerMapToLoosePlanCandidate,
+  deriveLayerMapLocalBounds,
+  looksLikeBareLayerMapPayload,
+  normalizeLayerMap,
+  type LayerMapClip,
+} from "./layerMap.js";
 
 /** Default when {@link PlacementThenBuildOptions.maxSteps} is omitted (orchestrator passes config). */
 export const DEFAULT_AI_PLAN_MAX_STEPS = 10;
@@ -73,7 +79,7 @@ export type PlacementThenBuildOptions = {
  *
  * 1. **Placement** — position intent (anchor only; no size).
  * 2. **Design** — `design_choice` (only step with full material-registry context).
- * 3. **Build** — `build` with `plan`; server merges placement from step 1 with size from step 2.
+ * 3. **Build** — model returns only `layers` + `palette` (or legacy `action`/`plan`/`passes`); server merges placement from step 1 with size from step 2.
  * 4. Repairs and validates the plan against {@link PlanSchema}.
  * 5. Returns `rejected` after too many AI calls or two consecutive parse/validation failures.
  *
@@ -256,7 +262,7 @@ export async function runPlacementThenBuild(
           {
             role: "user",
             content:
-              'Placement and design are locked. Return action: "build" with a "plan" field only (omit placement).',
+              "Placement and design are locked. Return only a JSON object with \"layers\" and \"palette\" for the layer map (omit placement).",
           },
         );
         continue;
@@ -372,7 +378,7 @@ export async function runPlacementThenBuild(
           {
             role: "user",
             content:
-              'Design is already locked. Return action: "build" with a "plan" field only (omit placement).',
+              'Design is already locked. Return only JSON with "layers" and "palette" for the layer map.',
           },
         );
         continue;
@@ -476,7 +482,9 @@ export async function runPlacementThenBuild(
     // bare Plan (no action) rejected in placement or design phase
     if ((!splitPlanPlacement || !lockedDesign) && action !== "build") {
       const looksLikePlan =
-        typeof looseParsed.intent === "string" || Array.isArray(looseParsed.passes);
+        typeof looseParsed.intent === "string" ||
+        Array.isArray(looseParsed.passes) ||
+        looksLikeBareLayerMapPayload(looseParsed);
       if (looksLikePlan) {
         consecutiveParseFailures++;
         await dl?.line(
@@ -523,11 +531,13 @@ export async function runPlacementThenBuild(
     }
 
     // build or bare Plan — extract plan candidate and repair.
-    // "build" wraps the plan under looseParsed.plan; bare Plans are at the top level.
-    const planCandidate: Record<string, unknown> =
+    // Legacy: `action: "build"` + `plan`; bare Plans at top level; step 3 may return only `layers` + `palette`.
+    let planCandidate: Record<string, unknown> =
       action === "build" && isRecord(looseParsed.plan)
         ? (looseParsed.plan as Record<string, unknown>)
         : looseParsed;
+
+    planCandidate = coerceAssistantLayerMapToLoosePlanCandidate(planCandidate);
 
     const mergedPlacement = mergePlacementWithDesign(splitPlanPlacement, lockedDesign);
 
@@ -565,7 +575,7 @@ export async function runPlacementThenBuild(
         { role: "assistant", content: jsonText },
         {
           role: "user",
-          content: `The plan failed validation: ${planResult.error.message.slice(0, 300)}. Fix the plan and return a build response.`,
+          content: `The plan failed validation: ${planResult.error.message.slice(0, 300)}. Fix the layer map JSON (layers + palette only).`,
         },
       );
       continue;
@@ -671,10 +681,12 @@ export async function runVerifyPass(
   const looseParsed = parseJsonStrict<Record<string, unknown>>(jsonText);
   const action = typeof looseParsed.action === "string" ? looseParsed.action : undefined;
 
-  const planCandidate: Record<string, unknown> =
+  let planCandidate: Record<string, unknown> =
     action === "build" && isRecord(looseParsed.plan)
       ? (looseParsed.plan as Record<string, unknown>)
       : looseParsed;
+
+  planCandidate = coerceAssistantLayerMapToLoosePlanCandidate(planCandidate);
 
   const repairedPlan = repairLoosePlanCandidate(planCandidate, request);
   const planResult = PlanSchema.safeParse(repairedPlan);
@@ -1195,6 +1207,9 @@ function summarizeLooseParsed(loose: Record<string, unknown>): string {
   }
   if (typeof loose.intent === "string" || Array.isArray(loose.passes)) {
     return "bare_plan";
+  }
+  if (looksLikeBareLayerMapPayload(loose)) {
+    return "layer_map_only";
   }
   return "unknown_shape";
 }

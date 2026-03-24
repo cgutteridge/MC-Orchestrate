@@ -423,8 +423,8 @@ describe("Orchestrator", () => {
   });
 
   it("keeps the last built structure context across non-structure commands", async () => {
-    // arrange — provider returns different plans based on the current message field.
-    let towerBuilt = false;
+    // arrange — provider returns different plans per chat command (count build-phase turns).
+    let buildPhaseTurn = 0;
     const provider: ChatProvider = {
       name: "test",
       async chat(messages) {
@@ -435,13 +435,9 @@ describe("Orchestrator", () => {
         if (isDesignPhaseSystem(sys)) {
           return designChoiceStep();
         }
-        // Placement phase embeds `message` in JSON; plan phase uses `Build request:`.
-        const userContent = messages.find((m) => m.role === "user")?.content ?? "";
-        const buildRequestMatch = /Build request:\s*([^\n]+)/.exec(userContent);
-        const jsonMessageMatch = /"message"\s*:\s*"([^"]*)"/.exec(userContent);
-        const currentMessage = (buildRequestMatch?.[1] ?? jsonMessageMatch?.[1] ?? "").trim();
+        buildPhaseTurn++;
 
-        if (currentMessage.includes("delete this tree")) {
+        if (buildPhaseTurn === 2) {
           const air3 = "___\n___\n___";
           return buildStep({
             intent: "remove_tree",
@@ -465,7 +461,7 @@ describe("Orchestrator", () => {
             reply: "Removing that tree.",
           });
         }
-        if (currentMessage.includes("taller") && towerBuilt) {
+        if (buildPhaseTurn === 3) {
           return buildStep({
             intent: "extend_tower",
             targetWorld: "world",
@@ -488,7 +484,6 @@ describe("Orchestrator", () => {
             reply: "Extended by 2 blocks.",
           });
         }
-        towerBuilt = true;
         return buildStep({
           intent: "build_tower",
           targetWorld: "world",
@@ -611,8 +606,8 @@ describe("Orchestrator", () => {
       recentMessages: [],
     });
 
-    // Orchestrator merges prior turns into `recentMessages` for the planner, but
-    // plan-phase user text is the current `Build request:` line only.
-    expect(seenUserContent).toContain("Build request: make it bigger");
+    // Plan-phase user text carries volume + design fields, not a duplicate player line.
+    expect(seenUserContent).toContain("Volume:");
+    expect(seenUserContent).toContain("DESIGN SUMMARY");
   });
 });

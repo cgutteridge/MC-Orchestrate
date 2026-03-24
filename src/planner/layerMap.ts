@@ -158,7 +158,7 @@ export function normalizeLayerMap(layerMap: LayerMapData, clip?: LayerMapClip): 
   }
 
   /** Truncate or pad layers to targetLayerCount; each slice to maxD × maxW. */
-  let working = rectangularLayers.slice(0, targetLayerCount);
+  const working = rectangularLayers.slice(0, targetLayerCount);
   while (working.length < targetLayerCount) {
     working.push(Array.from({ length: intrinsicD }, () => " ".repeat(intrinsicW)));
   }
@@ -404,4 +404,96 @@ function splitLayerRows(layer: string): string[] {
   const lines = layer.split(/\r?\n/);
   const trimmed = lines.filter((line, idx) => idx < lines.length - 1 || line.length > 0);
   return trimmed;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+/**
+ * Returns true when `value` looks like a bare step-3 {@link LayerMapData} payload
+ * (`layers` + `palette` only), with no `passes` wrapper.
+ *
+ * @param value Parsed JSON object from the assistant.
+ */
+export function looksLikeBareLayerMapPayload(value: Record<string, unknown>): boolean {
+  return (
+    Array.isArray(value.layers) &&
+    value.layers.length > 0 &&
+    typeof value.layers[0] === "string" &&
+    isRecord(value.palette)
+  );
+}
+
+/**
+ * Pulls {@link LayerMapData} from common assistant shapes: top-level `layers`/`palette`,
+ * nested `layerMap`, or legacy `passes[0].layerMap`.
+ *
+ * @param value Parsed JSON object (possibly a loose plan or build wrapper).
+ * @returns Layer map data when found, otherwise `undefined`.
+ */
+export function tryExtractLayerMapData(value: Record<string, unknown>): LayerMapData | undefined {
+  if (looksLikeBareLayerMapPayload(value)) {
+    return {
+      layers: value.layers as string[],
+      palette: value.palette as Record<string, string>,
+    };
+  }
+  if (typeof value.action === "string" && value.action === "build" && isRecord(value.plan)) {
+    return tryExtractLayerMapData(value.plan);
+  }
+  if (isRecord(value.plan) && looksLikeBareLayerMapPayload(value.plan)) {
+    return tryExtractLayerMapData(value.plan);
+  }
+  if (Array.isArray(value.passes) && value.passes.length > 0) {
+    const first = value.passes[0];
+    if (isRecord(first) && isRecord(first.layerMap) && Array.isArray(first.layerMap.layers)) {
+      return {
+        layers: first.layerMap.layers as string[],
+        palette: isRecord(first.layerMap.palette) ? (first.layerMap.palette as Record<string, string>) : {},
+      };
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Converts a bare layer-map object or `{ layerMap: {...} }` into a loose plan-shaped
+ * object with a single synthetic `passes` entry for the planner’s repair step.
+ * No-op when `passes` is already an array.
+ *
+ * @param candidate Parsed plan object (possibly missing `passes`).
+ */
+export function coerceAssistantLayerMapToLoosePlanCandidate(
+  candidate: Record<string, unknown>,
+): Record<string, unknown> {
+  if (Array.isArray(candidate.passes)) {
+    return candidate;
+  }
+  const layerMap = extractLayerMapFields(candidate);
+  if (!layerMap) {
+    return candidate;
+  }
+  const { layers: _omitL, palette: _omitP, layerMap: _omitLm, ...rest } = candidate;
+  return {
+    ...rest,
+    passes: [{ layerMap }],
+  };
+}
+
+function extractLayerMapFields(obj: Record<string, unknown>): LayerMapData | undefined {
+  if (Array.isArray(obj.layers) && isRecord(obj.palette)) {
+    return {
+      layers: obj.layers as string[],
+      palette: obj.palette as Record<string, string>,
+    };
+  }
+  if (isRecord(obj.layerMap) && Array.isArray((obj.layerMap as { layers: unknown }).layers)) {
+    const lm = obj.layerMap as LayerMapData;
+    return {
+      layers: lm.layers,
+      palette: isRecord(lm.palette) ? lm.palette : {},
+    };
+  }
+  return undefined;
 }

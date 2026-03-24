@@ -1,7 +1,7 @@
 /**
  * Shared fixtures and output helpers for AI smoke scripts (`smoke-ai-*`).
  */
-import type { LayerMapData } from "../../src/planner/layerMap.js";
+import { tryExtractLayerMapData, type LayerMapData } from "../../src/planner/layerMap.js";
 import {
   DesignChoiceStepSchema,
   PlacementPositionOnlySchema,
@@ -181,7 +181,7 @@ export function formatLayerMapForDisplay(layerMap: LayerMapData): string {
 }
 
 /**
- * Prints a layer-map preview from assistant text (build action or bare plan).
+ * Prints a layer-map preview from assistant text (bare `layers`/`palette`, legacy `plan`, or `passes`).
  */
 export function printLayerMapPreviewFromAssistantText(raw: string): void {
   const jsonText = extractJsonValue(raw);
@@ -196,31 +196,14 @@ export function printLayerMapPreviewFromAssistantText(raw: string): void {
     process.stdout.write("\n--- Assistant JSON was not parseable ---\n");
     return;
   }
-  const planRoot =
-    isRecord(parsed) && parsed.action === "build" && isRecord(parsed.plan) ? parsed.plan : parsed;
-  if (!isRecord(planRoot)) {
-    process.stdout.write("\n--- No plan object in reply ---\n");
+  if (!isRecord(parsed)) {
+    process.stdout.write("\n--- Assistant JSON was not an object ---\n");
     return;
   }
-  const passes = planRoot.passes;
-  if (!Array.isArray(passes) || passes.length === 0) {
-    process.stdout.write("\n--- No passes in plan ---\n");
+  const lm = tryExtractLayerMapData(parsed);
+  if (!lm) {
+    process.stdout.write("\n--- No layers/palette in reply ---\n");
     return;
   }
-  const firstPass = passes[0];
-  if (!isRecord(firstPass)) {
-    return;
-  }
-
-  const layerMapRaw = firstPass.layerMap;
-  if (isRecord(layerMapRaw) && Array.isArray(layerMapRaw.layers)) {
-    const lm: LayerMapData = {
-      layers: layerMapRaw.layers as string[],
-      palette: isRecord(layerMapRaw.palette) ? (layerMapRaw.palette as Record<string, string>) : {},
-    };
-    process.stdout.write("\n" + formatLayerMapForDisplay(lm) + "\n");
-    return;
-  }
-
-  process.stdout.write("\n--- No layerMap on first pass (nothing to preview) ---\n");
+  process.stdout.write("\n" + formatLayerMapForDisplay(lm) + "\n");
 }
