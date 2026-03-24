@@ -43,16 +43,13 @@ const request: ChatCommandRequest = {
 };
 
 describe("buildPlacementPhaseMessages (step 1)", () => {
-  it("includes recent player prompts for clarification follow-ups", () => {
+  it("uses the raw player message as placement user text (history lives on request.recentMessages only)", () => {
     const messages = buildPlacementPhaseMessages(request);
 
-    expect(messages[0]?.content).toContain("lastBuiltStructureSummary");
+    expect(messages[1]?.content).toBe("five by five");
     const planSystem = buildPlanPhaseSystemContent(request);
     expect(planSystem).toContain("minecraft:stone");
     expect(planSystem).not.toContain("=== MATERIALS (design step only) ===");
-    expect(messages[1]?.content).toContain('"recentMessages"');
-    expect(messages[1]?.content).toContain("make me a cottage");
-    expect(messages[1]?.content).toContain("actually smaller");
   });
 
   it("does not inject nearby materials in placement (design phase owns material context)", () => {
@@ -88,7 +85,7 @@ describe("buildPlacementPhaseMessages (step 1)", () => {
     expect(messages[1]?.content).not.toContain("Nearby materials:");
   });
 
-  it("includes last built structure plan when provided", () => {
+  it("placement user text is unchanged when lastPlan is provided (lastPlan ignored for user string)", () => {
     const lastPlan = {
       intent: "build_tower",
       targetWorld: "world",
@@ -114,22 +111,17 @@ describe("buildPlacementPhaseMessages (step 1)", () => {
     const messages = buildPlacementPhaseMessages(request, lastPlan as never);
     const userContent = messages[1]?.content ?? "";
 
-    expect(userContent).toContain("LAST BUILD SUMMARY");
-    expect(userContent).toContain("intent=build_tower");
-    expect(userContent).toContain("lastBuiltStructureSummary");
-    expect(userContent).toContain("lastBuiltStructure");
+    expect(userContent).toBe("five by five");
   });
 
-  it("includes a conversation history block when recentMessages is non-empty", () => {
+  it("does not embed recentMessages in placement user text", () => {
     const messages = buildPlacementPhaseMessages({
       ...request,
       message: "make it taller",
       recentMessages: ["build a stone cottage"],
     });
     const userContent = messages[1]?.content ?? "";
-    expect(userContent).toContain("CONVERSATION HISTORY");
-    expect(userContent).toContain("build a stone cottage");
-    expect(userContent).toContain("make it taller");
+    expect(userContent).toBe("make it taller");
   });
 
   it("summarizeLastBuiltPlan describes intent, footprint, and pass goals", () => {
@@ -160,14 +152,6 @@ describe("buildPlacementPhaseMessages (step 1)", () => {
     expect(line).toContain("walls:");
   });
 
-  it("sets lastBuiltStructure and lastBuiltStructureSummary to null when no previous plan is provided", () => {
-    const messages = buildPlacementPhaseMessages(request);
-    const userContent = messages[1]?.content ?? "";
-
-    expect(userContent).toContain('"lastBuiltStructure": null');
-    expect(userContent).toContain('"lastBuiltStructureSummary": null');
-  });
-
   it("system prompt contains placement ref enum and offset vocabulary", () => {
     const messages = buildPlacementPhaseMessages(request);
     const system = messages[0]?.content ?? "";
@@ -180,12 +164,12 @@ describe("buildPlacementPhaseMessages (step 1)", () => {
     expect(system).toContain("N");
   });
 
-  it("system prompt instructs the model to treat recentMessages as conversation context", () => {
+  it("placement system prompt describes anchor JSON and directional hints", () => {
     const messages = buildPlacementPhaseMessages(request);
     const system = messages[0]?.content ?? "";
 
-    expect(system).toContain("CONVERSATION AND FOLLOW-UPS");
-    expect(system).toContain("lastBuiltStructureSummary");
+    expect(system).toContain("Infer placement intent");
+    expect(system).toContain("ref: player | focus");
   });
 
   it("system prompt maps common directional phrases to placement fields", () => {
@@ -199,21 +183,14 @@ describe("buildPlacementPhaseMessages (step 1)", () => {
     expect(system).toContain("Signed axis meanings");
   });
 
-  it("user message contains a pre-computed placement reference card", () => {
-    const messages = buildPlacementPhaseMessages(request);
-    const userContent = messages[1]?.content ?? "";
-    expect(userContent).toContain("PLACEMENT REFERENCE");
-  });
-
-  it("includes initialScanRegion when present", () => {
+  it("does not embed initialScanRegion in placement user text", () => {
     const messages = buildPlacementPhaseMessages({
       ...request,
       initialScanRegion: { minX: -7, minY: 61, minZ: -7, maxX: 7, maxY: 69, maxZ: 7 },
     });
     const userContent = messages[1]?.content ?? "";
 
-    expect(userContent).toContain("initialScanRegion");
-    expect(userContent).toContain("-7");
+    expect(userContent).toBe("five by five");
   });
 });
 

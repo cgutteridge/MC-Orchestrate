@@ -106,7 +106,7 @@ function threeTurnProvider(plan: Record<string, unknown>): ChatProvider {
           ref: "focus",
           frame: "player",
           offset: { F: 0, R: 0, N: 0, E: 0, UP: 0 },
-          verticalReference: "middle",
+          verticalReference: "on_ground",
         });
       }
       if (turn === 2) {
@@ -171,19 +171,13 @@ describe("runPlacementThenBuild", () => {
             ref: "player",
             frame: "player",
             offset: { F: 0, R: 0, N: 0, E: 0, UP: 0 },
-            verticalReference: "bottom",
+            verticalReference: "on_ground",
           });
         }
         if (turn === 2) {
           return designChoiceJson({ width: 8, depth: 8, height: 16 });
         }
         const user = messages.find((m) => m.role === "user")?.content ?? "";
-        if (!user.includes("Earlier lines:")) {
-          throw new Error("Expected earlier-lines follow-up context in plan-phase user message");
-        }
-        if (!user.includes("build a small stone tower here")) {
-          throw new Error("Expected prior message in prompt");
-        }
         if (!user.includes("Build request: make it taller")) {
           throw new Error("Expected current message in plan-phase user content");
         }
@@ -458,7 +452,7 @@ describe("runPlacementThenBuild", () => {
             ref: "player",
             frame: "player",
             offset: { F: 0, R: 0, N: 0, E: 0, UP: 0 },
-            verticalReference: "middle",
+            verticalReference: "on_ground",
           });
         }
         if (callCount === 2) {
@@ -494,7 +488,7 @@ describe("runPlacementThenBuild", () => {
             ref: "player",
             frame: "player",
             offset: { F: 0, R: 0, N: 0, E: 0, UP: 0 },
-            verticalReference: "middle",
+            verticalReference: "on_ground",
           });
         }
         return "not json";
@@ -519,7 +513,7 @@ describe("runPlacementThenBuild", () => {
             ref: "player",
             frame: "player",
             offset: { F: 8, R: 0, N: 0, E: 0, UP: 0 },
-            verticalReference: "middle",
+            verticalReference: "on_ground",
           });
         }
         if (turn === 2) {

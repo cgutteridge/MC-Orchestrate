@@ -55,7 +55,7 @@ const baselineRequest: ChatCommandRequest = {
 };
 
 describe("Azure baseline replay fixtures", () => {
-  it("replays v1 two-turn placement then build and returns a validated plan", async () => {
+  it("replays v1 three-turn placement, design, then build and returns a validated plan", async () => {
     const raw = JSON.parse(
       await readFile(
         path.join(

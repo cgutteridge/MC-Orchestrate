@@ -47,7 +47,7 @@ function placementChoiceStep(): string {
     ref: "player",
     frame: "player",
     offset: { F: 8, R: 0, N: 0, E: 0, UP: 0 },
-    verticalReference: "middle",
+    verticalReference: "on_ground",
   });
 }
 
@@ -69,7 +69,7 @@ function isPlacementPhaseSystem(sys: string): boolean {
 
 /** True when the system prompt is design phase. */
 function isDesignPhaseSystem(sys: string): boolean {
-  return sys.includes("design only");
+  return sys.includes("DESIGN_CHOICE");
 }
 
 /**
@@ -294,7 +294,7 @@ describe("Orchestrator", () => {
     const response = await orchestrator.handleChatCommand(request);
 
     expect(response.status).toBe("rejected");
-    expect(response.reply).toContain("more than two layer-map passes");
+    expect(response.reply).toContain("This plan has more than two layer-map passes");
     const batchSets = bridge.commands.filter((c) => c.kind === "batchSet");
     expect(batchSets).toEqual([]);
   });
@@ -611,8 +611,8 @@ describe("Orchestrator", () => {
       recentMessages: [],
     });
 
-    // The second call's user content should contain "build me a tower" in the
-    // recentMessages section, even though the plugin sent an empty list.
-    expect(seenUserContent).toContain("build me a tower");
+    // Orchestrator merges prior turns into `recentMessages` for the planner, but
+    // plan-phase user text is the current `Build request:` line only.
+    expect(seenUserContent).toContain("Build request: make it bigger");
   });
 });

@@ -45,13 +45,13 @@ function minimalRequest(overrides: Partial<ChatCommandRequest>): ChatCommandRequ
 }
 
 describe("buildPromptMatchText", () => {
-  it("joins message and recentMessages", () => {
+  it("uses the current message only for keyword matching", () => {
     const r = minimalRequest({
       message: "hello",
       recentMessages: ["moat", "tower"],
     });
-    expect(buildPromptMatchText(r)).toContain("hello");
-    expect(buildPromptMatchText(r)).toContain("moat");
+    expect(buildPromptMatchText(r)).toBe("hello");
+    expect(buildPromptMatchText(r)).not.toContain("moat");
   });
 });
 
@@ -90,8 +90,8 @@ describe("collectPromptHints", () => {
     expect(collectPromptHints(r, dup)).toEqual(["same"]);
   });
 
-  it("matches keywords in recentMessages", () => {
-    const r = minimalRequest({ message: "ok", recentMessages: ["use a moat"] });
+  it("matches keywords only in the current message, not recentMessages", () => {
+    const r = minimalRequest({ message: "use a moat here", recentMessages: ["ignored line"] });
     const hints = collectPromptHints(r);
     expect(hints.some((h) => h.includes("Moats and trenches"))).toBe(true);
   });
