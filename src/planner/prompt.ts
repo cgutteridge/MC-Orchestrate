@@ -315,22 +315,7 @@ export function buildDesignPhaseUserContent(
   request: ChatCommandRequest,
   lastPlan: Plan | undefined,
 ): string {
-  const lines: string[] = [
-    "Propose materials, aesthetic design, and footprint size (step 2 of 3). You do not know world position — only materials and what to build.",
-    "",
-  ];
-  const detail = buildNearbyMaterialsDetailForDesign(request);
-  if (detail) {
-    lines.push(detail, "");
-  }
-  if (lastPlan) {
-    lines.push(
-      "PRIOR BUILD (for follow-ups; no world coordinates):\n" + summarizeLastBuiltPlanForDesign(lastPlan),
-      "",
-    );
-  }
-  lines.push("LATEST PLAYER REQUEST:", request.message);
-  return lines.join("\n");
+  return request.message;
 }
 
 // ---------------------------------------------------------------------------
@@ -374,8 +359,8 @@ const DESIGN_CHOICE_GUIDE = {
   action: "design_choice",
   designSummary: "one-line aesthetic / structure description",
   builderGuide: "prose instructions for the layer-map builder (step 3)",
-  desiredSize: { width: 16, depth: 16, height: 12 },
-  recommendedMaterials: ["minecraft:oak_planks", "minecraft:glass", "minecraft:air"],
+  desiredSize: { width: "INTEGER", depth: "INTEGER", height: "INTEGER" },
+  recommendedMaterials: ["LIST"],
 };
 
 /** Example shape for phase 1 — must match {@link PlacementChoiceStepSchema} (flat `action`, object `placement`). */
@@ -450,9 +435,9 @@ const PLACEMENT_PHASE_SYSTEM_PROMPT = [
 const DESIGN_PHASE_SYSTEM_PROMPT = [
   JSON_DISCIPLINE,
   "",
-  "Step 2 of 3: design only. Do not output a Plan, layerMap, or placement_choice.",
-  "",
   `Return DESIGN_CHOICE ${JSON.stringify(DESIGN_CHOICE_GUIDE)}.`,
+  "",
+  "Scale: 1 voxel = 1 m³.",
   "",
   buildDesignPhaseMaterialRegistrySection(),
 ].join("\n");

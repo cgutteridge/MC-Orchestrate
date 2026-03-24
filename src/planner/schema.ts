@@ -196,9 +196,12 @@ export const DesignChoiceStepSchema = z.object({
   desiredSize: DesiredSizeSchema,
   /** Vanilla `minecraft:` block ids to prefer in palettes (step 3). */
   recommendedMaterials: z
-    .array(z.string().regex(/^minecraft:[a-z0-9_]+$/))
+    .array(z.string().min(1))
     .min(1)
-    .max(48),
+    .max(48)
+    .transform((arr) =>
+      arr.map((id) => (id.startsWith("minecraft:") ? id : `minecraft:${id}`)),
+    ),
 });
 
 export const BuildStepSchema = z.object({

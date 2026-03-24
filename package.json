@@ -10,6 +10,7 @@
     "smoke:ai": "tsx scripts/smoke-ai-connection.ts",
     "smoke:ai:prompt": "tsx scripts/smoke-ai-prompt.ts",
     "smoke:ai:placement": "tsx scripts/smoke-ai-placement.ts",
+    "smoke:ai:design": "tsx scripts/smoke-ai-design.ts",
     "smoke:ai:build": "tsx scripts/smoke-ai-build.ts",
     "build": "tsc -p tsconfig.json",
     "lint": "eslint .",
