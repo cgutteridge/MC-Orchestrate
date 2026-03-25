@@ -136,7 +136,7 @@ export function buildPlanPhaseUserContent(
   _request: ChatCommandRequest,
   mergedPlacement: Placement,
   design: DesignChoiceStep,
-  terrainGroundHint: boolean,
+  _terrainGroundHint: boolean,
 ): string {
   const ds = mergedPlacement.desiredSize;
   if (ds === undefined) {
@@ -144,27 +144,18 @@ export function buildPlanPhaseUserContent(
   }
 
   const lines: string[] = [
-    "Fill this volume with your layer map (local coordinates only; the server places it in the world). You do not know world position.",
+    "Create 3D minecraft model: ",    design.designSummary,
+
     "",
-    `Volume: ${ds.width} wide × ${ds.depth} deep × ${ds.height} tall (cells).`,
-    `Vertical anchor: ${mergedPlacement.verticalReference}`,
+    `Your model should fill the volume: ${ds.width} wide × ${ds.depth} deep × ${ds.height} tall (cells). Cells are about 1x1x1m`,
     "",
-    "DESIGN SUMMARY (from design step):",
-    design.designSummary,
-    "",
-    "BUILDER GUIDE (from design step):",
     design.builderGuide,
     "",
-    "Recommended materials (prefer these in palette chars):",
+    "Recommended materials (you may use other/extra vanilla minecraft blocks if you want):",
     design.recommendedMaterials.join(", "),
     "",
   ];
-  if (terrainGroundHint) {
-    lines.push(
-      "Terrain: sampled blocks show solid ground below this footprint — design resting on or tied to ground, not floating in empty sky.",
-      "",
-    );
-  }
+  
   return lines.join("\n");
 }
 
@@ -301,7 +292,7 @@ ${buildDesignPhaseMaterialRegistrySection()}`;
 export function buildPlanPhaseSystemContent(_request: ChatCommandRequest): string {
   const cottageLayerMap = {
     briefFulfilment:
-      "Cottage footprint: floor slab, cobble walls with door gap and glass on the street face, oak roof cap — matches a small enclosed build with daylight on the requested side.",
+      "Cottage footprint: floor slab, cobble walls with door gap and glass on the street face, oak roof cap — matches a small enclosed build.",
     layers: [
       ["PPPPPPP", "PPPPPPP", "PPPPPPP", "PPPPPPP", "PPPPPPP", "PPPPPPP"].join("\n"),
       ["CCC_CCC", "C_____C", "C_____C", "C_____C", "C_____C", "CCCCCCC"].join("\n"),
@@ -333,9 +324,7 @@ You are an expert Minecraft builder. Think in 3D first, then output JSON. The la
 
 Make your design fit snugly within the given width×depth×height volume. \`layers\`: bottom→top Y (first string = lowest Y). Within each string, rows = +Z, characters = +X. \`palette\`: one character → one \`minecraft:\` id. Space = leave unchanged; \`_\` = air. 
 
-Include \`briefFulfilment\`: a short prose explanation (one to four sentences) of how this layer diagram and palette implement the design-step guide and the player’s request — not a repeat of the design summary, but why this shape matches the brief.
-
-Your output must also include \`layers\` and \`palette\` as above.
+Include \`briefFulfilment\`: a short prose explanation (one to four sentences) of how this layer diagram and palette implement the design.
 
 === MINIMAL SHAPE (copy and expand; always include briefFulfilment) ===
 ${JSON.stringify(minimalLayerMapExample, null, 2)}
