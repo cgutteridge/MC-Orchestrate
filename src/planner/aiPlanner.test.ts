@@ -212,7 +212,7 @@ describe("runPlacementThenBuild", () => {
           return designChoiceJson({ width: 8, depth: 8, height: 16 });
         }
         const user = messages.find((m) => m.role === "user")?.content ?? "";
-        if (!user.includes("Fixture design") || !user.includes("Volume:")) {
+        if (!user.includes("Fixture design") || !user.includes("fill the volume")) {
           throw new Error("Expected plan-phase user message with design summary and volume");
         }
         return buildStep({

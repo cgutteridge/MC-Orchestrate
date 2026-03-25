@@ -608,7 +608,7 @@ describe("Orchestrator", () => {
     });
 
     // Plan-phase user text carries volume + design fields, not a duplicate player line.
-    expect(seenUserContent).toContain("Volume:");
-    expect(seenUserContent).toContain("DESIGN SUMMARY");
+    expect(seenUserContent).toContain("fill the volume");
+    expect(seenUserContent).toContain("Cottage");
   });
 });

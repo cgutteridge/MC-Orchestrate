@@ -3,7 +3,7 @@ import { BridgeServer } from "../bridge/bridgeServer.js";
 import type { BridgeCommand } from "../bridge/types.js";
 import type { ChatProvider } from "../services/ai/types.js";
 import type { ChatCommandRequest, ChatCommandResponse } from "../types/plugin.js";
-import { runPlacementThenBuild, runVerifyPass } from "../planner/aiPlanner.js";
+import { runPlacementThenBuild } from "../planner/aiPlanner.js";
 import { compilePlanToBridgeCommands } from "../planner/compilePlan.js";
 import type { PlacementBuildLogger } from "../planner/placementBuildLogger.js";
 import type { PlannerLogger } from "../planner/planLogger.js";
@@ -17,7 +17,6 @@ import {
 import { validatePlanSemantics } from "../planner/semantics.js";
 import type { Plan } from "../planner/schema.js";
 import { WorldReader } from "../world/worldReader.js";
-import type { ChatMessage } from "../services/ai/types.js";
 import { orchestratorUnexpectedErrorMessage } from "../planner/playerRefusalMessages.js";
 
 /** Minimum bridge operations before mid-run percentage announcements. */
@@ -66,11 +65,6 @@ type BridgeExecutionResult =
 export class Orchestrator {
   private readonly recentMessagesByPlayer = new Map<string, string[]>();
   private readonly lastBuiltStructurePlanByPlayer = new Map<string, Plan>();
-  /**
-   * Message history from the last completed placement-then-build run per player.
-   * Used by the verify pass so it can inspect the full AI context.
-   */
-  private readonly lastAiPlanMessagesByPlayer = new Map<string, ChatMessage[]>();
   constructor(
     private readonly bridge: BridgeServer,
     private readonly worldReader: WorldReader,
@@ -307,16 +301,6 @@ export class Orchestrator {
       }
 
       // -----------------------------------------------------------------------
-      // Post-build verify + optional polish pass
-      // -----------------------------------------------------------------------
-      // The build step can signal a verify request via verifyRegion on the plan.
-      // We recover the raw build JSON from the planner logger in production;
-      // for now we reconstruct from the plan. AI message history is tracked so
-      // the verify pass has full context.
-      const loopPlan = plan;
-      await this.tryVerifyAndPolish(planningRequest, loopPlan, signal);
-
-      // -----------------------------------------------------------------------
       // Announce completion and persist state
       // -----------------------------------------------------------------------
       await this.bridge.executeCommand(
@@ -404,74 +388,6 @@ export class Orchestrator {
       );
     } catch {
       /* non-fatal */
-    }
-  }
-
-  /**
-   * Attempts a post-build verify + polish pass. Runs silently — errors are
-   * swallowed so they do not break the primary execution response.
-   *
-   * @param request Original player request.
-   * @param builtPlan Plan that was just executed.
-   * @param signal When aborted, verify and polish steps are skipped.
-   */
-  private async tryVerifyAndPolish(
-    request: ChatCommandRequest,
-    builtPlan: Plan,
-    signal: AbortSignal | undefined,
-  ): Promise<void> {
-    if (!this.provider) {
-      return;
-    }
-    try {
-      const priorMessages = this.lastAiPlanMessagesByPlayer.get(request.player.uuid);
-      if (!priorMessages || priorMessages.length === 0) {
-        return;
-      }
-
-      // Use the plan's targetRegion (expanded by 2 blocks) as verify region.
-      const vr = builtPlan.targetRegion;
-      const verifyRegion = {
-        world: vr.world,
-        min: { x: vr.min.x - 2, y: vr.min.y - 2, z: vr.min.z - 2 },
-        max: { x: vr.max.x + 2, y: vr.max.y + 2, z: vr.max.z + 2 },
-      };
-
-      const polishPlan = await runVerifyPass(
-        this.provider,
-        request,
-        priorMessages,
-        JSON.stringify({ action: "build", plan: builtPlan }),
-        verifyRegion,
-        this.worldReader,
-        this.plannerLogger,
-        this.bridge.getPlacedBlocks(),
-        { signal },
-      );
-
-      if (!polishPlan) {
-        return;
-      }
-
-      const polishSanitized = sanitizePlanMaterials(polishPlan);
-      const polishResolved = polishSanitized.plan;
-      if (polishSanitized.replacedIds.length > 0) {
-        await this.notifyInvalidMaterialsReplaced(request, polishSanitized.replacedIds);
-      }
-      if (validatePlanSemantics(polishResolved)) {
-        return;
-      }
-      if (polishResolved.passes.length === 0) {
-        return;
-      }
-
-      const polishCommands = compilePlanToBridgeCommands(polishResolved);
-      const polishExec = await this.executeBridgeCommands(polishCommands, request, signal, false);
-      if (!polishExec.ok) {
-        return;
-      }
-    } catch {
-      // Polish pass errors are non-fatal.
     }
   }
 

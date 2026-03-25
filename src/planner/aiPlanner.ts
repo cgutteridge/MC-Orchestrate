@@ -2,12 +2,10 @@ import type { ChatMessage } from "../services/ai/types.js";
 import type { ChatProvider } from "../services/ai/types.js";
 import { extractJsonValue, parseJsonStrict } from "../services/ai/json.js";
 import type { ChatCommandRequest } from "../types/plugin.js";
-import type { BlockSample } from "../types/plugin.js";
 import { escapeRegex } from "../utils/regex.js";
 import type { PlacementBuildLogger } from "./placementBuildLogger.js";
 import type { PlannerLogger } from "./planLogger.js";
 import {
-  appendVerifyFulfillment,
   buildPlacementPhaseMessages,
   hasSolidGroundBelowResolvedAnchor,
   resetMessagesForDesignPhase,
@@ -24,7 +22,6 @@ import {
   type Plan,
   type Placement,
   type PlacementPositionOnly,
-  type Region,
 } from "./schema.js";
 import type { WorldReader } from "../world/worldReader.js";
 import { aiPlanFailureMessage } from "./playerRefusalMessages.js";
@@ -627,136 +624,6 @@ export async function runPlacementThenBuild(
     outcome: "rejected",
     reason: aiPlanFailureMessage("max_steps", request),
   };
-}
-
-/**
- * Runs a single verify + optional polish pass after a build plan has been
- * executed. The orchestrator calls this when the AI's build step included a
- * `verifyRegion`. Returns a polish Plan when the AI requests changes, or
- * `undefined` when the AI is satisfied or on any error.
- *
- * @param provider AI chat provider.
- * @param request The original player request.
- * @param priorMessages The message history from completed placement-then-build planning.
- * @param priorJson The raw JSON the AI returned for the build step.
- * @param verifyRegion The region to inspect.
- * @param worldReader For disk-based reads when the region extends beyond placed blocks.
- * @param plannerLogger Optional structured logger.
- * @param placedBlocks In-memory blocks placed by the bridge this session.
- * @param options Optional abort signal (e.g. when the HTTP client disconnects).
- */
-export async function runVerifyPass(
-  provider: ChatProvider,
-  request: ChatCommandRequest,
-  priorMessages: ChatMessage[],
-  priorJson: string,
-  verifyRegion: Region,
-  worldReader: WorldReader,
-  plannerLogger?: PlannerLogger,
-  placedBlocks?: ReadonlyMap<string, string>,
-  options?: PlacementThenBuildOptions,
-): Promise<Plan | undefined> {
-  if (options?.signal?.aborted) {
-    return undefined;
-  }
-
-  const verifyBlocks = await resolveVerifyBlocks(verifyRegion, placedBlocks, worldReader);
-
-  if (!verifyBlocks || verifyBlocks.length === 0) {
-    return undefined;
-  }
-
-  const messages = [...priorMessages];
-  appendVerifyFulfillment(messages, priorJson, verifyRegion, verifyBlocks);
-
-  if (options?.signal?.aborted) {
-    return undefined;
-  }
-
-  const rawResponse = await provider.chat(messages, { temperature: 0.2 });
-
-  await plannerLogger?.log({
-    timestamp: new Date().toISOString(),
-    requestId: request.requestId,
-    stage: "verify_response",
-    payload: { response: rawResponse },
-  });
-
-  const jsonText = extractJsonValue(rawResponse);
-  if (!jsonText) {
-    return undefined;
-  }
-
-  const looseParsed = parseJsonStrict<Record<string, unknown>>(jsonText);
-  const action = typeof looseParsed.action === "string" ? looseParsed.action : undefined;
-
-  let planCandidate: Record<string, unknown> =
-    action === "build" && isRecord(looseParsed.plan)
-      ? (looseParsed.plan as Record<string, unknown>)
-      : looseParsed;
-
-  planCandidate = coerceAssistantLayerMapToLoosePlanCandidate(planCandidate);
-
-  const repairedPlan = repairLoosePlanCandidate(planCandidate, request);
-  const planResult = PlanSchema.safeParse(repairedPlan);
-  if (!planResult.success) {
-    return undefined;
-  }
-
-  const polishPlan = planResult.data;
-
-  await plannerLogger?.log({
-    timestamp: new Date().toISOString(),
-    requestId: request.requestId,
-    stage: "polish_validated",
-    payload: { plan: polishPlan },
-  });
-
-  return polishPlan;
-}
-
-/**
- * Resolves block data for a post-build verification region. Prefers blocks
- * already tracked in-memory by the bridge, falling back to disk reads for
- * blocks outside what we placed.
- */
-async function resolveVerifyBlocks(
-  region: Region,
-  placedBlocks: ReadonlyMap<string, string> | undefined,
-  worldReader: WorldReader,
-): Promise<BlockSample[]> {
-  const results: BlockSample[] = [];
-
-  if (placedBlocks && placedBlocks.size > 0) {
-    for (const [coordStr, blockType] of placedBlocks) {
-      const parts = coordStr.split(" ");
-      if (parts.length !== 3) {
-        continue;
-      }
-      const x = Number(parts[0]);
-      const y = Number(parts[1]);
-      const z = Number(parts[2]);
-      if (
-        x >= region.min.x &&
-        x <= region.max.x &&
-        y >= region.min.y &&
-        y <= region.max.y &&
-        z >= region.min.z &&
-        z <= region.max.z
-      ) {
-        results.push({ x, y, z, type: blockType });
-      }
-    }
-  }
-
-  if (results.length === 0) {
-    const diskBlocks = await worldReader.readRegionBlocks(region);
-    if (diskBlocks) {
-      results.push(...diskBlocks);
-    }
-  }
-
-  return results;
 }
 
 // ---------------------------------------------------------------------------

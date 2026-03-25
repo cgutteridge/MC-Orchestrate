@@ -48,7 +48,7 @@ describe("buildPlacementPhaseMessages (step 1)", () => {
 
     expect(messages[1]?.content).toBe("five by five");
     const planSystem = buildPlanPhaseSystemContent(request);
-    expect(planSystem).toContain("minecraft:stone");
+    expect(planSystem).toContain("minecraft:oak_planks");
     expect(planSystem).not.toContain("=== MATERIALS (design step only) ===");
   });
 
@@ -211,17 +211,17 @@ describe("buildPlanPhaseSystemContent (step 2)", () => {
     expect(system).not.toContain('"action"');
   });
 
-  it("instructs the model to use concrete minecraft ids and mentions stone fallback", () => {
+  it("instructs the model to use concrete minecraft ids in the worked example palette", () => {
     const system = buildPlanPhaseSystemContent(request);
 
     expect(system).toContain("minecraft:");
-    expect(system).toContain("minecraft:stone");
+    expect(system).toContain("minecraft:cobblestone");
   });
 
-  it("asks how the diagram fulfils the brief (briefFulfilment) without an action key", () => {
+  it("asks how the diagram fulfils the design (briefFulfilment) without an action key", () => {
     const system = buildPlanPhaseSystemContent(request);
 
-    expect(system).toContain("matches the brief");
+    expect(system).toContain("implement the design");
     expect(system).not.toContain('"action"');
   });
 
@@ -259,8 +259,8 @@ describe("plan phase user content (step 2)", () => {
     expect(hasSolidGroundBelowResolvedAnchor(r, { x: 0, y: 65, z: 0 })).toBe(false);
   });
 
-  it("buildPlanPhaseUserContent omits terrain line when in air", () => {
-    const text = buildPlanPhaseUserContent(
+  it("buildPlanPhaseUserContent includes design summary and volume line (terrain hint not in user text)", () => {
+    const textAir = buildPlanPhaseUserContent(
       { ...request, message: "a hut" },
       {
         ref: "player_view",
@@ -280,13 +280,11 @@ describe("plan phase user content (step 2)", () => {
       designFixture,
       false,
     );
-    expect(text).toContain("Volume:");
-    expect(text).toContain(designFixture.designSummary);
-    expect(text).not.toContain("Terrain:");
-  });
+    expect(textAir).toContain("fill the volume");
+    expect(textAir).toContain(designFixture.designSummary);
+    expect(textAir).not.toContain("Terrain:");
 
-  it("buildPlanPhaseUserContent includes terrain line when solid is below anchor", () => {
-    const text = buildPlanPhaseUserContent(
+    const textSolidBelow = buildPlanPhaseUserContent(
       {
         ...request,
         message: "a hut",
@@ -313,6 +311,7 @@ describe("plan phase user content (step 2)", () => {
       designFixture,
       true,
     );
-    expect(text).toContain("Terrain:");
+    expect(textSolidBelow).toContain("fill the volume");
+    expect(textSolidBelow).not.toContain("Terrain:");
   });
 });

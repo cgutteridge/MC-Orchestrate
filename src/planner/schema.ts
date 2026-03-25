@@ -152,17 +152,6 @@ export type VerticalReference = z.infer<typeof VerticalReferenceSchema>;
 export type Placement = z.infer<typeof PlacementSchema>;
 
 /**
- * Returned when the AI is ready to execute a build plan.
- * `verifyRegion` is optional: when present the orchestrator reads that region
- * after building and feeds the result back so the AI can issue a polish pass.
- *
- * `placement` is required: the AI must declare WHERE to put the structure
- * using semantic anchor+offset rather than computing world coordinates itself.
- * Layer maps use local coordinates with (0,0,0) as the structure's bottom-south-west
- * corner; the orchestrator shifts `targetRegion` to world space before executing.
- */
-
-/**
  * Step 1 placement: anchor and offsets only — **no size** (size is chosen in the
  * design step).
  */
@@ -216,12 +205,6 @@ export const BuildStepSchema = z.object({
   action: z.literal("build"),
   placement: PlacementSchema,
   plan: PlanSchema,
-  /**
-   * Optional region to inspect after the plan executes. When provided the
-   * orchestrator performs a verification pass and gives the AI a chance to
-   * refine the result.
-   */
-  verifyRegion: RegionSchema.optional(),
 });
 
 /** Discriminated union of every valid AI response during placement-design-build planning. */
