@@ -27,6 +27,7 @@ const towerPlan: Plan = {
     },
   ],
   reply: "Built.",
+  briefFulfilment: "Tower column fills the requested footprint.",
 };
 
 describe("scorePlan", () => {

@@ -17,6 +17,7 @@ function makePlan(passes: Plan["passes"]): Plan {
     assumptions: [],
     passes,
     reply: "Building.",
+    briefFulfilment: "Semantics fixture.",
   };
 }
 
@@ -68,6 +69,7 @@ describe("validatePlanSemantics — degenerate structure", () => {
         },
       ],
       reply: "Building.",
+      briefFulfilment: "Degenerate structure test fixture.",
     };
   }
 

@@ -14,6 +14,7 @@ function basePlan(overrides: Partial<Plan> = {}): Plan {
     assumptions: [],
     passes: [],
     reply: "ok",
+    briefFulfilment: "Fixture.",
     ...overrides,
   };
 }

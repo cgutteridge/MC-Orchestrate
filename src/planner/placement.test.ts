@@ -119,6 +119,7 @@ describe("computePlacementAlignmentPoint", () => {
     assumptions: [],
     passes: [],
     reply: "",
+    briefFulfilment: "Alignment point tests.",
   };
 
   it("middle uses XZ centre and vertical centre Y", () => {
@@ -170,6 +171,7 @@ const basePlan: Plan = {
     },
   ],
   reply: "Built.",
+  briefFulfilment: "Tower shell matches fixture.",
 };
 
 describe("shiftPlan", () => {

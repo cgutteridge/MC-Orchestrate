@@ -31,6 +31,11 @@ export function summarizeLastBuiltPlan(plan: Plan): string {
     `world=${plan.targetWorld}`,
     `target box min(${min.x},${min.y},${min.z}) max(${max.x},${max.y},${max.z}) size=${dx}×${dy}×${dz}`,
   ];
+  const brief = plan.briefFulfilment.trim();
+  if (brief.length > 0) {
+    const short = brief.length > 160 ? `${brief.slice(0, 160)}…` : brief;
+    parts.push(`brief=${short}`);
+  }
   if (plan.passes.length > 0) {
     parts.push(`passes=[${passTitles}]`);
     if (goalPreview) {
@@ -295,6 +300,8 @@ ${buildDesignPhaseMaterialRegistrySection()}`;
  */
 export function buildPlanPhaseSystemContent(_request: ChatCommandRequest): string {
   const cottageLayerMap = {
+    briefFulfilment:
+      "Cottage footprint: floor slab, cobble walls with door gap and glass on the street face, oak roof cap — matches a small enclosed build with daylight on the requested side.",
     layers: [
       ["PPPPPPP", "PPPPPPP", "PPPPPPP", "PPPPPPP", "PPPPPPP", "PPPPPPP"].join("\n"),
       ["CCC_CCC", "C_____C", "C_____C", "C_____C", "C_____C", "CCCCCCC"].join("\n"),
@@ -316,19 +323,21 @@ export function buildPlanPhaseSystemContent(_request: ChatCommandRequest): strin
   const minimalLayerMapExample = {
     layers: ["SSS\nSSS\nSSS", "SSS\nS_S\nSSS", "SSS\nSSS\nSSS"],
     palette: { S: "minecraft:stone", _: "minecraft:air" },
+    briefFulfilment:
+      "Stone shell with a hollow core (S_S row) matching the requested footprint and materials from the design step.",
   };
 
   return `Reply with exactly one JSON object per turn. No markdown fences; no prose outside JSON.
 
-Step 3 of 3 — layer map: placement and design are locked. Return only the voxel grid below — no action field, no passes array, no world coordinates.
-
 You are an expert Minecraft builder. Think in 3D first, then output JSON. The layer map serializes the model you already decided.
 
-Fill the given width×depth×height volume. \`layers\`: bottom→top Y (first string = lowest Y). Within each string, rows = +Z, characters = +X. \`palette\`: one character → one \`minecraft:\` id. Space = leave unchanged; \`_\` = air. Max footprint 32×32, height 48.
+Make your design fit snugly within the given width×depth×height volume. \`layers\`: bottom→top Y (first string = lowest Y). Within each string, rows = +Z, characters = +X. \`palette\`: one character → one \`minecraft:\` id. Space = leave unchanged; \`_\` = air. 
 
-Your only output is \`layers\` (array of newline-separated slice strings) and \`palette\` (character → block id). The server turns that into the executable plan.
+Include \`briefFulfilment\`: a short prose explanation (one to four sentences) of how this layer diagram and palette implement the design-step guide and the player’s request — not a repeat of the design summary, but why this shape matches the brief.
 
-=== MINIMAL RESPONSE (only these two keys) ===
+Your output must also include \`layers\` and \`palette\` as above.
+
+=== MINIMAL SHAPE (copy and expand; always include briefFulfilment) ===
 ${JSON.stringify(minimalLayerMapExample, null, 2)}
 
 === WORKED EXAMPLE (layer map → cottage-shaped build) ===
@@ -337,8 +346,8 @@ Palette: P=oak_planks, C=cobblestone, G=glass, _=air. space=leave cell unchanged
 
 ${JSON.stringify(cottageLayerMap, null, 2)}
 
-Use vanilla \`minecraft:\` ids in palettes; prefer the design step's recommendedMaterials. Unknown ids may become minecraft:stone at execution.
-Filled voxels must match the given width×depth×height. Do not invent world coordinates.`;
+Use vanilla \`minecraft:\` ids in palettes; prefer the design step's recommendedMaterials. 
+`;
 }
 
 /**

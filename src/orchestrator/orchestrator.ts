@@ -338,6 +338,7 @@ export class Orchestrator {
         requestId: request.requestId,
         intent: plan.intent,
         executedActions: commands.length,
+        briefFulfilment: plan.briefFulfilment,
       };
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);

@@ -262,7 +262,7 @@ export async function runPlacementThenBuild(
           {
             role: "user",
             content:
-              "Placement and design are locked. Return only a JSON object with \"layers\" and \"palette\" for the layer map (omit placement).",
+              'Placement and design are locked. Return only a JSON object with "layers" and "palette" for the layer map (omit placement).',
           },
         );
         continue;
@@ -411,7 +411,13 @@ export async function runPlacementThenBuild(
       lockedDesign = dResult.data;
       const mergedPlacement = mergePlacementWithDesign(splitPlanPlacement, lockedDesign);
       const terrainGroundHint = computeTerrainGroundHint(request, mergedPlacement, lastPlan);
-      resetMessagesForPlanPhase(messages, request, mergedPlacement, lockedDesign, terrainGroundHint);
+      resetMessagesForPlanPhase(
+        messages,
+        request,
+        mergedPlacement,
+        lockedDesign,
+        terrainGroundHint,
+      );
       await dl?.line(
         request.requestId,
         step,
@@ -501,7 +507,10 @@ export async function runPlacementThenBuild(
         const expected = !splitPlanPlacement
           ? "Return placement intent JSON {ref, frame, offset}, not a full plan."
           : 'Return JSON with action "design_choice", not a full plan.';
-        messages.push({ role: "assistant", content: jsonText }, { role: "user", content: expected });
+        messages.push(
+          { role: "assistant", content: jsonText },
+          { role: "user", content: expected },
+        );
         continue;
       }
     }
@@ -846,13 +855,21 @@ export function repairLoosePlanCandidate(
     passes = [];
   }
 
+  const reply = typeof candidate.reply === "string" ? candidate.reply : "Working on it.";
+  const briefRaw = candidate.briefFulfilment;
+  const briefFulfilment =
+    typeof briefRaw === "string" && briefRaw.trim().length > 0
+      ? briefRaw.trim().slice(0, 2000)
+      : undefined;
+
   return {
     intent: rawIntent,
     targetWorld,
     targetRegion,
     assumptions: Array.isArray(candidate.assumptions) ? candidate.assumptions : [],
     passes,
-    reply: typeof candidate.reply === "string" ? candidate.reply : "Working on it.",
+    reply,
+    ...(briefFulfilment !== undefined ? { briefFulfilment } : {}),
   };
 }
 
@@ -958,7 +975,9 @@ function normalizeLooseDesignStepResponse(loose: Record<string, unknown>): Recor
  * Accepts either direct placement JSON (`{ref,frame,offset}`) or legacy
  * wrapped shape (`{action:"placement_choice", placement:{...}}`).
  */
-function parsePlacementPositionOnly(loose: Record<string, unknown>): PlacementPositionOnly | undefined {
+function parsePlacementPositionOnly(
+  loose: Record<string, unknown>,
+): PlacementPositionOnly | undefined {
   if (looksLikePlacementRecord(loose)) {
     const direct = PlacementPositionOnlySchema.safeParse(normalizeLegacyPlacementObject(loose));
     if (direct.success) {

@@ -30,6 +30,7 @@ describe("compilePlanToBridgeCommands", () => {
         },
       ],
       reply: "Building.",
+      briefFulfilment: "Multi-pass compile test.",
     };
 
     const commands = compilePlanToBridgeCommands(plan);
@@ -55,6 +56,7 @@ describe("compilePlanToBridgeCommands", () => {
         },
       ],
       reply: "Building.",
+      briefFulfilment: "Glass path matches strip footprint.",
     };
 
     const commands = compilePlanToBridgeCommands(plan);

@@ -73,6 +73,11 @@ export type ChatCommandResponse = {
   requestId: string;
   intent: string;
   /**
+   * When present (successful builds from the AI planner), short rationale for how the
+   * layer diagram fulfils the design step and player brief.
+   */
+  briefFulfilment?: string;
+  /**
    * Successful runs: total bridge operations executed for the primary plan.
    * Error runs: bridge operations completed before failure or cancellation
    * (partial progress).

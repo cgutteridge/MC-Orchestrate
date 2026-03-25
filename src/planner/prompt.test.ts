@@ -106,6 +106,7 @@ describe("buildPlacementPhaseMessages (step 1)", () => {
         },
       ],
       reply: "Built a tower.",
+      briefFulfilment: "Tower column per prior build.",
     };
 
     const messages = buildPlacementPhaseMessages(request, lastPlan as never);
@@ -145,6 +146,7 @@ describe("buildPlacementPhaseMessages (step 1)", () => {
         },
       ],
       reply: "Done.",
+      briefFulfilment: "Stone-brick wall layer matches span and height requested.",
     });
     expect(line).toContain("intent=build_wall");
     expect(line).toContain("size=10×7×1");
@@ -195,11 +197,12 @@ describe("buildPlacementPhaseMessages (step 1)", () => {
 });
 
 describe("buildPlanPhaseSystemContent (step 2)", () => {
-  it("lists layers and palette as the only required model output", () => {
+  it("lists layers, palette, and briefFulfilment for the model", () => {
     const system = buildPlanPhaseSystemContent(request);
 
     expect(system).toContain('"layers"');
     expect(system).toContain('"palette"');
+    expect(system).toContain("briefFulfilment");
     expect(system).toContain("serializes");
     expect(system).toContain("expert Minecraft builder");
     expect(system).toContain("WORKED EXAMPLE");
@@ -215,11 +218,11 @@ describe("buildPlanPhaseSystemContent (step 2)", () => {
     expect(system).toContain("minecraft:stone");
   });
 
-  it("describes step 3 without an action field", () => {
+  it("asks how the diagram fulfils the brief (briefFulfilment) without an action key", () => {
     const system = buildPlanPhaseSystemContent(request);
 
-    expect(system).toContain("Step 3 of 3");
-    expect(system).toContain("no action field");
+    expect(system).toContain("matches the brief");
+    expect(system).not.toContain('"action"');
   });
 
   it("does not ask the model for targetWorld or targetRegion in the plan schema guide", () => {

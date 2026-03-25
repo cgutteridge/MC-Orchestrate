@@ -244,6 +244,7 @@ describe("Orchestrator", () => {
     });
 
     expect(response.status).toBe("executed");
+    expect(response.briefFulfilment).toBe("Matches the locked design volume and materials.");
     const batchSets = bridge.commands.filter((c) => c.kind === "batchSet");
     expect(batchSets.some((c) => c.blocks.some((b) => b.type === "minecraft:stone"))).toBe(true);
     const says = bridge.commands.filter((c) => c.kind === "say").map((c) => c.message);

@@ -56,6 +56,8 @@ const fakeWorldReader: WorldReader = {
 const LAYER_RING_GLASS = {
   layers: Array.from({ length: 6 }, () => "GGGGG\nG___G\nG___G\nG___G\nGGGGG"),
   palette: { G: "minecraft:glass", _: "minecraft:air" },
+  briefFulfilment:
+    "Glass ring with hollow interior matches a vertical cylinder: walls on the footprint perimeter and air inside per the hollow request.",
 };
 
 /**
@@ -182,6 +184,7 @@ describe("runPlacementThenBuild", () => {
     }
     expect(result.plan.passes).toHaveLength(1);
     expect(result.plan.passes[0]?.layerMap.palette.G).toBe("minecraft:glass");
+    expect(result.plan.briefFulfilment).toContain("Glass ring with hollow interior");
   });
 
   it("plan phase user message carries design fixture text (no duplicate player line)", async () => {

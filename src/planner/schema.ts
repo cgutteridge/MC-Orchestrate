@@ -51,6 +51,15 @@ export const PlanSchema = z.object({
   assumptions: z.array(z.string().min(1)).default([]),
   passes: z.array(PassSchema).min(1),
   reply: z.string().min(1),
+  /**
+   * Step-3 rationale: how the layer diagram implements the locked design and player request.
+   * Populated by the model; defaulted when absent for legacy plans.
+   */
+  briefFulfilment: z
+    .string()
+    .min(1)
+    .max(2000)
+    .default("Matches the locked design volume and materials."),
 });
 
 export type Point = z.infer<typeof PointSchema>;
@@ -200,9 +209,7 @@ export const DesignChoiceStepSchema = z.object({
     .array(z.string().min(1))
     .min(1)
     .max(48)
-    .transform((arr) =>
-      arr.map((id) => (id.startsWith("minecraft:") ? id : `minecraft:${id}`)),
-    ),
+    .transform((arr) => arr.map((id) => (id.startsWith("minecraft:") ? id : `minecraft:${id}`))),
 });
 
 export const BuildStepSchema = z.object({
