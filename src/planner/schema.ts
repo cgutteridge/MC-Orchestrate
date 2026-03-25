@@ -97,17 +97,25 @@ export const PlacementOffsetSchema = z.object({
   UP: z.number().int().default(0),
 });
 
+const positiveIntegerFromNumberOrString = (max: number) =>
+  z.preprocess((value) => {
+    if (typeof value === "string" && /^[0-9]+$/.test(value.trim())) {
+      return Number.parseInt(value.trim(), 10);
+    }
+    return value;
+  }, z.number().int().min(1).max(max));
+
 /**
  * Declared footprint and height for step 1 (placement — get location). The layer
  * map in step 2 should match these bounds (within the usual 32×32×48 limits).
  */
 export const DesiredSizeSchema = z.object({
   /** Extent along local +X (layer-map columns). */
-  width: z.number().int().min(1).max(32),
+  width: positiveIntegerFromNumberOrString(32),
   /** Extent along local +Z (layer-map rows within a slice). */
-  depth: z.number().int().min(1).max(32),
+  depth: positiveIntegerFromNumberOrString(32),
   /** Extent along local Y (number of layer strings). */
-  height: z.number().int().min(1).max(48),
+  height: positiveIntegerFromNumberOrString(48),
 });
 
 /**
