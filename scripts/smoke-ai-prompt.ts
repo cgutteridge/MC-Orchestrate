@@ -11,8 +11,8 @@
  *   npx tsx scripts/smoke-ai-prompt.ts "your message here"
  *   npm run smoke:ai:prompt
  *
- * Requires AZURE_OPENAI_* (or whatever createChatProvider needs) in the environment.
- * If requests abort with a timeout, set AZURE_OPENAI_CHAT_TIMEOUT_MS (default 900000 ms).
+ * Requires either `OPENAI_API_KEY` + `OPENAI_MODEL`, or the Azure OpenAI env set.
+ * If requests abort with a timeout, set `OPENAI_CHAT_TIMEOUT_MS` or `AZURE_OPENAI_CHAT_TIMEOUT_MS`.
  */
 import { loadConfig } from "../src/config/env.js";
 import {
@@ -56,8 +56,9 @@ async function main(): Promise<void> {
   const provider = createChatProvider(config);
   if (!provider) {
     process.stderr.write(
-      "No AI provider configured. Set AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY, " +
-        "AZURE_OPENAI_API_VERSION, AZURE_OPENAI_DEPLOYMENT in the environment or .env.\n",
+      "No AI provider configured. Set OPENAI_API_KEY and OPENAI_MODEL, or " +
+        "AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY, AZURE_OPENAI_API_VERSION, " +
+        "AZURE_OPENAI_DEPLOYMENT in the environment or .env.\n",
     );
     process.exit(1);
   }

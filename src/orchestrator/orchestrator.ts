@@ -116,7 +116,7 @@ export class Orchestrator {
       return {
         status: "rejected",
         reply:
-          "No AI builder is configured on this orchestrator (missing chat provider / Azure OpenAI settings). " +
+          "No AI builder is configured on this orchestrator (missing chat provider settings). " +
           "An admin needs to set the provider environment variables before I can design or place blocks.",
         requestId: request.requestId,
         intent: "unknown",

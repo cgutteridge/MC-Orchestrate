@@ -18,9 +18,16 @@ npm run test:agent:watch
 
 ## Prerequisites
 
-The Azure OpenAI environment variables must be set (see `.env`):
+One provider env set must be configured (see `.env`):
 
 ```
+OPENAI_API_KEY=
+OPENAI_MODEL=gpt-4o-mini
+```
+
+or
+
+```bash
 AZURE_OPENAI_ENDPOINT=
 AZURE_OPENAI_API_KEY=
 AZURE_OPENAI_API_VERSION=

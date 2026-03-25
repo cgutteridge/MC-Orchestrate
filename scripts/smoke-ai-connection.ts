@@ -6,8 +6,9 @@
  *   npx tsx scripts/smoke-ai-connection.ts
  *   npm run smoke:ai
  *
- * Requires the same `AZURE_OPENAI_*` variables as the app (see `.env.example`).
- * Set `MCORCH_AI_CHAT_DEBUG=1` for request timings on stderr (see Azure client).
+ * Requires either `OPENAI_API_KEY` + `OPENAI_MODEL`, or the Azure OpenAI env set
+ * used by the app (see `.env.example`).
+ * Set `MCORCH_AI_CHAT_DEBUG=1` for request timings on stderr when using Azure.
  */
 import { performance } from "node:perf_hooks";
 import { loadConfig } from "../src/config/env.js";
@@ -24,8 +25,9 @@ async function main(): Promise<void> {
   const provider = createChatProvider(config);
   if (!provider) {
     process.stderr.write(
-      "FAIL: No AI provider configured. Set AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY, " +
-        "AZURE_OPENAI_API_VERSION, AZURE_OPENAI_DEPLOYMENT (see .env.example).\n",
+      "FAIL: No AI provider configured. Set OPENAI_API_KEY and OPENAI_MODEL, or " +
+        "AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY, AZURE_OPENAI_API_VERSION, " +
+        "AZURE_OPENAI_DEPLOYMENT (see .env.example).\n",
     );
     process.exit(1);
   }

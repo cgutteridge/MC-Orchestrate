@@ -29,7 +29,7 @@ export function assertProviderPresent(): void {
   if (process.env.MCORCH_AGENT_TESTS === "1" && !provider) {
     throw new Error(
       "MCORCH_AGENT_TESTS=1 but no AI provider is configured. " +
-        "Set the AZURE_OPENAI_* environment variables.",
+        "Set OPENAI_API_KEY and OPENAI_MODEL, or the AZURE_OPENAI_* environment variables.",
     );
   }
 }

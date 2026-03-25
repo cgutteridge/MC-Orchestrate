@@ -23,8 +23,9 @@ async function main(): Promise<void> {
   const provider = createChatProvider(config);
   if (!provider) {
     process.stderr.write(
-      "No AI provider configured. Set AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY, " +
-        "AZURE_OPENAI_API_VERSION, AZURE_OPENAI_DEPLOYMENT in the environment or .env.\n",
+      "No AI provider configured. Set OPENAI_API_KEY and OPENAI_MODEL, or " +
+        "AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY, AZURE_OPENAI_API_VERSION, " +
+        "AZURE_OPENAI_DEPLOYMENT in the environment or .env.\n",
     );
     process.exit(1);
   }

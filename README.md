@@ -17,7 +17,7 @@ Minecraft bridge, AI orchestrator, and Spigot plugin integration for in-game bui
 
 The current implementation is multiplayer-aware, player-anchored, and keeps world mutation on the bridge side only.
 
-If Azure OpenAI is configured, the orchestrator can use it for planning. If it is not configured, the built-in heuristic planner still handles the supported v1 building commands above.
+If either direct OpenAI or Azure OpenAI is configured, the orchestrator can use it for planning. If neither is configured, the built-in heuristic planner still handles the supported v1 building commands above.
 
 ## Setup
 
@@ -25,21 +25,31 @@ If Azure OpenAI is configured, the orchestrator can use it for planning. If it i
 2. Keep the local Spigot jar in `minecraft-server/spigot-1.21.1.jar`.
 3. Accept the Minecraft EULA in `minecraft-server/eula.txt`.
 4. Install Node dependencies with `npm install`.
-5. Copy `.env.example` to `.env` and add Azure values when you want AI planning enabled.
+5. Copy `.env.example` to `.env` and add either direct OpenAI or Azure values when you want AI planning enabled.
 6. Build and copy the plugin with `npm run plugin:install`.
 7. Start the stack with `npm start`.
 
-## Azure OpenAI env
+## AI provider env
+
+Direct OpenAI:
+
+- `OPENAI_API_KEY`
+- `OPENAI_MODEL`
+- `OPENAI_BASE_URL` (optional, defaults to `https://api.openai.com/v1`)
+- `OPENAI_CHAT_TIMEOUT_MS` (optional)
+
+Azure OpenAI:
 
 - `AZURE_OPENAI_ENDPOINT`
 - `AZURE_OPENAI_API_KEY`
 - `AZURE_OPENAI_API_VERSION`
 - `AZURE_OPENAI_DEPLOYMENT`
 - `AZURE_OPENAI_POLICY_ID` (optional)
+- `AZURE_OPENAI_CHAT_TIMEOUT_MS` (optional)
 - `MCORCH_AI_LOG` (optional planner JSONL log path)
 - `MCORCH_AI_PROVIDER_LOG` (optional raw provider log path)
 
-These match the env contract used in `../azure-ai`.
+If both env sets are present, direct OpenAI is selected first. Comment one set out to switch back and forth.
 
 Planner and provider diagnostics default to:
 
