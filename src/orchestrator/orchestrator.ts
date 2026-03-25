@@ -20,6 +20,7 @@ import {
   orchestratorEmptyPlanMessage,
   orchestratorUnexpectedErrorMessage,
 } from "../planner/playerRefusalMessages.js";
+import type { WorldReader } from "../world/worldReader.js";
 
 /** Minimum bridge operations before mid-run percentage announcements. */
 const PROGRESS_ANNOUNCE_MIN_OPS = 20;
@@ -81,6 +82,7 @@ export class Orchestrator {
     private readonly plannerLogger?: PlannerLogger,
     private readonly aiPlanMaxSteps: number = 10,
     private readonly planProgressLogger?: PlacementBuildLogger,
+    private readonly worldReader?: WorldReader,
   ) {}
 
   /**
@@ -154,6 +156,8 @@ export class Orchestrator {
           signal,
           maxSteps: this.aiPlanMaxSteps,
           planProgressLogger: this.planProgressLogger,
+          readRegionBlocks: async (region, worldName) =>
+            this.worldReader?.readRegionBlocks(region, worldName),
         },
       );
 

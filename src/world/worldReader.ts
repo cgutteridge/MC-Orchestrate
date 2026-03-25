@@ -16,8 +16,8 @@ export type RegionBlocksOutcome =
   | { ok: true; blocks: BlockSample[] }
   | { ok: false; reason: string };
 
-/** Maximum number of blocks returned by a single region scan. */
-const MAX_SCAN_BLOCKS = 4096;
+/** Maximum number of non-air blocks returned by a single region scan. */
+const MAX_SCAN_BLOCKS = 100_000;
 
 /** Block names treated as empty space in scan results. */
 const AIR_BLOCKS = new Set(["minecraft:air", "minecraft:cave_air", "minecraft:void_air"]);

@@ -1,5 +1,6 @@
 import type { ChatMessage } from "../services/ai/types.js";
 import type { ChatCommandRequest } from "../types/plugin.js";
+import type { LayerMapData } from "./layerMap.js";
 import type { DesignChoiceStep, Plan, Placement } from "./schema.js";
 import { composeDesignStepPrompt } from "./steps/designStepPrompt.js";
 import {
@@ -108,8 +109,9 @@ export function hasSolidGroundBelowResolvedAnchor(
 export function composeLayerMapPhaseUserContent(
   mergedPlacement: Placement,
   design: DesignChoiceStep,
+  existingWorldContext?: LayerMapData,
 ): string {
-  return getLayerMapStepUserContent(mergedPlacement, design);
+  return getLayerMapStepUserContent(mergedPlacement, design, existingWorldContext);
 }
 
 /**
@@ -126,8 +128,14 @@ export function resetMessagesForLayerMapPhase(
   request: ChatCommandRequest,
   mergedPlacement: Placement,
   design: DesignChoiceStep,
+  existingWorldContext?: LayerMapData,
 ): void {
-  const { system, user } = composeLayerMapStepPrompt(request, mergedPlacement, design);
+  const { system, user } = composeLayerMapStepPrompt(
+    request,
+    mergedPlacement,
+    design,
+    existingWorldContext,
+  );
   messages.length = 0;
   messages.push({ role: "system", content: system }, { role: "user", content: user });
 }

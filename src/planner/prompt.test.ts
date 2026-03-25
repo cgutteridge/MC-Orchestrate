@@ -224,6 +224,8 @@ describe("composeLayerMapPhaseSystemContent (step 3)", () => {
 
     expect(system).toContain("implement the design");
     expect(system).not.toContain('"action"');
+    expect(system).toContain("larger than the requested build volume by 2 blocks");
+    expect(system).toContain("modify or replace existing ground blocks");
   });
 
   it("does not ask the model for targetWorld or targetRegion in the plan schema guide", () => {
@@ -272,5 +274,23 @@ describe("composeLayerMapPhaseUserContent (step 3)", () => {
     expect(text).toContain("voxel grid should fill the volume");
     expect(text).toContain(designFixture.designSummary);
     expect(text).not.toContain("Terrain:");
+  });
+
+  it("includes oversized existing-world context instructions and serialized layer map when provided", () => {
+    const placement = {
+      ref: "player" as const,
+      frame: "player" as const,
+      offset: { F: 0, R: 0, N: 0, E: 0, UP: 20 },
+      verticalReference: "on_ground" as const,
+      desiredSize: { width: 8, depth: 8, height: 6 },
+    };
+    const text = composeLayerMapPhaseUserContent(placement, designFixture, {
+      layers: ["AB\n__"],
+      palette: { A: "minecraft:stone", B: "minecraft:dirt", _: "minecraft:air" },
+    });
+    expect(text).toContain("EXISTING_WORLD_CONTEXT");
+    expect(text).toContain("2 blocks larger");
+    expect(text).toContain('"layers":["AB\\n__"]');
+    expect(text).toContain("Output only the target build volume");
   });
 });

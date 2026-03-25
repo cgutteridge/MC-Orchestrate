@@ -6,12 +6,14 @@ import { Orchestrator } from "./orchestrator/orchestrator.js";
 import { PlacementBuildLogger } from "./planner/placementBuildLogger.js";
 import { PlannerLogger } from "./planner/planLogger.js";
 import { createChatProvider } from "./services/ai/provider.js";
+import { WorldReader } from "./world/worldReader.js";
 
 async function main(): Promise<void> {
   const config = loadConfig();
   const actionLogger = new ActionLogger(config.minecraft.actionLogPath);
   const plannerLogger = new PlannerLogger(config.ai.plannerLogPath);
   const planProgressLogger = new PlacementBuildLogger(config.ai.aiPlanLogPath);
+  const worldReader = new WorldReader(config.minecraft.minecraftDir);
   const bridge = new BridgeServer(
     {
       host: config.minecraft.tcpHost,
@@ -30,6 +32,7 @@ async function main(): Promise<void> {
     plannerLogger,
     config.ai.aiPlanMaxSteps,
     planProgressLogger,
+    worldReader,
   );
 
   await bridge.start();

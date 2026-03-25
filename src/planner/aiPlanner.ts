@@ -1,7 +1,7 @@
 import type { ChatMessage } from "../services/ai/types.js";
 import type { ChatProvider } from "../services/ai/types.js";
 import { extractJsonValue, parseJsonStrict } from "../services/ai/json.js";
-import type { ChatCommandRequest } from "../types/plugin.js";
+import type { BlockSample, ChatCommandRequest } from "../types/plugin.js";
 import { escapeRegex } from "../utils/regex.js";
 import type { PlacementBuildLogger } from "./placementBuildLogger.js";
 import type { PlannerLogger } from "./planLogger.js";
@@ -10,6 +10,7 @@ import {
   resetMessagesForDesignPhase,
   resetMessagesForLayerMapPhase,
 } from "./prompt.js";
+import { resolvePlacement } from "./placement.js";
 import { defaultRegion } from "./requestContext.js";
 import {
   DesignChoiceStepSchema,
@@ -20,6 +21,7 @@ import {
   type Plan,
   type Placement,
   type PlacementPositionOnly,
+  type Region,
 } from "./schema.js";
 import { aiPlanFailureMessage } from "./playerRefusalMessages.js";
 import {
@@ -29,6 +31,11 @@ import {
   normalizeLayerMap,
   type LayerMapClip,
 } from "./layerMap.js";
+import {
+  computeTargetRegionFromPlacement,
+  expandRegion,
+  serializeRegionBlocksToLayerMap,
+} from "./worldContext.js";
 
 /** Default when {@link PlacementThenBuildOptions.maxSteps} is omitted (orchestrator passes config). */
 const DEFAULT_AI_PLAN_MAX_STEPS = 10;
@@ -62,6 +69,8 @@ export type PlacementThenBuildOptions = {
   maxSteps?: number;
   /** Plain-text progress log (e.g. `logs/ai-plan.log`). */
   planProgressLogger?: PlacementBuildLogger;
+  /** Optional world scan callback used to load expanded build context from region files. */
+  readRegionBlocks?: (region: Region, worldName: string) => Promise<BlockSample[] | undefined>;
 };
 
 // ---------------------------------------------------------------------------
@@ -402,7 +411,21 @@ export async function runPlacementThenBuild(
 
       lockedDesign = dResult.data;
       const mergedPlacement = mergePlacementWithDesign(splitPlanPlacement, lockedDesign);
-      resetMessagesForLayerMapPhase(messages, request, mergedPlacement, lockedDesign);
+      const existingWorldContext = await loadExistingWorldContext(
+        request,
+        mergedPlacement,
+        options?.readRegionBlocks,
+        dl,
+        step,
+        maxSteps,
+      );
+      resetMessagesForLayerMapPhase(
+        messages,
+        request,
+        mergedPlacement,
+        lockedDesign,
+        existingWorldContext,
+      );
       await dl?.line(
         request.requestId,
         step,
@@ -612,6 +635,63 @@ export async function runPlacementThenBuild(
     outcome: "rejected",
     reason: aiPlanFailureMessage("max_steps", request),
   };
+}
+
+async function loadExistingWorldContext(
+  request: ChatCommandRequest,
+  mergedPlacement: Placement,
+  readRegionBlocks:
+    | ((region: Region, worldName: string) => Promise<BlockSample[] | undefined>)
+    | undefined,
+  dl: PlacementBuildLogger | undefined,
+  step: number,
+  maxSteps: number,
+): Promise<{ layers: string[]; palette: Record<string, string> } | undefined> {
+  if (!readRegionBlocks || !mergedPlacement.desiredSize) {
+    return undefined;
+  }
+
+  try {
+    const anchor = resolvePlacement(mergedPlacement, request, undefined);
+    const targetRegion = computeTargetRegionFromPlacement(
+      anchor,
+      mergedPlacement,
+      request.player.world,
+    );
+    const contextRegion = expandRegion(targetRegion, 2);
+
+    await dl?.line(
+      request.requestId,
+      step,
+      maxSteps,
+      "context_scan_start",
+      `scan min(${contextRegion.min.x},${contextRegion.min.y},${contextRegion.min.z}) max(${contextRegion.max.x},${contextRegion.max.y},${contextRegion.max.z})`,
+    );
+
+    const blocks = await readRegionBlocks(contextRegion, request.player.world);
+    if (!blocks) {
+      await dl?.line(request.requestId, step, maxSteps, "context_scan_unavailable", "scan failed");
+      return undefined;
+    }
+
+    await dl?.line(
+      request.requestId,
+      step,
+      maxSteps,
+      "context_scan_ready",
+      `loaded ${blocks.length} non-air blocks`,
+    );
+    return serializeRegionBlocksToLayerMap(contextRegion, blocks);
+  } catch {
+    await dl?.line(
+      request.requestId,
+      step,
+      maxSteps,
+      "context_scan_unavailable",
+      "scan threw unexpectedly",
+    );
+    return undefined;
+  }
 }
 
 // ---------------------------------------------------------------------------

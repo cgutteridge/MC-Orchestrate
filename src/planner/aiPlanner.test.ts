@@ -235,6 +235,38 @@ describe("runPlacementThenBuild", () => {
     expect(result.plan.passes[0]?.goal).toContain("follow-up");
   });
 
+  it("includes expanded existing-world context in the final build prompt when region scan is available", async () => {
+    let turn = 0;
+    const provider: ChatProvider = {
+      name: "test",
+      async chat(messages) {
+        turn++;
+        if (turn === 1) {
+          return placementChoiceJson({
+            ref: "player",
+            frame: "player",
+            offset: { F: 0, R: 0, N: 0, E: 0, UP: 0 },
+            verticalReference: "on_ground",
+          });
+        }
+        if (turn === 2) {
+          return designChoiceJson({ width: 5, depth: 5, height: 6 });
+        }
+        const user = messages.find((m) => m.role === "user")?.content ?? "";
+        expect(user).toContain("EXISTING_WORLD_CONTEXT");
+        expect(user).toContain("2 blocks larger than the requested build volume");
+        expect(user).toContain('"minecraft:stone"');
+        return JSON.stringify(LAYER_RING_GLASS);
+      },
+    };
+
+    const result = await runPlacementThenBuild(provider, request, undefined, undefined, undefined, {
+      readRegionBlocks: async () => [{ x: -53, y: 113, z: -19, type: "minecraft:stone" }],
+    });
+
+    expect(result.outcome).toBe("plan");
+  });
+
   it("repairs loose layer map objects before validation", async () => {
     const provider = threeTurnProvider({
       intent: "unknown",

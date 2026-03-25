@@ -1,4 +1,5 @@
 import type { ChatCommandRequest } from "../../types/plugin.js";
+import type { LayerMapData } from "../layerMap.js";
 import type { DesignChoiceStep, Placement } from "../schema.js";
 import type { StepChatPrompt } from "./stepPromptTypes.js";
 
@@ -41,7 +42,11 @@ function layerMapRoleAndRules(): string {
 
 Make your design fit snugly within the given width×depth×height volume. \`layers\`: bottom→top Y (first string = lowest Y). Within each string, rows = +Z, characters = +X. \`palette\`: one character → one \`minecraft:\` id. Space = leave unchanged; \`_\` = air.
 
-Include \`briefFulfilment\`: a short prose explanation (one to four sentences) of how this layer diagram and palette implement the design.`;
+Include \`briefFulfilment\`: a short prose explanation (one to four sentences) of how this layer diagram and palette implement the design.
+
+If an EXISTING_WORLD_CONTEXT snapshot is provided, that snapshot is deliberately larger than the requested build volume by 2 blocks in every direction. It is context only, not the output footprint. Output only the target build volume, not the oversized surrounding context.
+
+You may modify or replace existing ground blocks and other existing blocks inside the target build volume whenever that is appropriate for the build. Use the surrounding context to blend and fit the structure naturally.`;
 }
 
 function layerMapWorkedExampleSection(): string {
@@ -79,6 +84,7 @@ export function getLayerMapStepSystemPrompt(): string {
 export function getLayerMapStepUserContent(
   mergedPlacement: Placement,
   design: DesignChoiceStep,
+  existingWorldContext?: LayerMapData,
 ): string {
   const ds = mergedPlacement.desiredSize;
   if (ds === undefined) {
@@ -97,6 +103,17 @@ export function getLayerMapStepUserContent(
     "",
   ];
 
+  if (existingWorldContext) {
+    lines.push(
+      "EXISTING_WORLD_CONTEXT",
+      "This snapshot is 2 blocks larger than the requested build volume in every direction.",
+      "The inner target build area starts 2 blocks in from each face of this context volume.",
+      "Use this as surrounding context. Output only the target build volume layer map.",
+      JSON.stringify(existingWorldContext),
+      "",
+    );
+  }
+
   return lines.join("\n");
 }
 
@@ -112,9 +129,10 @@ export function composeLayerMapStepPrompt(
   _request: ChatCommandRequest,
   mergedPlacement: Placement,
   design: DesignChoiceStep,
+  existingWorldContext?: LayerMapData,
 ): StepChatPrompt {
   return {
     system: getLayerMapStepSystemPrompt(),
-    user: getLayerMapStepUserContent(mergedPlacement, design),
+    user: getLayerMapStepUserContent(mergedPlacement, design, existingWorldContext),
   };
 }
