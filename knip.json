@@ -1,0 +1,30 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "entry": ["scripts/**/*.ts"],
+  "project": ["src/**/*.ts", "tests/**/*.ts", "scripts/**/*.ts", "*.config.ts"],
+  "ignore": ["src/generated/**"],
+  "ignoreDependencies": ["prismarine-chunk"],
+  "vitest": {
+    "config": ["vitest.config.ts", "vitest.agent.config.ts"]
+  },
+  "ignoreIssues": {
+    "src/planner/schema.ts": ["exports", "types", "duplicates"],
+    "src/types/plugin.ts": ["exports", "types"],
+    "src/benchmark/scorePlan.ts": ["types"],
+    "src/bridge/actionLog.ts": ["types"],
+    "src/planner/planLogger.ts": ["types"],
+    "src/planner/materialResolver.ts": ["types"],
+    "src/planner/minecraftBlockRegistry.ts": ["exports"],
+    "src/planner/materialPalette.ts": ["exports"],
+    "src/generated/minecraftBlockIds.ts": ["exports"],
+    "src/services/ai/replayChatProvider.ts": ["exports", "types"],
+    "src/planner/prompt.ts": ["exports"],
+    "src/planner/steps/designStepPrompt.ts": ["exports"],
+    "src/planner/steps/placementStepPrompt.ts": ["exports"],
+    "src/planner/steps/layerMapStepPrompt.ts": ["exports"],
+    "tests/agent/_fixtures.ts": ["exports", "types"],
+    "src/planner/aiPlanner.ts": ["types"],
+    "src/world/worldReader.ts": ["types"],
+    "scripts/smoke/shared.ts": ["types"]
+  }
+}
