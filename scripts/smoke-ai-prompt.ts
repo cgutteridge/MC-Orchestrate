@@ -1,8 +1,8 @@
 /**
- * Smoke: **full position → design → build prompt path** — three API calls:
- * 1. `buildPlacementPhaseMessages` → `placement_choice`
+ * Smoke: **full placement → design → layer-map prompt path** — three API calls:
+ * 1. `composePlacementPhaseMessages` → `placement_choice`
  * 2. `resetMessagesForDesignPhase` → `design_choice`
- * 3. `resetMessagesForPlanPhase` → `build` with layer map
+ * 3. `resetMessagesForLayerMapPhase` → layer-map JSON step
  *
  * For step 1 only, use `npx tsx scripts/smoke-ai-placement.ts`.
  * For step 3 with fixed fixtures, use `npx tsx scripts/smoke-ai-build.ts`.
@@ -16,9 +16,9 @@
  */
 import { loadConfig } from "../src/config/env.js";
 import {
-  buildPlacementPhaseMessages,
+  composePlacementPhaseMessages,
   resetMessagesForDesignPhase,
-  resetMessagesForPlanPhase,
+  resetMessagesForLayerMapPhase,
 } from "../src/planner/prompt.js";
 import type { DesignChoiceStep, Placement, PlacementPositionOnly } from "../src/planner/schema.js";
 import type { ChatMessage } from "../src/services/ai/types.js";
@@ -63,7 +63,7 @@ async function main(): Promise<void> {
   }
 
   const request = createSmokeChatRequest(message);
-  const messages: ChatMessage[] = buildPlacementPhaseMessages(request, undefined);
+  const messages: ChatMessage[] = composePlacementPhaseMessages(request, undefined);
   process.stdout.write(formatMessagesForStdout(messages));
   process.stdout.write(`--- Calling ${provider.name} (temperature 0.2) — placement step…\n\n`);
 
@@ -94,11 +94,11 @@ async function main(): Promise<void> {
   }
 
   const merged = mergePlacementForBuild(placementResult.placement, designResult.design);
-  resetMessagesForPlanPhase(messages, request, merged, designResult.design, false);
+  resetMessagesForLayerMapPhase(messages, request, merged, designResult.design);
 
   process.stdout.write("\n");
   process.stdout.write(formatMessagesForStdout(messages));
-  process.stdout.write(`--- Calling ${provider.name} (temperature 0.2) — build step…\n\n`);
+  process.stdout.write(`--- Calling ${provider.name} (temperature 0.2) — layer-map step…\n\n`);
 
   const rawBuild = await provider.chat(messages, { temperature: 0.2 });
   process.stdout.write(rawBuild);

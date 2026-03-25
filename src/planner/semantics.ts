@@ -45,8 +45,8 @@ const STRUCTURE_INTENTS = new Set([
  * 1×1×1 = 1 and 1×1×2 = 2 are clearly wrong for any structure intent;
  * 1×5×1 = 5 is a valid tower column and should pass.
  */
-/** Minimum bounding-box volume for structure intents; exported for tests/messages. */
-export const MIN_STRUCTURE_VOLUME = 4;
+/** Minimum bounding-box volume for structure intents. */
+const MIN_STRUCTURE_VOLUME = 4;
 
 /**
  * Detects plans where the bounding box is so small that the AI almost certainly

@@ -81,8 +81,7 @@ export function resolvePlacement(
 
   // ── Resolve Y (independent of horizontal) ────────────────────────────
   const tb = request.localContext.targetBlock;
-  let verticalBaseY: number;
-  verticalBaseY = placement.ref === "focus" ? (tb ? Math.round(tb.y) + 1 : headY) : headY;
+  const verticalBaseY = placement.ref === "focus" ? (tb ? Math.round(tb.y) + 1 : headY) : headY;
   const resolvedY = verticalBaseY + placement.offset.UP;
 
   return { x: baseX, y: resolvedY, z: baseZ };
@@ -95,15 +94,15 @@ export function resolvePlacement(
  * builds (anchor at surface) vs on-ground builds (anchor at floor) align.
  *
  * @param plan Validated plan with `targetRegion`.
- * @param placement Semantic placement including `verticalReference` (`flying` aligns like `middle`).
+ * @param placement Semantic placement including `verticalReference`.
  */
 export function computePlacementAlignmentPoint(plan: Plan, placement: Placement): Point {
   const { min, max } = plan.targetRegion;
   const cx = Math.round((min.x + max.x) / 2);
   const cz = Math.round((min.z + max.z) / 2);
   const v = placement.verticalReference;
-  // `flying` uses the same Y as `middle` (vertical centre); semantics differ in prompts only.
-  const cy = v === "top" ? max.y : v === "bottom" ? min.y : Math.round((min.y + max.y) / 2);
+  const cy =
+    v === "on_ground" ? min.y : v === "under_ground" ? max.y : Math.round((min.y + max.y) / 2);
   return { x: cx, y: cy, z: cz };
 }
 

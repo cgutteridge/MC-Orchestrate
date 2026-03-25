@@ -4,7 +4,7 @@ import { MINECRAFT_DATA_VERSION } from "../generated/minecraftBlockIds.js";
  * System-prompt block: material context for the design step only.
  * Uses template notation to compactly express hundreds of block variants.
  */
-export function buildDesignPhaseMaterialRegistrySection(): string {
+export function composeDesignPhaseMaterialRegistrySection(): string {
   return [
     "=== MATERIAL TEMPLATES ===",
     `Data pack: ${MINECRAFT_DATA_VERSION}. All blocks use minecraft: namespace.`,

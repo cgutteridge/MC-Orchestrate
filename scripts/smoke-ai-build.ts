@@ -1,6 +1,6 @@
 /**
  * Smoke: **build step only** — layer-map `build` with the same user message shape
- * as production after `resetMessagesForPlanPhase` (merged placement + design fixture).
+ * as production after `resetMessagesForLayerMapPhase` (merged placement + design fixture).
  *
  * Uses fixed placement and design fixtures; does not call position or design steps.
  *
@@ -11,7 +11,7 @@
  */
 import { loadConfig } from "../src/config/env.js";
 import type { ChatMessage } from "../src/services/ai/types.js";
-import { resetMessagesForPlanPhase } from "../src/planner/prompt.js";
+import { resetMessagesForLayerMapPhase } from "../src/planner/prompt.js";
 import { createChatProvider } from "../src/services/ai/provider.js";
 import {
   createSmokeChatRequest,
@@ -38,13 +38,7 @@ async function main(): Promise<void> {
 
   const request = createSmokeChatRequest(message);
   const messages: ChatMessage[] = [];
-  resetMessagesForPlanPhase(
-    messages,
-    request,
-    DEFAULT_LOCKED_PLACEMENT,
-    DEFAULT_SMOKE_DESIGN,
-    false,
-  );
+  resetMessagesForLayerMapPhase(messages, request, DEFAULT_LOCKED_PLACEMENT, DEFAULT_SMOKE_DESIGN);
 
   process.stdout.write(formatMessagesForStdout(messages));
   process.stdout.write(

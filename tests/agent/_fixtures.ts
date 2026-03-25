@@ -6,7 +6,6 @@ import { loadConfig } from "../../src/config/env.js";
 import { createChatProvider } from "../../src/services/ai/provider.js";
 import type { ChatProvider } from "../../src/services/ai/types.js";
 import type { ChatCommandRequest, BlockSample } from "../../src/types/plugin.js";
-import { WorldReader } from "../../src/world/worldReader.js";
 
 // ---------------------------------------------------------------------------
 // Provider — created once for the whole process
@@ -34,16 +33,6 @@ export function assertProviderPresent(): void {
     );
   }
 }
-
-// ---------------------------------------------------------------------------
-// WorldReader — points at the local server directory
-// ---------------------------------------------------------------------------
-
-/**
- * WorldReader backed by the local Minecraft server directory.
- * Disk reads return `undefined` gracefully when the world is not present.
- */
-export const worldReader = new WorldReader(config.minecraft.minecraftDir);
 
 // ---------------------------------------------------------------------------
 // Request factory

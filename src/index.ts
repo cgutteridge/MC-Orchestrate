@@ -6,7 +6,6 @@ import { Orchestrator } from "./orchestrator/orchestrator.js";
 import { PlacementBuildLogger } from "./planner/placementBuildLogger.js";
 import { PlannerLogger } from "./planner/planLogger.js";
 import { createChatProvider } from "./services/ai/provider.js";
-import { WorldReader } from "./world/worldReader.js";
 
 async function main(): Promise<void> {
   const config = loadConfig();
@@ -24,11 +23,9 @@ async function main(): Promise<void> {
     actionLogger,
   );
 
-  const worldReader = new WorldReader(config.minecraft.minecraftDir);
   const provider = createChatProvider(config);
   const orchestrator = new Orchestrator(
     bridge,
-    worldReader,
     provider,
     plannerLogger,
     config.ai.aiPlanMaxSteps,

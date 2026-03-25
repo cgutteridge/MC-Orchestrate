@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import type { BridgeCommand } from "../bridge/types.js";
 import type { ChatProvider } from "../services/ai/types.js";
 import type { ChatCommandRequest } from "../types/plugin.js";
-import type { WorldReader } from "../world/worldReader.js";
 import { Orchestrator } from "./orchestrator.js";
 
 // ---------------------------------------------------------------------------
@@ -41,7 +40,7 @@ function buildStep(plan: Record<string, unknown>): string {
   return JSON.stringify({ action: "build", plan });
 }
 
-/** Design loop step 1 — matches production `buildPlacementPhaseMessages` system prompt. */
+/** Design loop step 1 — matches production `composePlacementPhaseMessages` system prompt. */
 function placementChoiceStep(): string {
   return JSON.stringify({
     ref: "player",
@@ -109,18 +108,6 @@ class FakeBridge {
   }
 }
 
-/** A WorldReader that never performs real I/O. */
-const fakeWorldReader: WorldReader = {
-  readLevelMetadata: async () => undefined,
-  readPlayerMetadata: async () => undefined,
-  listRegionFiles: async () => [],
-  readRegionBlocks: async () => undefined,
-  readRegionBlocksOutcome: async () => ({
-    ok: false,
-    reason: "World region directory is missing or not readable.",
-  }),
-} as unknown as WorldReader;
-
 // ---------------------------------------------------------------------------
 // Helper to build a standard Orchestrator with fakes
 // ---------------------------------------------------------------------------
@@ -130,7 +117,7 @@ function makeOrchestrator(provider: ChatProvider): {
   bridge: FakeBridge;
 } {
   const bridge = new FakeBridge();
-  const orchestrator = new Orchestrator(bridge as never, fakeWorldReader, provider);
+  const orchestrator = new Orchestrator(bridge as never, provider);
   return { orchestrator, bridge };
 }
 
@@ -141,7 +128,7 @@ function makeOrchestrator(provider: ChatProvider): {
 describe("Orchestrator", () => {
   it("returns rejected immediately when no AI provider is configured", async () => {
     const bridge = new FakeBridge();
-    const orchestrator = new Orchestrator(bridge as never, fakeWorldReader);
+    const orchestrator = new Orchestrator(bridge as never);
 
     const response = await orchestrator.handleChatCommand(request);
 
@@ -331,7 +318,7 @@ describe("Orchestrator", () => {
     const bridge = new FakeBridge();
     // 1 Thinking, 2 Placement, 3 Building… (2 ops), 4 batchSet 1, 5 batchSet 2 fails.
     bridge.failOnCallNumber = 5;
-    const orchestrator = new Orchestrator(bridge as never, fakeWorldReader, provider);
+    const orchestrator = new Orchestrator(bridge as never, provider);
 
     const response = await orchestrator.handleChatCommand({
       ...request,

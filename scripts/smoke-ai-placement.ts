@@ -7,7 +7,7 @@
  * Requires the same AI env as the app (see `.env.example`).
  */
 import { loadConfig } from "../src/config/env.js";
-import { buildPlacementPhaseMessages } from "../src/planner/prompt.js";
+import { composePlacementPhaseMessages } from "../src/planner/prompt.js";
 import { createChatProvider } from "../src/services/ai/provider.js";
 import {
   createSmokeChatRequest,
@@ -30,7 +30,7 @@ async function main(): Promise<void> {
   }
 
   const request = createSmokeChatRequest(message);
-  const messages = buildPlacementPhaseMessages(request, undefined);
+  const messages = composePlacementPhaseMessages(request, undefined);
   process.stdout.write(formatMessagesForStdout(messages));
   process.stdout.write(`--- Calling ${provider.name} (temperature 0.2) — placement step…\n\n`);
 

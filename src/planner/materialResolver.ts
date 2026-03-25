@@ -20,7 +20,7 @@ export type SanitizePlanMaterialsResult = {
  * Does not block execution: invalid values become {@link MATERIAL_FALLBACK_BLOCK}.
  * Symbolic slots (`material:…`) are not resolved — they are treated as invalid.
  *
- * @param plan Validated plan from the AI build step.
+ * @param plan Validated plan from the layer-map (step 3) model output.
  */
 export function sanitizePlanMaterials(plan: Plan): SanitizePlanMaterialsResult {
   const replaced = new Set<string>();

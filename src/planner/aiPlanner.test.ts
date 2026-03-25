@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ChatProvider } from "../services/ai/types.js";
 import type { ChatCommandRequest } from "../types/plugin.js";
-import type { WorldReader } from "../world/worldReader.js";
 import { runPlacementThenBuild } from "./aiPlanner.js";
 import { sanitizePlanMaterials } from "./materialResolver.js";
 
@@ -39,18 +38,6 @@ const request: ChatCommandRequest = {
     onlinePlayerCount: 1,
   },
 };
-
-/** A WorldReader that always reports disk scan unavailable (no disk access in tests). */
-const fakeWorldReader: WorldReader = {
-  readLevelMetadata: async () => undefined,
-  readPlayerMetadata: async () => undefined,
-  listRegionFiles: async () => [],
-  readRegionBlocks: async () => undefined,
-  readRegionBlocksOutcome: async () => ({
-    ok: false,
-    reason: "World region directory is missing or not readable.",
-  }),
-} as unknown as WorldReader;
 
 /** 5×5 footprint × 6 Y layers — hollow glass ring (fits default cylinder target box). */
 const LAYER_RING_GLASS = {
@@ -144,7 +131,7 @@ describe("runPlacementThenBuild", () => {
       reply: "Here is your hollow glass cylinder!",
     });
 
-    const result = await runPlacementThenBuild(provider, request, fakeWorldReader, undefined);
+    const result = await runPlacementThenBuild(provider, request, undefined);
 
     expect(result.outcome).toBe("plan");
     if (result.outcome !== "plan") {
@@ -176,7 +163,7 @@ describe("runPlacementThenBuild", () => {
       },
     };
 
-    const result = await runPlacementThenBuild(provider, request, fakeWorldReader, undefined);
+    const result = await runPlacementThenBuild(provider, request, undefined);
 
     expect(result.outcome).toBe("plan");
     if (result.outcome !== "plan") {
@@ -239,12 +226,7 @@ describe("runPlacementThenBuild", () => {
       },
     };
 
-    const result = await runPlacementThenBuild(
-      provider,
-      followUpRequest,
-      fakeWorldReader,
-      undefined,
-    );
+    const result = await runPlacementThenBuild(provider, followUpRequest, undefined);
     expect(result.outcome).toBe("plan");
     if (result.outcome !== "plan") {
       return;
@@ -269,7 +251,7 @@ describe("runPlacementThenBuild", () => {
       reply: "I'll create a hollow glass cylinder for you!",
     });
 
-    const result = await runPlacementThenBuild(provider, request, fakeWorldReader, undefined);
+    const result = await runPlacementThenBuild(provider, request, undefined);
 
     expect(result.outcome).toBe("plan");
     if (result.outcome !== "plan") {
@@ -296,7 +278,6 @@ describe("runPlacementThenBuild", () => {
     const result = await runPlacementThenBuild(
       provider,
       { ...request, message: "make me a tower here" },
-      fakeWorldReader,
       undefined,
     );
 
@@ -329,7 +310,6 @@ describe("runPlacementThenBuild", () => {
     const result = await runPlacementThenBuild(
       provider,
       { ...request, message: "make me a cottage here" },
-      fakeWorldReader,
       undefined,
     );
 
@@ -355,7 +335,6 @@ describe("runPlacementThenBuild", () => {
     const result = await runPlacementThenBuild(
       provider,
       { ...request, message: "make me a cottage here" },
-      fakeWorldReader,
       undefined,
     );
 
@@ -376,7 +355,6 @@ describe("runPlacementThenBuild", () => {
     const result = await runPlacementThenBuild(
       provider,
       { ...request, message: "make me a cottage here" },
-      fakeWorldReader,
       undefined,
     );
 
@@ -406,7 +384,6 @@ describe("runPlacementThenBuild", () => {
     const result = await runPlacementThenBuild(
       provider,
       { ...request, message: "a tower made of wool" },
-      fakeWorldReader,
       undefined,
     );
 
@@ -444,7 +421,6 @@ describe("runPlacementThenBuild", () => {
     const result = await runPlacementThenBuild(
       provider,
       { ...request, message: "delete this tree" },
-      fakeWorldReader,
       undefined,
     );
 
@@ -467,7 +443,7 @@ describe("runPlacementThenBuild", () => {
       },
     };
 
-    const result = await runPlacementThenBuild(provider, request, fakeWorldReader, undefined);
+    const result = await runPlacementThenBuild(provider, request, undefined);
 
     expect(result.outcome).toBe("rejected");
     if (result.outcome === "rejected") {
@@ -509,7 +485,7 @@ describe("runPlacementThenBuild", () => {
       },
     };
 
-    const first = await runPlacementThenBuild(provider, request, fakeWorldReader, undefined);
+    const first = await runPlacementThenBuild(provider, request, undefined);
     expect(first.outcome).toBe("plan");
 
     callCount = 0;
@@ -529,7 +505,7 @@ describe("runPlacementThenBuild", () => {
       },
     };
 
-    const result = await runPlacementThenBuild(alwaysBad, request, fakeWorldReader, undefined);
+    const result = await runPlacementThenBuild(alwaysBad, request, undefined);
     expect(result.outcome).toBe("rejected");
     if (result.outcome === "rejected") {
       expect(result.reason).toContain("couldn't lock in a valid build plan");
@@ -578,7 +554,7 @@ describe("runPlacementThenBuild", () => {
       },
     };
 
-    const result = await runPlacementThenBuild(provider, request, fakeWorldReader, undefined);
+    const result = await runPlacementThenBuild(provider, request, undefined);
 
     expect(result.outcome).toBe("plan");
     if (result.outcome !== "plan") {

@@ -8,20 +8,7 @@ import {
   parseReplayFixture,
 } from "../../src/services/ai/replayChatProvider.js";
 import type { ChatCommandRequest } from "../../src/types/plugin.js";
-import type { WorldReader } from "../../src/world/worldReader.js";
-
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-const fakeWorldReader: WorldReader = {
-  readLevelMetadata: async () => undefined,
-  readPlayerMetadata: async () => undefined,
-  listRegionFiles: async () => [],
-  readRegionBlocks: async () => undefined,
-  readRegionBlocksOutcome: async () => ({
-    ok: false,
-    reason: "World region directory is missing or not readable.",
-  }),
-} as unknown as WorldReader;
 
 const baselineRequest: ChatCommandRequest = {
   requestId: "azure-baseline-replay-1",
@@ -73,13 +60,7 @@ describe("Azure baseline replay fixtures", () => {
     const fixture = parseReplayFixture(raw);
     const provider = createReplayChatProvider(fixture.assistantTurns);
 
-    const result = await runPlacementThenBuild(
-      provider,
-      baselineRequest,
-      fakeWorldReader,
-      undefined,
-      undefined,
-    );
+    const result = await runPlacementThenBuild(provider, baselineRequest, undefined, undefined);
 
     expect(result.outcome).toBe("plan");
     if (result.outcome !== "plan") {

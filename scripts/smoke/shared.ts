@@ -97,7 +97,7 @@ export const DEFAULT_SMOKE_DESIGN: DesignChoiceStep = DesignChoiceStepSchema.par
   action: "design_choice",
   designSummary: "A tall, spiraling wizard tower with a cozy study at the top.",
   builderGuide:
-    "Start by creating a circular base with stone bricks. Build the tower upwards using a mix of stone and wood, adding spiral stairs inside. At the top, create a small room for the study with large windows for light. Decorate the interior with bookshelves and a desk.",
+    "Bottom layer is zero. A stone hollow cylindar 15 blocks high and a diameter of 10. layers 0 and  layer  9 are filled with wood to provide a floor. Above the cylindar is shrinking circles of wood making a pointed roof. the entrance at ground level is two empty blocks in layers 1 & 2. the stairway is made with wooden blocks circling the inside of the stone wall leading up 1 block at a time to the upper room. A hole in the upper floor allows access from the stairwell to the study. The inside of the study is decorated with bookshelves.",
   desiredSize: SMOKE_FOOTPRINT,
   verticalReference: "on_ground",
   recommendedMaterials: ["stone_bricks", "oak_planks", "glass", "bookshelf", "ladder"],
@@ -176,7 +176,7 @@ export function formatMessagesForStdout(messages: ChatMessage[]): string {
 /**
  * Each layer string in order (bottom Y → top Y), separated by a blank line.
  */
-export function formatLayerMapForDisplay(layerMap: LayerMapData): string {
+function formatLayerMapForDisplay(layerMap: LayerMapData): string {
   return layerMap.layers.join("\n\n");
 }
 

@@ -6,12 +6,10 @@ import { escapeRegex } from "../utils/regex.js";
 import type { PlacementBuildLogger } from "./placementBuildLogger.js";
 import type { PlannerLogger } from "./planLogger.js";
 import {
-  buildPlacementPhaseMessages,
-  hasSolidGroundBelowResolvedAnchor,
+  composePlacementPhaseMessages,
   resetMessagesForDesignPhase,
-  resetMessagesForPlanPhase,
+  resetMessagesForLayerMapPhase,
 } from "./prompt.js";
-import { computePlanCenter, resolvePlacement } from "./placement.js";
 import { defaultRegion } from "./requestContext.js";
 import {
   DesignChoiceStepSchema,
@@ -23,7 +21,6 @@ import {
   type Placement,
   type PlacementPositionOnly,
 } from "./schema.js";
-import type { WorldReader } from "../world/worldReader.js";
 import { aiPlanFailureMessage } from "./playerRefusalMessages.js";
 import {
   coerceAssistantLayerMapToLoosePlanCandidate,
@@ -34,7 +31,7 @@ import {
 } from "./layerMap.js";
 
 /** Default when {@link PlacementThenBuildOptions.maxSteps} is omitted (orchestrator passes config). */
-export const DEFAULT_AI_PLAN_MAX_STEPS = 10;
+const DEFAULT_AI_PLAN_MAX_STEPS = 10;
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -82,7 +79,6 @@ export type PlacementThenBuildOptions = {
  *
  * @param provider AI chat provider.
  * @param request The validated player request.
- * @param worldReader Reserved for API symmetry with verify passes; this function does not read the world.
  * @param lastPlan The last successfully built plan for this player (follow-up context).
  * @param plannerLogger Optional structured logger for each stage.
  * @param placedBlocks Optional map of blocks placed by the bridge this session.
@@ -91,16 +87,15 @@ export type PlacementThenBuildOptions = {
 export async function runPlacementThenBuild(
   provider: ChatProvider,
   request: ChatCommandRequest,
-  _worldReader: WorldReader,
   lastPlan: Plan | undefined,
   plannerLogger?: PlannerLogger,
-  placedBlocks?: ReadonlyMap<string, string>,
+  _placedBlocks?: ReadonlyMap<string, string>,
   options?: PlacementThenBuildOptions,
 ): Promise<PlacementThenBuildResult> {
   const maxSteps = clampAiPlanMaxSteps(options?.maxSteps ?? DEFAULT_AI_PLAN_MAX_STEPS);
   const dl = options?.planProgressLogger;
 
-  const messages: ChatMessage[] = buildPlacementPhaseMessages(request, lastPlan);
+  const messages: ChatMessage[] = composePlacementPhaseMessages(request, lastPlan);
   /** Position-only placement from step 1 (no `desiredSize`). */
   let splitPlanPlacement: PlacementPositionOnly | undefined;
   /** Design step output: size + materials + prose for the builder. */
@@ -332,7 +327,7 @@ export async function runPlacementThenBuild(
       continue;
     }
 
-    // design_choice — phase 2 → build phase
+    // design_choice — phase 2 → layer-map phase
     if (action === "design_choice") {
       if (!splitPlanPlacement) {
         consecutiveParseFailures++;
@@ -407,20 +402,13 @@ export async function runPlacementThenBuild(
 
       lockedDesign = dResult.data;
       const mergedPlacement = mergePlacementWithDesign(splitPlanPlacement, lockedDesign);
-      const terrainGroundHint = computeTerrainGroundHint(request, mergedPlacement, lastPlan);
-      resetMessagesForPlanPhase(
-        messages,
-        request,
-        mergedPlacement,
-        lockedDesign,
-        terrainGroundHint,
-      );
+      resetMessagesForLayerMapPhase(messages, request, mergedPlacement, lockedDesign);
       await dl?.line(
         request.requestId,
         step,
         maxSteps,
         "split_design_locked",
-        "transition to build phase",
+        "transition to layer_map phase",
       );
       await plannerLogger?.log({
         timestamp: new Date().toISOString(),
@@ -675,7 +663,7 @@ function applyDesiredSizeToPlanCandidate(
  * the plan's implied action mismatches the player's request — that fails
  * {@link PlanSchema} validation (`passes.min(1)`).
  */
-export function repairLoosePlanCandidate(
+function repairLoosePlanCandidate(
   candidate: Record<string, unknown>,
   request: ChatCommandRequest,
 ): Record<string, unknown> {
@@ -771,7 +759,7 @@ function shouldClarifyByAction(
   passes: Array<Record<string, unknown>>,
   request: ChatCommandRequest,
 ): boolean {
-  const context = [request.message, ...request.recentMessages].join(" ");
+  const context = [request.message, ...(request.recentMessages ?? [])].join(" ");
   const requestAction = classifyRequestAction(context);
   if (requestAction === "unknown") {
     return false;
@@ -1058,23 +1046,6 @@ function mergePlacementWithDesign(
     desiredSize: design.desiredSize,
     verticalReference: design.verticalReference,
   };
-}
-
-/**
- * Whether sampled blocks suggest solid ground under the merged footprint anchor.
- *
- * @param request Player context.
- * @param mergedPlacement Placement including `desiredSize`.
- * @param lastPlan Optional prior plan for `last_build` anchor resolution.
- */
-function computeTerrainGroundHint(
-  request: ChatCommandRequest,
-  mergedPlacement: Placement,
-  lastPlan: Plan | undefined,
-): boolean {
-  const lastCenter = lastPlan !== undefined ? computePlanCenter(lastPlan) : undefined;
-  const anchor = resolvePlacement(mergedPlacement, request, lastCenter);
-  return hasSolidGroundBelowResolvedAnchor(request, anchor);
 }
 
 function summarizeLooseParsed(loose: Record<string, unknown>): string {

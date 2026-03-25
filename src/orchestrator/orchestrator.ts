@@ -16,8 +16,10 @@ import {
 } from "../planner/placement.js";
 import { validatePlanSemantics } from "../planner/semantics.js";
 import type { Plan } from "../planner/schema.js";
-import { WorldReader } from "../world/worldReader.js";
-import { orchestratorUnexpectedErrorMessage } from "../planner/playerRefusalMessages.js";
+import {
+  orchestratorEmptyPlanMessage,
+  orchestratorUnexpectedErrorMessage,
+} from "../planner/playerRefusalMessages.js";
 
 /** Minimum bridge operations before mid-run percentage announcements. */
 const PROGRESS_ANNOUNCE_MIN_OPS = 20;
@@ -65,9 +67,16 @@ type BridgeExecutionResult =
 export class Orchestrator {
   private readonly recentMessagesByPlayer = new Map<string, string[]>();
   private readonly lastBuiltStructurePlanByPlayer = new Map<string, Plan>();
+
+  /**
+   * @param bridge TCP bridge to the Minecraft server plugin.
+   * @param provider Optional chat provider; when omitted, planning requests are rejected.
+   * @param plannerLogger Optional newline-delimited JSON diagnostics.
+   * @param aiPlanMaxSteps Max AI rounds for placement-then-build (default 10).
+   * @param planProgressLogger Optional human-readable planner progress log.
+   */
   constructor(
     private readonly bridge: BridgeServer,
-    private readonly worldReader: WorldReader,
     private readonly provider?: ChatProvider,
     private readonly plannerLogger?: PlannerLogger,
     private readonly aiPlanMaxSteps: number = 10,
@@ -138,7 +147,6 @@ export class Orchestrator {
       const planningResult = await runPlacementThenBuild(
         this.provider,
         planningRequest,
-        this.worldReader,
         previousPlan,
         this.plannerLogger,
         this.bridge.getPlacedBlocks(),
@@ -233,6 +241,15 @@ export class Orchestrator {
       // Execute the plan
       // -----------------------------------------------------------------------
       const commands = compilePlanToBridgeCommands(plan);
+      if (commands.length === 0) {
+        return {
+          status: "rejected",
+          reply: orchestratorEmptyPlanMessage(request),
+          requestId: request.requestId,
+          intent: plan.intent,
+        };
+      }
+
       const execution = await this.executeBridgeCommands(commands, request, signal, true);
 
       if (!execution.ok) {
@@ -335,7 +352,7 @@ export class Orchestrator {
     } finally {
       this.rememberMessage(
         planningRequest.player.uuid,
-        planningRequest.recentMessages,
+        planningRequest.recentMessages ?? [],
         planningRequest.message,
       );
     }
@@ -479,7 +496,7 @@ export class Orchestrator {
 
   private withConversationHistory(request: ChatCommandRequest): ChatCommandRequest {
     const remembered = this.recentMessagesByPlayer.get(request.player.uuid) ?? [];
-    const merged = [...remembered, ...request.recentMessages]
+    const merged = [...remembered, ...(request.recentMessages ?? [])]
       .map((entry) => entry.trim())
       .filter((entry) => entry.length > 0)
       .slice(-10);
@@ -503,7 +520,7 @@ function describePlacement(p: import("../planner/schema.js").Placement): string 
   if (p.desiredSize) {
     meta.push(`size ${p.desiredSize.width}×${p.desiredSize.depth}×${p.desiredSize.height}`);
   }
-  if (p.verticalReference && p.verticalReference !== "middle") {
+  if (p.verticalReference && p.verticalReference !== "on_ground") {
     meta.push(`vertical:${p.verticalReference}`);
   }
 

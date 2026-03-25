@@ -15,16 +15,16 @@ export type LayerMapData = {
   palette: Record<string, string>;
 };
 
-/** Sentinel returned by {@link ParsedLayerGrid.getBlock} for space cells (compile skips). */
-export const LAYER_MAP_NOOP_BLOCK = "__layer_map_noop__" as const;
+/** Sentinel returned by parsed layer grids for space cells (compile skips). */
+const LAYER_MAP_NOOP_BLOCK = "__layer_map_noop__" as const;
 
 /** Default palette key for explicit air placement. */
-export const LAYER_MAP_AIR_CHAR = "_" as const;
+const LAYER_MAP_AIR_CHAR = "_" as const;
 
 /** Max horizontal span (X/Z) per layer-map grid axis — matches {@link MAX_REGION_WIDTH}. */
-export const LAYER_MAP_MAX_HORIZONTAL = 32;
+const LAYER_MAP_MAX_HORIZONTAL = 32;
 /** Max vertical layer count — matches {@link MAX_REGION_HEIGHT}. */
-export const LAYER_MAP_MAX_VERTICAL = 48;
+const LAYER_MAP_MAX_VERTICAL = 48;
 
 const BATCH_SET_CHUNK = 512;
 
@@ -182,7 +182,7 @@ export function normalizeLayerMap(layerMap: LayerMapData, clip?: LayerMapClip): 
   };
 }
 
-export type ParsedLayerGrid = {
+type ParsedLayerGrid = {
   width: number;
   depth: number;
   height: number;

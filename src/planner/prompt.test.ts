@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import type { ChatCommandRequest } from "../types/plugin.js";
 import type { DesignChoiceStep } from "./schema.js";
 import {
-  buildPlacementPhaseMessages,
-  buildPlanPhaseSystemContent,
-  buildPlanPhaseUserContent,
+  composeLayerMapPhaseSystemContent,
+  composeLayerMapPhaseUserContent,
+  composePlacementPhaseMessages,
   hasSolidGroundBelowResolvedAnchor,
   summarizeLastBuiltPlan,
 } from "./prompt.js";
@@ -14,6 +14,7 @@ const designFixture: DesignChoiceStep = {
   designSummary: "Test hut",
   builderGuide: "Small hut per request.",
   desiredSize: { width: 8, depth: 8, height: 6 },
+  verticalReference: "on_ground",
   recommendedMaterials: ["minecraft:stone", "minecraft:oak_planks", "minecraft:air"],
 };
 
@@ -42,18 +43,18 @@ const request: ChatCommandRequest = {
   },
 };
 
-describe("buildPlacementPhaseMessages (step 1)", () => {
+describe("composePlacementPhaseMessages (step 1)", () => {
   it("uses the raw player message as placement user text (history lives on request.recentMessages only)", () => {
-    const messages = buildPlacementPhaseMessages(request);
+    const messages = composePlacementPhaseMessages(request);
 
     expect(messages[1]?.content).toBe("five by five");
-    const planSystem = buildPlanPhaseSystemContent(request);
+    const planSystem = composeLayerMapPhaseSystemContent(request);
     expect(planSystem).toContain("minecraft:oak_planks");
     expect(planSystem).not.toContain("=== MATERIALS (design step only) ===");
   });
 
   it("does not inject nearby materials in placement (design phase owns material context)", () => {
-    const messages = buildPlacementPhaseMessages({
+    const messages = composePlacementPhaseMessages({
       ...request,
       localContext: {
         ...request.localContext,
@@ -70,7 +71,7 @@ describe("buildPlacementPhaseMessages (step 1)", () => {
   });
 
   it("omits the nearby context card when only terrain blocks are present", () => {
-    const messages = buildPlacementPhaseMessages({
+    const messages = composePlacementPhaseMessages({
       ...request,
       localContext: {
         ...request.localContext,
@@ -109,14 +110,14 @@ describe("buildPlacementPhaseMessages (step 1)", () => {
       briefFulfilment: "Tower column per prior build.",
     };
 
-    const messages = buildPlacementPhaseMessages(request, lastPlan as never);
+    const messages = composePlacementPhaseMessages(request, lastPlan as never);
     const userContent = messages[1]?.content ?? "";
 
     expect(userContent).toBe("five by five");
   });
 
   it("does not embed recentMessages in placement user text", () => {
-    const messages = buildPlacementPhaseMessages({
+    const messages = composePlacementPhaseMessages({
       ...request,
       message: "make it taller",
       recentMessages: ["build a stone cottage"],
@@ -155,7 +156,7 @@ describe("buildPlacementPhaseMessages (step 1)", () => {
   });
 
   it("system prompt contains placement ref enum and offset vocabulary", () => {
-    const messages = buildPlacementPhaseMessages(request);
+    const messages = composePlacementPhaseMessages(request);
     const system = messages[0]?.content ?? "";
 
     expect(system).toContain("ref: player | focus");
@@ -167,7 +168,7 @@ describe("buildPlacementPhaseMessages (step 1)", () => {
   });
 
   it("placement system prompt describes anchor JSON and directional hints", () => {
-    const messages = buildPlacementPhaseMessages(request);
+    const messages = composePlacementPhaseMessages(request);
     const system = messages[0]?.content ?? "";
 
     expect(system).toContain("Infer placement intent");
@@ -175,7 +176,7 @@ describe("buildPlacementPhaseMessages (step 1)", () => {
   });
 
   it("system prompt maps common directional phrases to placement fields", () => {
-    const messages = buildPlacementPhaseMessages(request);
+    const messages = composePlacementPhaseMessages(request);
     const system = messages[0]?.content ?? "";
 
     expect(system).toContain("in front of me");
@@ -186,7 +187,7 @@ describe("buildPlacementPhaseMessages (step 1)", () => {
   });
 
   it("does not embed initialScanRegion in placement user text", () => {
-    const messages = buildPlacementPhaseMessages({
+    const messages = composePlacementPhaseMessages({
       ...request,
       initialScanRegion: { minX: -7, minY: 61, minZ: -7, maxX: 7, maxY: 69, maxZ: 7 },
     });
@@ -196,15 +197,15 @@ describe("buildPlacementPhaseMessages (step 1)", () => {
   });
 });
 
-describe("buildPlanPhaseSystemContent (step 2)", () => {
+describe("composeLayerMapPhaseSystemContent (step 3)", () => {
   it("lists layers, palette, and briefFulfilment for the model", () => {
-    const system = buildPlanPhaseSystemContent(request);
+    const system = composeLayerMapPhaseSystemContent(request);
 
     expect(system).toContain('"layers"');
     expect(system).toContain('"palette"');
     expect(system).toContain("briefFulfilment");
     expect(system).toContain("serializes");
-    expect(system).toContain("expert Minecraft builder");
+    expect(system).toContain("expert Minecraft architect");
     expect(system).toContain("WORKED EXAMPLE");
     expect(system).toContain("CCGGGCC");
     expect(system).not.toContain('"fill_cuboid"');
@@ -212,28 +213,28 @@ describe("buildPlanPhaseSystemContent (step 2)", () => {
   });
 
   it("instructs the model to use concrete minecraft ids in the worked example palette", () => {
-    const system = buildPlanPhaseSystemContent(request);
+    const system = composeLayerMapPhaseSystemContent(request);
 
     expect(system).toContain("minecraft:");
     expect(system).toContain("minecraft:cobblestone");
   });
 
   it("asks how the diagram fulfils the design (briefFulfilment) without an action key", () => {
-    const system = buildPlanPhaseSystemContent(request);
+    const system = composeLayerMapPhaseSystemContent(request);
 
     expect(system).toContain("implement the design");
     expect(system).not.toContain('"action"');
   });
 
   it("does not ask the model for targetWorld or targetRegion in the plan schema guide", () => {
-    const system = buildPlanPhaseSystemContent(request);
+    const system = composeLayerMapPhaseSystemContent(request);
 
     expect(system).not.toContain('"targetWorld"');
     expect(system).not.toContain('"targetRegion"');
   });
 });
 
-describe("plan phase user content (step 2)", () => {
+describe("composeLayerMapPhaseUserContent (step 3)", () => {
   it("hasSolidGroundBelowResolvedAnchor is true when solid exists within 6 blocks below anchor", () => {
     const r = {
       ...request,
@@ -259,59 +260,17 @@ describe("plan phase user content (step 2)", () => {
     expect(hasSolidGroundBelowResolvedAnchor(r, { x: 0, y: 65, z: 0 })).toBe(false);
   });
 
-  it("buildPlanPhaseUserContent includes design summary and volume line (terrain hint not in user text)", () => {
-    const textAir = buildPlanPhaseUserContent(
-      { ...request, message: "a hut" },
-      {
-        ref: "player_view",
-        forward: 0,
-        back: 0,
-        left: 0,
-        right: 0,
-        north: 0,
-        south: 0,
-        east: 0,
-        west: 0,
-        up: 20,
-        down: 0,
-        verticalReference: "bottom",
-        desiredSize: { width: 8, depth: 8, height: 6 },
-      },
-      designFixture,
-      false,
-    );
-    expect(textAir).toContain("fill the volume");
-    expect(textAir).toContain(designFixture.designSummary);
-    expect(textAir).not.toContain("Terrain:");
-
-    const textSolidBelow = buildPlanPhaseUserContent(
-      {
-        ...request,
-        message: "a hut",
-        localContext: {
-          ...request.localContext,
-          nearbyBlocks: [{ x: 0, y: 63, z: 0, type: "minecraft:grass_block" }],
-        },
-      },
-      {
-        ref: "player_view",
-        forward: 0,
-        back: 0,
-        left: 0,
-        right: 0,
-        north: 0,
-        south: 0,
-        east: 0,
-        west: 0,
-        up: 0,
-        down: 0,
-        verticalReference: "bottom",
-        desiredSize: { width: 8, depth: 8, height: 6 },
-      },
-      designFixture,
-      true,
-    );
-    expect(textSolidBelow).toContain("fill the volume");
-    expect(textSolidBelow).not.toContain("Terrain:");
+  it("composeLayerMapPhaseUserContent includes design summary and volume line (no terrain suffix in user text)", () => {
+    const placement = {
+      ref: "player" as const,
+      frame: "player" as const,
+      offset: { F: 0, R: 0, N: 0, E: 0, UP: 20 },
+      verticalReference: "on_ground" as const,
+      desiredSize: { width: 8, depth: 8, height: 6 },
+    };
+    const text = composeLayerMapPhaseUserContent(placement, designFixture);
+    expect(text).toContain("voxel grid should fill the volume");
+    expect(text).toContain(designFixture.designSummary);
+    expect(text).not.toContain("Terrain:");
   });
 });

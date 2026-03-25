@@ -61,6 +61,8 @@ export type ChatCommandRequest = {
   requestId: string;
   player: PlayerSnapshot;
   message: string;
+  /** Prior chat lines for this player session (optional; not sent verbatim in all prompts). */
+  recentMessages?: string[];
   localContext: LocalContext;
   serverContext: ServerContext;
   /** Bounding box of the expanded block scan included in `localContext.nearbyBlocks`. */

@@ -60,13 +60,6 @@ export function orchestratorUnexpectedErrorMessage(message: string): string {
 }
 
 /**
- * Semantics: pass order would wipe an earlier build.
- */
-export const SEMANTICS_PASS_ORDER =
-  "Plan check: a clear/replace-to-air step would completely erase an earlier fill in the same pass order. " +
-  "Re-order passes so demolition happens before construction, or narrow the clear region so it doesn't swallow the whole build.";
-
-/**
  * Semantics: structure intent but tiny bbox.
  *
  * @param volume - Bounding box volume.

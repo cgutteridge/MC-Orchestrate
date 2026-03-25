@@ -30,7 +30,7 @@ const defaultPlacement: Placement = {
   ref: "player",
   frame: "player",
   offset: { F: 0, R: 0, N: 0, E: 0, UP: 0 },
-  verticalReference: "middle",
+  verticalReference: "on_ground",
 };
 
 describe("resolvePlacement — player frame", () => {
@@ -125,15 +125,7 @@ describe("computePlacementAlignmentPoint", () => {
     briefFulfilment: "Alignment point tests.",
   };
 
-  it("middle uses XZ centre and vertical centre Y", () => {
-    const p = computePlacementAlignmentPoint(plan, {
-      ...defaultPlacement,
-      verticalReference: "middle",
-    });
-    expect(p).toEqual({ x: 2, y: 12, z: 2 });
-  });
-
-  it("flying uses the same alignment as middle (vertical centre Y)", () => {
+  it("flying uses vertical centre Y on the footprint", () => {
     const p = computePlacementAlignmentPoint(plan, {
       ...defaultPlacement,
       verticalReference: "flying",
@@ -141,18 +133,18 @@ describe("computePlacementAlignmentPoint", () => {
     expect(p).toEqual({ x: 2, y: 12, z: 2 });
   });
 
-  it("top uses max Y", () => {
+  it("under_ground uses max Y (top face of volume)", () => {
     const p = computePlacementAlignmentPoint(plan, {
       ...defaultPlacement,
-      verticalReference: "top",
+      verticalReference: "under_ground",
     });
     expect(p).toEqual({ x: 2, y: 14, z: 2 });
   });
 
-  it("bottom uses min Y", () => {
+  it("on_ground uses min Y (bottom face of volume)", () => {
     const p = computePlacementAlignmentPoint(plan, {
       ...defaultPlacement,
-      verticalReference: "bottom",
+      verticalReference: "on_ground",
     });
     expect(p).toEqual({ x: 2, y: 10, z: 2 });
   });

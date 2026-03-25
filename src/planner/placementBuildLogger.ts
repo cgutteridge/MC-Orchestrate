@@ -16,7 +16,7 @@ export class PlacementBuildLogger {
    *
    * @param requestId Correlates with plugin / orchestrator request.
    * @param stepIndex Zero-based step index (displayed as `stepIndex + 1`). Use `-1` to omit the step fraction (session-level lines).
-   * @param maxSteps Maximum AI calls configured for this request (placement → build plus any correction retries).
+   * @param maxSteps Maximum AI calls configured for this request (placement → layer-map step plus any correction retries).
    * @param event Short machine-readable event name (e.g. `call_start`, `exit`).
    * @param detail Optional human-readable suffix (kept short; not a full payload dump).
    */
