@@ -450,7 +450,9 @@ export function tryExtractLayerMapData(value: Record<string, unknown>): LayerMap
     if (isRecord(first) && isRecord(first.layerMap) && Array.isArray(first.layerMap.layers)) {
       return {
         layers: first.layerMap.layers as string[],
-        palette: isRecord(first.layerMap.palette) ? (first.layerMap.palette as Record<string, string>) : {},
+        palette: isRecord(first.layerMap.palette)
+          ? (first.layerMap.palette as Record<string, string>)
+          : {},
       };
     }
   }

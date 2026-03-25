@@ -121,7 +121,13 @@ describe("assistant layer-map coercion", () => {
       tryExtractLayerMapData({
         action: "build",
         plan: {
-          passes: [{ name: "p", goal: "g", layerMap: { layers: ["Y"], palette: { Y: "minecraft:stone" } } }],
+          passes: [
+            {
+              name: "p",
+              goal: "g",
+              layerMap: { layers: ["Y"], palette: { Y: "minecraft:stone" } },
+            },
+          ],
         },
       })?.layers,
     ).toEqual(["Y"]);

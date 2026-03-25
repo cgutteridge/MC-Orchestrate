@@ -42,7 +42,10 @@ describe("resolvePlacement — player frame", () => {
 
   it("F:+8 facing south (+z) increases z by 8", () => {
     const req = makeRequest({ x: 0, y: 64, z: 0 }, { x: 0, y: 0, z: 1 });
-    const result = resolvePlacement({ ...defaultPlacement, offset: { ...defaultPlacement.offset, F: 8 } }, req);
+    const result = resolvePlacement(
+      { ...defaultPlacement, offset: { ...defaultPlacement.offset, F: 8 } },
+      req,
+    );
     expect(result).toEqual({ x: 0, y: 65, z: 8 });
   });
 

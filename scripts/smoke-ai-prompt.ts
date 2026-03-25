@@ -40,8 +40,15 @@ const message =
  * @param position Step-1 placement.
  * @param design Validated design_choice.
  */
-function mergePlacementForBuild(position: PlacementPositionOnly, design: DesignChoiceStep): Placement {
-  return { ...position, desiredSize: design.desiredSize, verticalReference: design.verticalReference };
+function mergePlacementForBuild(
+  position: PlacementPositionOnly,
+  design: DesignChoiceStep,
+): Placement {
+  return {
+    ...position,
+    desiredSize: design.desiredSize,
+    verticalReference: design.verticalReference,
+  };
 }
 
 async function main(): Promise<void> {
