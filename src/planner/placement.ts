@@ -1,6 +1,12 @@
 import type { ChatCommandRequest } from "../types/plugin.js";
 import type { Plan, Placement, Point, BuildPass } from "./schema.js";
 
+const AIR_LIKE_BLOCKS = new Set([
+  "minecraft:air",
+  "minecraft:cave_air",
+  "minecraft:void_air",
+]);
+
 // ---------------------------------------------------------------------------
 // Anchor resolution
 // ---------------------------------------------------------------------------
@@ -83,8 +89,12 @@ export function resolvePlacement(
   const tb = request.localContext.targetBlock;
   const verticalBaseY = placement.ref === "focus" ? (tb ? Math.round(tb.y) + 1 : headY) : headY;
   const resolvedY = verticalBaseY + placement.offset.UP;
+  const groundedY =
+    placement.verticalReference === "flying"
+      ? resolvedY
+      : resolveTopGroundBlockY(request, { x: baseX, y: resolvedY, z: baseZ });
 
-  return { x: baseX, y: resolvedY, z: baseZ };
+  return { x: baseX, y: groundedY, z: baseZ };
 }
 
 /**
@@ -134,6 +144,50 @@ function shiftPass(pass: BuildPass, _offset: Point): BuildPass {
 
 function addPoint(p: Point, offset: Point): Point {
   return { x: p.x + offset.x, y: p.y + offset.y, z: p.z + offset.z };
+}
+
+function resolveTopGroundBlockY(request: ChatCommandRequest, point: Point): number {
+  const blockByY = new Map<number, string>();
+  for (const block of request.localContext.nearbyBlocks) {
+    if (block.x === point.x && block.z === point.z) {
+      blockByY.set(block.y, block.type);
+    }
+  }
+
+  const minScanY =
+    request.initialScanRegion?.minY ??
+    (blockByY.size > 0 ? Math.min(...blockByY.keys()) : undefined);
+  const maxScanY =
+    request.initialScanRegion?.maxY ??
+    (blockByY.size > 0 ? Math.max(...blockByY.keys()) : undefined);
+
+  if (minScanY === undefined || maxScanY === undefined) {
+    return point.y;
+  }
+
+  const isAirAt = (y: number): boolean => {
+    const blockType = blockByY.get(y);
+    return blockType === undefined || AIR_LIKE_BLOCKS.has(blockType.toLowerCase());
+  };
+
+  if (isAirAt(point.y)) {
+    for (let y = point.y; y >= minScanY; y--) {
+      if (!isAirAt(y)) {
+        return y;
+      }
+    }
+    return point.y;
+  }
+
+  let groundedY = point.y;
+  for (let y = point.y + 1; y <= maxScanY; y++) {
+    if (isAirAt(y)) {
+      return groundedY;
+    }
+    groundedY = y;
+  }
+
+  return groundedY;
 }
 
 // ---------------------------------------------------------------------------

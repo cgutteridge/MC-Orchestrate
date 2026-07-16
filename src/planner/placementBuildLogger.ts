@@ -3,7 +3,7 @@ import { dirname } from "node:path";
 
 /**
  * Human-readable, append-only log for {@link runPlacementThenBuild} (one line per event).
- * Complements structured `ai-planner.jsonl` entries.
+ * Complements the structured per-request trace in `requests.jsonl`.
  */
 export class PlacementBuildLogger {
   /**

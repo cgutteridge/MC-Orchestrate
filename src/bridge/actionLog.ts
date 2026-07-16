@@ -1,5 +1,4 @@
-import { appendFile, mkdir } from "node:fs/promises";
-import { dirname } from "node:path";
+import { RequestEventLogger } from "../logging/requestEventLogger.js";
 import type { BridgeCommand } from "./types.js";
 
 export type ActionLogEntry = {
@@ -11,16 +10,26 @@ export type ActionLogEntry = {
 };
 
 /**
- * Persists executed bridge commands as newline-delimited JSON for audit/debug use.
+ * Compatibility wrapper that emits bridge execution events to the shared
+ * request trace log.
  */
 export class ActionLogger {
-  constructor(private readonly path: string) {}
+  constructor(private readonly requestEventLogger: RequestEventLogger) {}
 
   /**
    * Appends a single action entry to the configured log file.
    */
   async log(entry: ActionLogEntry): Promise<void> {
-    await mkdir(dirname(this.path), { recursive: true });
-    await appendFile(this.path, `${JSON.stringify(entry)}\n`, "utf8");
+    await this.requestEventLogger.log({
+      timestamp: entry.timestamp,
+      requestId: entry.requestId,
+      phase: "execution",
+      event: "bridge_command",
+      payload: {
+        playerUuid: entry.playerUuid,
+        playerName: entry.playerName,
+        command: entry.command,
+      },
+    });
   }
 }

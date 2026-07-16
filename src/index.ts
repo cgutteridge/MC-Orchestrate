@@ -2,6 +2,7 @@ import { ActionLogger } from "./bridge/actionLog.js";
 import { BridgeServer } from "./bridge/bridgeServer.js";
 import { loadConfig } from "./config/env.js";
 import { createHttpServer } from "./http/server.js";
+import { RequestEventLogger } from "./logging/requestEventLogger.js";
 import { Orchestrator } from "./orchestrator/orchestrator.js";
 import { PlacementBuildLogger } from "./planner/placementBuildLogger.js";
 import { PlannerLogger } from "./planner/planLogger.js";
@@ -10,8 +11,10 @@ import { WorldReader } from "./world/worldReader.js";
 
 async function main(): Promise<void> {
   const config = loadConfig();
-  const actionLogger = new ActionLogger(config.minecraft.actionLogPath);
-  const plannerLogger = new PlannerLogger(config.ai.plannerLogPath);
+  const requestEventLogger = new RequestEventLogger(config.ai.requestLogPath);
+  const aiEventLogger = new RequestEventLogger(config.ai.aiLogPath, { pretty: true });
+  const actionLogger = new ActionLogger(requestEventLogger);
+  const plannerLogger = new PlannerLogger([requestEventLogger, aiEventLogger]);
   const planProgressLogger = new PlacementBuildLogger(config.ai.aiPlanLogPath);
   const worldReader = new WorldReader(config.minecraft.minecraftDir);
   const bridge = new BridgeServer(

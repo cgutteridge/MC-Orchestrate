@@ -6,7 +6,7 @@
   "description": "Minecraft bridge, AI orchestrator, and Spigot plugin integration for in-game building commands.",
   "main": "dist/index.js",
   "scripts": {
-    "start": "tsx src/index.ts",
+    "start": "MCORCH_FULL_LOGGING=1 tsx src/index.ts",
     "smoke:ai": "tsx scripts/smoke-ai-connection.ts",
     "smoke:ai:prompt": "tsx scripts/smoke-ai-prompt.ts",
     "smoke:ai:placement": "tsx scripts/smoke-ai-placement.ts",

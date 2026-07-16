@@ -35,10 +35,18 @@ const Schema = z.object({
   MINECRAFT_DIR: optionalNonEmpty,
   MINECRAFT_JAR: optionalNonEmpty,
   JAVA_BIN: optionalNonEmpty,
+  MCORCH_REQUEST_LOG: optionalNonEmpty,
   MCORCH_ACTION_LOG: optionalNonEmpty,
   MCORCH_AI_LOG: optionalNonEmpty,
   MCORCH_AI_PROVIDER_LOG: optionalNonEmpty,
   MCORCH_AI_PLAN_LOG: optionalNonEmpty,
+  MCORCH_FULL_LOGGING: z.preprocess(
+    (value) =>
+      value === undefined || value === "" || (typeof value === "string" && value.trim() === "")
+        ? undefined
+        : value,
+    z.enum(["true", "false", "1", "0"]).optional(),
+  ),
   MCORCH_AI_PLAN_MAX_STEPS: z.preprocess(
     (value) =>
       value === undefined || value === "" || (typeof value === "string" && value.trim() === "")
@@ -117,11 +125,14 @@ export type AppConfig = {
     minecraftDir: string;
     minecraftJar: string;
     javaBin?: string;
-    actionLogPath: string;
   };
   ai: {
-    plannerLogPath: string;
-    providerLogPath: string;
+    /** Primary per-request structured event log. */
+    requestLogPath: string;
+    /** AI-focused structured event log for planner/model diagnostics. */
+    aiLogPath: string;
+    /** Optional full prompt/response dump for provider debugging. */
+    providerLogPath?: string;
     /** Human-readable log for placement-then-build AI progress. */
     aiPlanLogPath: string;
     /** Max AI calls per chat request (placement + build + retries). */
@@ -140,6 +151,7 @@ export function loadConfig(): AppConfig {
     parsed.AZURE_OPENAI_API_KEY &&
     parsed.AZURE_OPENAI_API_VERSION &&
     parsed.AZURE_OPENAI_DEPLOYMENT;
+  const fullLogging = parsed.MCORCH_FULL_LOGGING === "true" || parsed.MCORCH_FULL_LOGGING === "1";
   const aiProvider = openAIConfigured
     ? {
         kind: "openai" as const,
@@ -179,11 +191,13 @@ export function loadConfig(): AppConfig {
       minecraftDir: parsed.MINECRAFT_DIR ?? "minecraft-server",
       minecraftJar: parsed.MINECRAFT_JAR ?? "spigot-1.21.1.jar",
       javaBin: parsed.JAVA_BIN,
-      actionLogPath: parsed.MCORCH_ACTION_LOG ?? "logs/bridge-actions.jsonl",
     },
     ai: {
-      plannerLogPath: parsed.MCORCH_AI_LOG ?? "logs/ai-planner.jsonl",
-      providerLogPath: parsed.MCORCH_AI_PROVIDER_LOG ?? "logs/ai-provider.log",
+      requestLogPath:
+        parsed.MCORCH_REQUEST_LOG ?? parsed.MCORCH_ACTION_LOG ?? "logs/requests.jsonl",
+      aiLogPath: parsed.MCORCH_AI_LOG ?? "logs/ai.jsonl",
+      providerLogPath:
+        parsed.MCORCH_AI_PROVIDER_LOG ?? (fullLogging ? "logs/ai-provider.log" : undefined),
       aiPlanLogPath: parsed.MCORCH_AI_PLAN_LOG ?? "logs/ai-plan.log",
       aiPlanMaxSteps: parsed.MCORCH_AI_PLAN_MAX_STEPS ?? 10,
     },

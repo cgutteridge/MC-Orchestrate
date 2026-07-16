@@ -128,6 +128,17 @@ export async function runPlacementThenBuild(
     }
 
     await dl?.line(request.requestId, step, maxSteps, "call_start", "calling AI provider");
+    await plannerLogger?.log({
+      timestamp: new Date().toISOString(),
+      requestId: request.requestId,
+      stage: "prompt_messages",
+      payload: {
+        provider: provider.name,
+        step,
+        options: { temperature: 0.2 },
+        messages: messages.map((message) => ({ ...message })),
+      },
+    });
 
     const rawResponse = await provider.chat(messages, { temperature: 0.2 });
 
@@ -415,6 +426,7 @@ export async function runPlacementThenBuild(
         request,
         mergedPlacement,
         options?.readRegionBlocks,
+        plannerLogger,
         dl,
         step,
         maxSteps,
@@ -643,6 +655,7 @@ async function loadExistingWorldContext(
   readRegionBlocks:
     | ((region: Region, worldName: string) => Promise<BlockSample[] | undefined>)
     | undefined,
+  plannerLogger: PlannerLogger | undefined,
   dl: PlacementBuildLogger | undefined,
   step: number,
   maxSteps: number,
@@ -667,10 +680,22 @@ async function loadExistingWorldContext(
       "context_scan_start",
       `scan min(${contextRegion.min.x},${contextRegion.min.y},${contextRegion.min.z}) max(${contextRegion.max.x},${contextRegion.max.y},${contextRegion.max.z})`,
     );
+    await plannerLogger?.log({
+      timestamp: new Date().toISOString(),
+      requestId: request.requestId,
+      stage: "context_scan_start",
+      payload: { step, contextRegion },
+    });
 
     const blocks = await readRegionBlocks(contextRegion, request.player.world);
     if (!blocks) {
       await dl?.line(request.requestId, step, maxSteps, "context_scan_unavailable", "scan failed");
+      await plannerLogger?.log({
+        timestamp: new Date().toISOString(),
+        requestId: request.requestId,
+        stage: "context_scan_unavailable",
+        payload: { step, contextRegion, reason: "scan failed" },
+      });
       return undefined;
     }
 
@@ -681,7 +706,20 @@ async function loadExistingWorldContext(
       "context_scan_ready",
       `loaded ${blocks.length} non-air blocks`,
     );
-    return serializeRegionBlocksToLayerMap(contextRegion, blocks);
+    const layerMap = serializeRegionBlocksToLayerMap(contextRegion, blocks);
+    await plannerLogger?.log({
+      timestamp: new Date().toISOString(),
+      requestId: request.requestId,
+      stage: "context_scan_ready",
+      payload: {
+        step,
+        contextRegion,
+        nonAirBlockCount: blocks.length,
+        layerCount: layerMap.layers.length,
+        paletteSize: Object.keys(layerMap.palette).length,
+      },
+    });
+    return layerMap;
   } catch {
     await dl?.line(
       request.requestId,
@@ -690,6 +728,12 @@ async function loadExistingWorldContext(
       "context_scan_unavailable",
       "scan threw unexpectedly",
     );
+    await plannerLogger?.log({
+      timestamp: new Date().toISOString(),
+      requestId: request.requestId,
+      stage: "context_scan_unavailable",
+      payload: { step, reason: "scan threw unexpectedly" },
+    });
     return undefined;
   }
 }

@@ -16,6 +16,8 @@ const AI_ENV_KEYS = [
   "AZURE_OPENAI_CHAT_STREAM",
   "AZURE_OPENAI_USE_RESPONSES",
   "AZURE_OPENAI_RESPONSES_API_VERSION",
+  "MCORCH_AI_PROVIDER_LOG",
+  "MCORCH_FULL_LOGGING",
 ] as const;
 
 function resetProviderEnv(): void {
@@ -85,5 +87,24 @@ describe("loadConfig", () => {
       apiKey: "test-openai-key",
       model: "gpt-4o-mini",
     });
+  });
+
+  it("enables the provider dump log when full logging is set", () => {
+    resetProviderEnv();
+    process.env.MCORCH_FULL_LOGGING = "1";
+
+    const config = loadConfig();
+
+    expect(config.ai.providerLogPath).toBe("logs/ai-provider.log");
+  });
+
+  it("prefers an explicit provider dump log path over full logging defaults", () => {
+    resetProviderEnv();
+    process.env.MCORCH_FULL_LOGGING = "1";
+    process.env.MCORCH_AI_PROVIDER_LOG = "logs/custom-provider.log";
+
+    const config = loadConfig();
+
+    expect(config.ai.providerLogPath).toBe("logs/custom-provider.log");
   });
 });

@@ -7,6 +7,7 @@ function makeRequest(
   position: { x: number; y: number; z: number },
   lookVector: { x: number; y: number; z: number },
   targetBlock?: { x: number; y: number; z: number; type: string },
+  nearbyBlocks: ChatCommandRequest["localContext"]["nearbyBlocks"] = [],
 ): ChatCommandRequest {
   return {
     requestId: "test",
@@ -21,7 +22,7 @@ function makeRequest(
     },
     message: "",
     recentMessages: [],
-    localContext: { targetBlock, nearbyBlocks: [], nearbyEntities: [], nearbyPlayers: [] },
+    localContext: { targetBlock, nearbyBlocks, nearbyEntities: [], nearbyPlayers: [] },
     serverContext: { timestamp: "2026-01-01T00:00:00Z", dimension: "NORMAL", onlinePlayerCount: 1 },
   };
 }
@@ -106,6 +107,42 @@ describe("resolvePlacement — focus", () => {
   it("falls back to player when targetBlock is missing", () => {
     const req = makeRequest({ x: 0, y: 64, z: 0 }, { x: 0, y: 0, z: 1 });
     const result = resolvePlacement({ ...defaultPlacement, ref: "focus" }, req);
+    expect(result).toEqual({ x: 0, y: 65, z: 0 });
+  });
+
+  it("snaps non-flying anchors down to the top solid block in the local column", () => {
+    const req = makeRequest(
+      { x: 0, y: 64, z: 0 },
+      { x: 0, y: 0, z: 1 },
+      undefined,
+      [{ x: 0, y: 63, z: 0, type: "minecraft:grass_block" }],
+    );
+    const result = resolvePlacement(defaultPlacement, req);
+    expect(result).toEqual({ x: 0, y: 63, z: 0 });
+  });
+
+  it("snaps non-flying anchors up through solid blocks to the top exposed block", () => {
+    const req = makeRequest(
+      { x: 0, y: 64, z: 0 },
+      { x: 0, y: 0, z: 1 },
+      undefined,
+      [
+        { x: 0, y: 65, z: 0, type: "minecraft:oak_log" },
+        { x: 0, y: 66, z: 0, type: "minecraft:oak_log" },
+      ],
+    );
+    const result = resolvePlacement(defaultPlacement, req);
+    expect(result).toEqual({ x: 0, y: 66, z: 0 });
+  });
+
+  it("does not ground-snap flying placements", () => {
+    const req = makeRequest(
+      { x: 0, y: 64, z: 0 },
+      { x: 0, y: 0, z: 1 },
+      undefined,
+      [{ x: 0, y: 63, z: 0, type: "minecraft:grass_block" }],
+    );
+    const result = resolvePlacement({ ...defaultPlacement, verticalReference: "flying" }, req);
     expect(result).toEqual({ x: 0, y: 65, z: 0 });
   });
 });

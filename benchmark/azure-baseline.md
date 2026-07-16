@@ -11,7 +11,7 @@ This folder describes how we validate the **Azure OpenAI → placement-then-buil
 ## Live baseline (with Azure)
 
 1. Set `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_API_VERSION`, `AZURE_OPENAI_DEPLOYMENT` (see `.env.example`).
-2. Optionally set `MCORCH_AI_PROVIDER_LOG` (defaults to `logs/ai-provider.log`) so each request/response is appended by `AzureOpenAIChatProvider`.
+2. Optionally set `MCORCH_AI_PROVIDER_LOG` to enable full provider request/response dumps for capture.
 3. Run a representative flow (e.g. in-game command through the orchestrator, or `npm run test:agent` with agent tests).
 4. Open the provider log. Each entry ends with the assistant `content` (often JSON). Copy the **exact** assistant string for each `chat()` turn you want to freeze.
 5. Update or add a file under `benchmark/fixtures/azure-baseline/`:

@@ -46,15 +46,25 @@ Azure OpenAI:
 - `AZURE_OPENAI_DEPLOYMENT`
 - `AZURE_OPENAI_POLICY_ID` (optional)
 - `AZURE_OPENAI_CHAT_TIMEOUT_MS` (optional)
-- `MCORCH_AI_LOG` (optional planner JSONL log path)
-- `MCORCH_AI_PROVIDER_LOG` (optional raw provider log path)
 
 If both env sets are present, direct OpenAI is selected first. Comment one set out to switch back and forth.
 
-Planner and provider diagnostics default to:
+Logging:
 
-- `logs/ai-planner.jsonl`
-- `logs/ai-provider.log`
+- `MCORCH_FULL_LOGGING` (optional, `npm start` sets this to `1`)
+- `MCORCH_REQUEST_LOG` (optional, defaults to `logs/requests.jsonl`)
+- `MCORCH_AI_LOG` (optional, defaults to `logs/ai.jsonl`)
+- `MCORCH_AI_PLAN_LOG` (optional, defaults to `logs/ai-plan.log`)
+- `MCORCH_AI_PROVIDER_LOG` (optional, raw provider dump log with full prompts/responses)
+
+With `npm start`:
+
+- `logs/requests.jsonl` is the primary structured per-request event trace
+- `logs/ai.jsonl` contains planner-side AI events without bridge execution noise
+- `logs/ai-plan.log` is the compact human-readable planning timeline
+- `logs/ai-provider.log` contains the raw AI provider prompt/response dump
+
+Set `MCORCH_AI_PROVIDER_LOG` to redirect the provider dump. Run `MCORCH_FULL_LOGGING=0 tsx src/index.ts` if you need the old provider-log-off behavior.
 
 ## Plugin
 

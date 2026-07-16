@@ -273,14 +273,10 @@ async function parseChunkNbtAndExtract(
   const chunkData = Array.isArray(root["sections"])
     ? root
     : isRecord(root["Level"])
-      ? (root["Level"] as Record<string, unknown>)
+      ? (unwrapNbtCompound(root["Level"]) ?? (root["Level"] as Record<string, unknown>))
       : root;
 
-  const sections: unknown[] = Array.isArray(chunkData["sections"])
-    ? chunkData["sections"]
-    : Array.isArray(chunkData["Sections"])
-      ? chunkData["Sections"]
-      : [];
+  const sections = extractNbtList(chunkData["sections"] ?? chunkData["Sections"]) ?? [];
 
   const chunkWorldX = cx * 16;
   const chunkWorldZ = cz * 16;
@@ -306,20 +302,18 @@ async function parseChunkNbtAndExtract(
 
     // Block states container — either `block_states` (1.18+) or at section root (pre-1.18).
     const blockStates: Record<string, unknown> = isRecord(section["block_states"])
-      ? (section["block_states"] as Record<string, unknown>)
+      ? (unwrapNbtCompound(section["block_states"]) ??
+        (section["block_states"] as Record<string, unknown>))
       : section;
 
-    const rawPalette: unknown[] = Array.isArray(blockStates["palette"])
-      ? blockStates["palette"]
-      : Array.isArray(blockStates["Palette"])
-        ? blockStates["Palette"]
-        : [];
+    const rawPalette = extractNbtList(blockStates["palette"] ?? blockStates["Palette"]) ?? [];
 
     const palette: string[] = rawPalette.map((entry) => {
-      if (!isRecord(entry)) {
+      const compound = unwrapNbtCompound(entry);
+      if (!compound) {
         return "minecraft:air";
       }
-      const name = entry["Name"] ?? entry["name"];
+      const name = unwrapNbtValue(compound["Name"] ?? compound["name"]);
       return typeof name === "string" ? name : "minecraft:air";
     });
 
@@ -434,18 +428,40 @@ function unpackLongArray(longs: bigint[], bitsPerEntry: number, count: number): 
  * prismarine-nbt represents `longArray` as `{ type: "longArray", value: ... }`.
  */
 function extractLongArray(value: unknown): bigint[] | undefined {
-  if (!isRecord(value)) {
-    return undefined;
-  }
-  const inner = value["value"];
+  const unwrapped = unwrapNbtValue(value);
+  const inner = Array.isArray(unwrapped)
+    ? unwrapped
+    : isRecord(unwrapped) && Array.isArray(unwrapped["value"])
+      ? unwrapped["value"]
+      : undefined;
   if (!Array.isArray(inner)) {
     return undefined;
   }
   try {
-    return (inner as (number | bigint)[]).map((v) => BigInt(v));
+    return inner.map((v) => coerceNbtLong(v));
   } catch {
     return undefined;
   }
+}
+
+function coerceNbtLong(value: unknown): bigint {
+  if (typeof value === "bigint") {
+    return BigInt.asUintN(64, value);
+  }
+  if (typeof value === "number") {
+    return BigInt.asUintN(64, BigInt(value));
+  }
+  if (
+    Array.isArray(value) &&
+    value.length === 2 &&
+    typeof value[0] === "number" &&
+    typeof value[1] === "number"
+  ) {
+    const high = BigInt(value[0]);
+    const low = BigInt(value[1] >>> 0);
+    return BigInt.asUintN(64, (high << 32n) | low);
+  }
+  throw new Error("Unsupported NBT long value");
 }
 
 /**
@@ -453,26 +469,41 @@ function extractLongArray(value: unknown): bigint[] | undefined {
  * prismarine-nbt wraps primitive values as `{ type, value }` objects.
  */
 function extractNbtInt(value: unknown): number | undefined {
-  if (typeof value === "number") {
-    return Math.trunc(value);
+  const unwrapped = unwrapNbtValue(value);
+  if (typeof unwrapped === "number") {
+    return Math.trunc(unwrapped);
   }
-  if (typeof value === "bigint") {
-    return Number(value);
-  }
-  if (isRecord(value)) {
-    const inner = value["value"];
-    if (typeof inner === "number") {
-      return Math.trunc(inner);
-    }
-    if (typeof inner === "bigint") {
-      return Number(inner);
-    }
+  if (typeof unwrapped === "bigint") {
+    return Number(unwrapped);
   }
   return undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function unwrapNbtValue(value: unknown): unknown {
+  let current = value;
+  while (
+    isRecord(current) &&
+    "value" in current &&
+    (Object.keys(current).length === 1 ||
+      (Object.keys(current).length === 2 && "type" in current))
+  ) {
+    current = current["value"];
+  }
+  return current;
+}
+
+function unwrapNbtCompound(value: unknown): Record<string, unknown> | undefined {
+  const unwrapped = unwrapNbtValue(value);
+  return isRecord(unwrapped) ? unwrapped : undefined;
+}
+
+function extractNbtList(value: unknown): unknown[] | undefined {
+  const unwrapped = unwrapNbtValue(value);
+  return Array.isArray(unwrapped) ? unwrapped : undefined;
 }
 
 // ---------------------------------------------------------------------------
